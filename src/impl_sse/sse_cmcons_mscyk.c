@@ -17,7 +17,7 @@
 #include <emmintrin.h>		/* SSE2 */
 
 #include "easel.h"
-#include "esl_sqio.h"
+#include "esl_sqfile.h"
 #include "esl_stack.h"
 #include "esl_vectorops.h"
 #include "esl_sse.h"
@@ -1194,7 +1194,7 @@ ResolveMSCYK(CM_TOPHITS *initial, int i0, int j0, int W, float cutoff) {
 #include <esl_histogram.h>
 #include <esl_random.h>
 #include <esl_randomseq.h>
-#include <esl_sqio.h>
+#include <esl_sqfile.h>
 #include <esl_stats.h>
 #include <esl_stopwatch.h>
 #include <esl_vectorops.h>
@@ -1410,7 +1410,7 @@ nullL = cm->clen;
 #include <esl_histogram.h>
 #include <esl_random.h>
 #include <esl_randomseq.h>
-#include <esl_sqio.h>
+#include <esl_sqfile.h>
 #include <esl_stats.h>
 #include <esl_stopwatch.h>
 #include <esl_vectorops.h>
@@ -1493,7 +1493,7 @@ fprintf(stderr,"S->Sa %d S->SM %d S->e %d M->S %d\n",ccm->tsb_S_Sa,ccm->tsb_S_SM
   cutoff = ccm->base_b + unbiased_byteify(ccm,-f_cutoff);
 
   seq = esl_sq_Create();
-  while ( esl_sqio_Read(sqfp, seq) == eslOK)
+  while ( esl_sqfile_Read(sqfp, seq) == eslOK)
   {
     if (seq->n == 0) continue;
     if (seq->dsq == NULL) esl_sq_Digitize(abc, seq);

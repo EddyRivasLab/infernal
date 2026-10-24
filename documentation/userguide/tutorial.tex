@@ -2238,7 +2238,7 @@ give essentially identical output:
 Most Easel ``miniapp'' programs share the same ability of pipe-reading.
 
 Because the programs for CM fetching (\prog{cmfetch}) and
-sequence fetching (\prog{esl-sfetch}) can fetch any number of profiles
+sequence fetching (\prog{easel sfetchn}) can fetch any number of profiles
 or (sub)sequences by names/accessions given in a list, \emph{and} these
 programs can also read these lists from a stdin pipe, you can craft
 incantations that generate subsets of queries or targets on the
@@ -2251,10 +2251,10 @@ command onto three lines):
 %(believe me I tried). Only difference between \user{} and the way
 %I've done it below is that we're not bold, oh well. 
 \indent\indent\small\verb+> cmsearch --tblout tRNA5.mrum-genome.tbl tRNA5.c.cm mrum-genome.fa+ \\
-\indent\indent\small\verb+> esl-sfetch --index mrum-genome.fa+ \\
+\indent\indent\small\verb+> easel sindex mrum-genome.fa+ \\
 \indent\indent\small\verb+> cat tRNA5.mrum-genome.tbl | grep -v ^# | grep ! \ + \\
 \indent\indent\small\verb+> | awk '{ printf(``%s/%s-%s %s %s %s\n'', $1, $8, $9, $8, $9, $1); }' \ + \\
-\indent\indent\small\verb+> | esl-sfetch -Cf mrum-genome.fa - | cmalign tRNA5.cm - + \\
+\indent\indent\small\verb+> | easel sfetchn -C mrum-genome.fa - | cmalign tRNA5.cm - + \\
 
 The first command performed the search using the CM file
 \ccode{tRNA5.c.cm} and sequence file \ccode{mrum-genome.fa} (these
@@ -2267,10 +2267,10 @@ are comment lines) and also include a \prog{!} (these are hits that
 have E-values below the inclusion threshold) using the first two
 \prog{grep} commands. This output was then sent through \prog{awk} to
 reformat the tabular output to the ``GDF'' format that
-\prog{esl-sfetch} expects: \otext{<newname> <from> <to> <source
-seqname>}.  These lines are then piped into \prog{esl-sfetch} (using
+\prog{easel sfetchn} expects: \otext{<newname> <from> <to> <source
+seqname>}.  These lines are then piped into \prog{easel sfetchn} (using
 the '-' argument) to retrieve each hit (only the subsequence that
-comprises each hit -- not the full target sequence). \prog{esl-sfetch}
+comprises each hit -- not the full target sequence). \prog{easel sfetchn}
 will output a FASTA file, which is finally being piped into
 \prog{cmalign}, again using the '-' argument. The output that is
 actually printed to the screen will be a multiple alignment of all the

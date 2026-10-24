@@ -18,7 +18,7 @@
 #include <math.h>
 
 #include "easel.h"
-#include "esl_sqio.h"
+#include "esl_sqfile.h"
 #include "esl_stack.h"
 #include "esl_stopwatch.h"
 #include "esl_vectorops.h"
@@ -1445,7 +1445,7 @@ cp9_CheckFB(CP9_MX *fmx, CP9_MX *bmx, CP9_t *hmm, char *errbuf, float sc, int i0
 #include "esl_histogram.h"
 #include "esl_random.h"
 #include "esl_randomseq.h"
-#include "esl_sqio.h"
+#include "esl_sqfile.h"
 #include "esl_stats.h"
 #include "esl_stopwatch.h"
 #include "esl_vectorops.h"
@@ -1600,7 +1600,7 @@ main(int argc, char **argv)
 #include "esl_histogram.h"
 #include "esl_random.h"
 #include "esl_randomseq.h"
-#include "esl_sqio.h"
+#include "esl_sqfile.h"
 #include "esl_stats.h"
 #include "esl_stopwatch.h"
 #include "esl_vectorops.h"
@@ -1670,7 +1670,7 @@ main(int argc, char **argv)
   else                               { do_scan = TRUE;  do_align = FALSE; }
 
   sq = esl_sq_CreateDigital(abc);
-  while((status = esl_sqio_Read(sqfp, sq)) == eslOK) { 
+  while((status = esl_sqfile_Read(sqfp, sq)) == eslOK) { 
       esl_stopwatch_Start(w);
       if((status = cp9_Viterbi(cm->cp9, errbuf, cm->cp9_mx, sq->dsq, 1, sq->n, cm->W, cm->W, 0., NULL,
 			       do_scan,   /* are we scanning? */

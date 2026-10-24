@@ -88,9 +88,14 @@ directory.
 Directly specify the path 
 .I <n>
 to 
-.B esl-sfetch.
-This is unecessary if 
-.B esl-sfetch
+.B easel,
+for the
+.B easel sfetch
+and
+.B easel sindex
+miniapps.
+This is unnecessary if 
+.B easel
 is installed and available in your path.
 
 

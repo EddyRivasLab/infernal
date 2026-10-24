@@ -2,7 +2,7 @@
 
 # Test the cmalign --mapali option.
 # 
-# Usage:    ./itest1-cmalign-mapali.pl  <builddir> <srcdir> <tmpfile prefix>
+# Usage:    ./itest1-cmalign-mapali.pl  <builddir> <srcdir> <tmpfile_prefix>
 # Example:  ./itest1-cmalign-mapali.pl  ..         ..       foo
 #
 # EPN, Thu Apr 26 14:47:10 2012
@@ -22,16 +22,16 @@ $eslreformat  = "$builddir/easel/miniapps/easel reformat";
 $testsuitedir = "$srcdir/testsuite";
 
 system("$eslreformat -u --rename foo fasta $testsuitedir/Vault.sto > $tmppfx.fa");
-if ($? != 0)   { print "FAIL: esl-reformat failed unexpectedly\n"; exit 1; }
+if ($? != 0)   { print "FAIL: easel reformat failed unexpectedly\n"; exit 1; }
 
 system("$cmalign -o $tmppfx.sto --mapali $testsuitedir/Vault.sto $testsuitedir/Vault.c.cm $tmppfx.fa");
 if ($? != 0)   { print "FAIL: cmalign failed unexpectedly\n"; exit 1; }
 
 system("$eslreformat -u fasta $tmppfx.sto > $tmppfx.2.fa");
-if ($? != 0)   { print "FAIL: esl-reformat failed unexpectedly\n"; exit 1; }
+if ($? != 0)   { print "FAIL: easel reformat failed unexpectedly\n"; exit 1; }
 
 system("$eslreformat -u fasta $testsuitedir/Vault.sto > $tmppfx.3.fa");
-if ($? != 0)   { print "FAIL: esl-reformat failed unexpectedly\n"; exit 1; }
+if ($? != 0)   { print "FAIL: easel reformat failed unexpectedly\n"; exit 1; }
 
 system("cat $tmppfx.fa >> $tmppfx.3.fa");
 if ($? != 0)   { print "FAIL: cat failed unexpectedly\n"; exit 1; }

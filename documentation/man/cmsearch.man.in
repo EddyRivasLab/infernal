@@ -719,7 +719,7 @@ Run in MPI master/worker mode, using
 To use 
 .B --mpi,
 the sequence file must have first been 'indexed' using the 
-.B esl-sfetch 
+.B easel sindex
 program, which is included with Infernal, in the 
 .I easel/miniapps/
 subdirectory.

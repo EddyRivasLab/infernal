@@ -429,7 +429,7 @@ emit_unaligned(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
       }
 
       /* output sq2print */
-      if((esl_sqio_Write(cfg->ofp, sq2print, eslSQFILE_FASTA, FALSE)) != eslOK) ESL_FAIL(eslFAIL, errbuf, "Error writing unaligned sequences.");
+      if((esl_sqfile_Write(cfg->ofp, sq2print, eslSQFILE_FASTA, FALSE)) != eslOK) ESL_FAIL(eslFAIL, errbuf, "Error writing unaligned sequences.");
 
       /* output parsetree/trace if nec */
       if(cfg->tfp != NULL) { /* can only be true if none of -e, --u5p and --u3p were used (thus sq2print == esq) */
@@ -635,7 +635,7 @@ emit_consensus(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm)
     if (p7_emit_FancyConsensus(cm->fp7, 0.0, 0.5, csq)       != eslOK) cm_Fail("failed to create HMM consensus seq");
     if (esl_sq_FormatName(csq, "%s-hmmconsensus", cm->name)  != eslOK) cm_Fail("failed to set sequence name");
   }
-  if((esl_sqio_Write(cfg->ofp, csq, eslSQFILE_FASTA, FALSE)) != eslOK) cm_Fail("error writing consensus sequence.");
+  if((esl_sqfile_Write(cfg->ofp, csq, eslSQFILE_FASTA, FALSE)) != eslOK) cm_Fail("error writing consensus sequence.");
 
   esl_sq_Destroy(csq);
   free(cseqname);

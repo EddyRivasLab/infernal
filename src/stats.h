@@ -9,7 +9,7 @@
 #include <esl_config.h>
 #include "config.h"
 
-#include "esl_sqio.h"
+#include "esl_sqfile.h"
 
 extern CMStats_t *AllocCMStats(int np);
 extern void FreeCMStats(CMStats_t *cmstats);

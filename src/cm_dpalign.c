@@ -64,7 +64,7 @@
 #include <math.h>
 
 #include "easel.h"
-#include "esl_sqio.h"
+#include "esl_sqfile.h"
 #include "esl_stack.h"
 #include "esl_stopwatch.h"
 #include "esl_vectorops.h"
@@ -5893,7 +5893,7 @@ cm_InitializeOptAccShadowDZeroHB(CM_t *cm, CP9Bands_t *cp9b, char *errbuf, char 
 #include "easel.h"
 #include <esl_getopts.h>
 #include <esl_histogram.h>
-#include <esl_sqio.h>
+#include <esl_sqfile.h>
 #include <esl_stats.h>
 #include <esl_stopwatch.h>
 #include <esl_vectorops.h>
@@ -5978,7 +5978,7 @@ main(int argc, char **argv)
 
   i = 0;
   sq = esl_sq_CreateDigital(cm->abc);
-  while((status = esl_sqio_Read(sqfp, sq)) == eslOK) { 
+  while((status = esl_sqfile_Read(sqfp, sq)) == eslOK) { 
     i++;
     L = sq->n;
 

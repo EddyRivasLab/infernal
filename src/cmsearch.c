@@ -18,7 +18,7 @@
 #include "esl_getopts.h"
 #include "esl_scorematrix.h"
 #include "esl_sq.h"
-#include "esl_sqio.h"
+#include "esl_sqfile.h"
 #include "esl_ssi.h"
 #include "esl_stopwatch.h"
 #include "esl_vectorops.h"
@@ -534,7 +534,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
      * dbsize_and_seq_lengths() and then overwrite it based on <x>
      * from -Z <x>.
      */
-    if ((! esl_sqfile_IsRewindable(dbfp)) && dbfp->data.ascii.do_gzip == FALSE) { 
+    if ((! esl_sqfile_IsRewindable(dbfp)) && dbfp->do_gzip == FALSE) { 
 	cm_Fail("Target sequence file %s isn't rewindable, cmsearch needs to be able to rewind it", cfg->dbfile);
     }
     if((status = dbsize_and_seq_lengths(go, cfg, &dbfp, errbuf, &srcL, &nseqs_expected)) != eslOK) { 
@@ -811,13 +811,13 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t *srcL)
   int64_t   seq_idx = 0;
   ESL_SQ   *dbsq    = esl_sq_CreateDigital(info->cm->abc);
 
-  wstatus = esl_sqio_ReadWindow(dbfp, info->pli->maxW, CM_MAX_RESIDUE_COUNT, dbsq);
+  wstatus = esl_sqfile_ReadWindow(dbfp, info->pli->maxW, CM_MAX_RESIDUE_COUNT, dbsq);
   seq_idx++;
 
   while(wstatus == eslEOD) { /* this block is only necessary to chew up zero-length sequences */
     info->pli->nseqs++;
     esl_sq_Reuse(dbsq);
-    wstatus = esl_sqio_ReadWindow(dbfp, info->pli->maxW, CM_MAX_RESIDUE_COUNT, dbsq);
+    wstatus = esl_sqfile_ReadWindow(dbfp, info->pli->maxW, CM_MAX_RESIDUE_COUNT, dbsq);
     seq_idx++;
   }
 
@@ -864,7 +864,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t *srcL)
       esl_sq_ReverseComplement(dbsq);
     }
 
-    wstatus = esl_sqio_ReadWindow(dbfp, info->pli->maxW, CM_MAX_RESIDUE_COUNT, dbsq);
+    wstatus = esl_sqfile_ReadWindow(dbfp, info->pli->maxW, CM_MAX_RESIDUE_COUNT, dbsq);
     /*printf("SER just read seq %ld (%40s) %10ld..%10ld\n", seq_idx, dbsq->name, dbsq->start, dbsq->end);*/
     while (wstatus == eslEOD) { 
       /* no more left of this sequence ... move along to the next sequence.
@@ -872,7 +872,7 @@ serial_loop(WORKER_INFO *info, ESL_SQFILE *dbfp, int64_t *srcL)
        */
       info->pli->nseqs++;
       esl_sq_Reuse(dbsq);
-      wstatus = esl_sqio_ReadWindow(dbfp, info->pli->maxW, CM_MAX_RESIDUE_COUNT, dbsq);
+      wstatus = esl_sqfile_ReadWindow(dbfp, info->pli->maxW, CM_MAX_RESIDUE_COUNT, dbsq);
       seq_idx++; /* because we started reading a new sequence, or reached EOF */
     }
   }
@@ -917,7 +917,7 @@ thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQFI
        * overlap should be retained in the ReadWindow step. */
     }
 
-    sstatus = esl_sqio_ReadBlock(dbfp, block, CM_MAX_RESIDUE_COUNT, /*max_sequences=*/-1, /*max_init_window=*/TRUE, TRUE);  
+    sstatus = esl_sqfile_ReadBlock(dbfp, block, CM_MAX_RESIDUE_COUNT, /*max_sequences=*/-1, /*max_init_window=*/TRUE, TRUE);  
 
     if (sstatus == eslOK) { /* we read a block */
       if(! block->complete) { 
@@ -953,7 +953,7 @@ thread_loop(WORKER_INFO *info, ESL_THREADS *obj, ESL_WORK_QUEUE *queue, ESL_SQFI
     /* Capture "complete" status prior to placing current block into the work
      * queue, to avoid appearance of a race condition. With only one reader
      * thread, there isn't really a race risk, since "complete" is only set
-     * during the esl_sqio_ReadBlock() function call earlier in this loop
+     * during the esl_sqfile_ReadBlock() function call earlier in this loop
      * (i.e. "complete" isn't altered by the worker threads). 
      */
     prv_block_complete = block->complete;
@@ -1254,7 +1254,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     
     /* Initialize for main loop */
     pkey_idx = 0;
-    final_pkey_idx = dbfp->data.ascii.ssi->nprimary - 1;
+    final_pkey_idx = dbfp->ssi->nprimary - 1;
     sstatus = eslOK;
     tot_noverlap = noverlap = 0;
     tot_nseq     = nseq     = 0;
@@ -1262,14 +1262,14 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     /* process --sidx and --eidx, if nec */
     if(esl_opt_IsUsed(go, "--sidx")) { /* start searching at sequence index <n> from --sidx <n> */
       pkey_idx = esl_opt_GetInteger(go, "--sidx") - 1;
-      if(pkey_idx >= dbfp->data.ascii.ssi->nprimary) {
-	mpi_failure("--sidx %d is invalid because only %d sequences exist in the target db", pkey_idx+1, dbfp->data.ascii.ssi->nprimary);
+      if(pkey_idx >= dbfp->ssi->nprimary) {
+	mpi_failure("--sidx %d is invalid because only %d sequences exist in the target db", pkey_idx+1, dbfp->ssi->nprimary);
       }
     }
     if(esl_opt_IsUsed(go, "--eidx")) { /* start searching at sequence index <n> from --eidx <n> */
       final_pkey_idx = esl_opt_GetInteger(go, "--eidx") - 1;
-      if(final_pkey_idx >= dbfp->data.ascii.ssi->nprimary) { 
-	mpi_failure("--eidx %d is invalid because only %d sequences exist in the target db", final_pkey_idx+1, dbfp->data.ascii.ssi->nprimary);
+      if(final_pkey_idx >= dbfp->ssi->nprimary) { 
+	mpi_failure("--eidx %d is invalid because only %d sequences exist in the target db", final_pkey_idx+1, dbfp->ssi->nprimary);
       }
       if(final_pkey_idx < pkey_idx) { 
 	mpi_failure("with --sidx <n1> --eidx <n2>, <n2> must be >= <n1>");
@@ -1618,7 +1618,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	{ 
 	  /*printf("readL: %ld\n", readL);*/
 	  /* determine the primary key and length of the sequence */
-	  if((status = esl_ssi_FindNumber(dbfp->data.ascii.ssi, pkey_idx, NULL, NULL, NULL, &L, &pkey)) != eslOK) { 
+	  if((status = esl_ssi_FindNumber(dbfp->ssi, pkey_idx, NULL, NULL, NULL, &L, &pkey)) != eslOK) { 
 	    if(status == eslENOTFOUND) mpi_failure("(worker) unable to find sequence %d in SSI index file", pkey_idx);
 	    if(status == eslEFORMAT)   mpi_failure("(worker) SSI index for database file is in incorrect format.");
 	    if(status != eslOK)        mpi_failure("(worker) problem with SSI index for database file.");
@@ -1627,7 +1627,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  /* determine if we're reading the full sequence or a subsequence */
 	  if((pkey_idx != block->first_idx) && (pkey_idx != block->final_idx)) { 
 	    /* read full sequence */
-	    if((status = esl_sqio_Fetch(dbfp, pkey, dbsq)) != eslOK) mpi_failure("unable to fetch sequence %s\n", pkey);
+	    if((status = esl_sqfile_Fetch(dbfp, pkey, dbsq)) != eslOK) mpi_failure("unable to fetch sequence %s\n", pkey);
 	    seq_from = 1;
 	    seq_to   = L;
 	    /*printf("MPI just fetched seq %d (%40s) %10ld..%10ld\n", pkey_idx, pkey, seq_from, seq_to);*/
@@ -1636,7 +1636,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	    /* read first or final sequence in block, this is probably a subsequence */
 	    seq_from = (pkey_idx == block->first_idx) ? block->first_from : 1;
 	    seq_to   = (pkey_idx == block->final_idx) ? block->final_to   : L;
-	    if((status = esl_sqio_FetchSubseq(dbfp, pkey, seq_from, seq_to, dbsq)) != eslOK) mpi_failure("unable to fetch subsequence %ld..%ld of %s\n", seq_from, seq_to, pkey);
+	    if((status = esl_sqfile_FetchSubseq(dbfp, pkey, seq_from, seq_to, dbsq)) != eslOK) mpi_failure("unable to fetch subsequence %ld..%ld of %s\n", seq_from, seq_to, pkey);
 	    /* FetchSubseq renames the sequence, set it back */
 	    esl_sq_SetName(dbsq, dbsq->source);
 	    /*printf("MPI just fetched seq %d (%40s) %10ld..%10ld\n", pkey_idx, pkey, seq_from, seq_to);*/
@@ -2401,7 +2401,7 @@ open_dbfile(ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_SQFILE **ret_d
   int dbfmt = eslSQFILE_UNKNOWN; /* format of dbfile                                */
 
   if (esl_opt_IsOn(go, "--tformat")) {
-    dbfmt = esl_sqio_EncodeFormat(esl_opt_GetString(go, "--tformat"));
+    dbfmt = esl_sqfile_EncodeFormat(esl_opt_GetString(go, "--tformat"));
     if (dbfmt == eslSQFILE_UNKNOWN) ESL_FAIL(eslEINVAL, errbuf, "%s is not a recognized sequence database file format\n", esl_opt_GetString(go, "--tformat"));
   }
   status = esl_sqfile_Open(cfg->dbfile, dbfmt, p7_SEQDBENV, ret_dbfp);
@@ -2410,7 +2410,7 @@ open_dbfile(ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_SQFILE **ret_d
   else if (status == eslEINVAL)    ESL_FAIL(status, errbuf, "Can't autodetect format of a stdin or .gz seqfile");
   else if (status != eslOK)        ESL_FAIL(status, errbuf, "Unexpected error %d opening sequence file %s\n", status, cfg->dbfile);  
 
-  if (esl_sqio_IsAlignment((*ret_dbfp)->format)) { 
+  if (esl_sqfile_IsAlignment((*ret_dbfp)->format)) { 
     /* file is an alignment format, we can't deal with that since it may be interleaved 
      * and esl_sq_ReadBlock() can't handle that since it uses ReadWindow() to read 
      * possibly non-full length subsequences and isn't implemented to handle alignments.
@@ -2452,7 +2452,7 @@ dbsize_and_seq_lengths(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE **dbfp_ptr
   ESL_ALLOC(tmp_filename, sizeof(char) * (strlen((*dbfp_ptr)->filename) + 1));
 
   sq = esl_sq_Create();
-  while ((status = esl_sqio_ReadInfo(*dbfp_ptr, sq)) == eslOK) { 
+  while ((status = esl_sqfile_ReadInfo(*dbfp_ptr, sq)) == eslOK) { 
     nres += sq->L;
     if(nseqs == nalloc_srcL) { /* reallocate */
       nalloc_srcL += alloc_srcL;
@@ -2472,7 +2472,7 @@ dbsize_and_seq_lengths(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE **dbfp_ptr
   }
   cfg->Z_setby = CM_ZSETBY_FILEREAD;
 
-  if((*dbfp_ptr)->data.ascii.do_gzip == TRUE) { 
+  if((*dbfp_ptr)->do_gzip == TRUE) { 
     /* file is gzipped, close it and reopen it.  
        we know we successfully opened it the first time, so a
        failure to reopen is an exception, not a user-reportable
@@ -2501,7 +2501,7 @@ dbsize_and_seq_lengths(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE **dbfp_ptr
   return eslOK;
 
  ERROR: 
-  if((*dbfp_ptr)->data.ascii.do_gzip == TRUE) { /* same as above, close and reopen */
+  if((*dbfp_ptr)->do_gzip == TRUE) { /* same as above, close and reopen */
     strcpy(tmp_filename, (*dbfp_ptr)->filename);
     tmp_fmt = (*dbfp_ptr)->format;
     esl_sqfile_Close((*dbfp_ptr));
@@ -2777,12 +2777,12 @@ mpi_open_dbfile_ssi(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp, char *
 {
   int status;
 
-  if (dbfp->data.ascii.do_gzip)   ESL_FAIL(eslEFORMAT, errbuf, "Reading gzipped sequence files is not supported with --mpi.");
-  if (dbfp->data.ascii.do_stdin)  ESL_FAIL(eslEFORMAT, errbuf, "Reading sequence files from stdin is not supported with --mpi.");
+  if (dbfp->do_gzip)             ESL_FAIL(eslEFORMAT, errbuf, "Reading gzipped sequence files is not supported with --mpi.");
+  if (dbfp->do_stdin)            ESL_FAIL(eslEFORMAT, errbuf, "Reading sequence files from stdin is not supported with --mpi.");
   status = esl_sqfile_OpenSSI(dbfp, NULL);
   if      (status == eslEFORMAT) ESL_FAIL(status, errbuf, "SSI index for database file is in incorrect format\n");
   else if (status == eslERANGE)  ESL_FAIL(status, errbuf, "SSI index for database file is in 64-bit format and we can't read it\n");
-  else if (status != eslOK)      ESL_FAIL(status, errbuf, "Failed to open SSI index, use esl-sfetch to index the database file.\n");
+  else if (status != eslOK)      ESL_FAIL(status, errbuf, "Failed to open SSI index, use `easel sindex` to index the database file.\n");
 
   return status;
 }
@@ -2802,13 +2802,13 @@ mpi_dbsize_using_ssi(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp, char 
   int64_t L;    
   int i;
 
-  if(dbfp->data.ascii.ssi == NULL) ESL_FAIL(eslEINVAL, errbuf, "SSI index failed to open");
+  if(dbfp->ssi == NULL) ESL_FAIL(eslEINVAL, errbuf, "SSI index failed to open");
 
   /* step through sequence SSI file to get database size */
   cfg->Z = 0;
-  for(i = 0; i < dbfp->data.ascii.ssi->nprimary; i++) { 
-    status = esl_ssi_FindNumber(dbfp->data.ascii.ssi, i, NULL, NULL, NULL, &L, NULL);
-    if(status == eslENOTFOUND) ESL_FAIL(status, errbuf, "unable to find sequence %d in SSI index file, try re-indexing with esl-sfetch.", i);
+  for(i = 0; i < dbfp->ssi->nprimary; i++) { 
+    status = esl_ssi_FindNumber(dbfp->ssi, i, NULL, NULL, NULL, &L, NULL);
+    if(status == eslENOTFOUND) ESL_FAIL(status, errbuf, "unable to find sequence %d in SSI index file, try re-indexing with `easel sindex`.", i);
     if(status == eslEFORMAT)   ESL_FAIL(status, errbuf, "SSI index for database file is in incorrect format.");
     if(status != eslOK)        ESL_FAIL(status, errbuf, "problem with SSI index for database file.");
     cfg->Z += L;
@@ -2867,7 +2867,7 @@ mpi_add_blocks(ESL_SQFILE *dbfp, ESL_SQ *sq, int64_t ncontext, char *errbuf, int
   int64_t nseq = 0;
 
   /* Contract check, SSI should be valid */
-  if(dbfp->data.ascii.ssi == NULL) ESL_FAIL(eslEINVAL, errbuf, "No SSI index available (it should've been opened earlier)");
+  if(dbfp->ssi == NULL) ESL_FAIL(eslEINVAL, errbuf, "No SSI index available (it should've been opened earlier)");
   /* we should have exactly 1 non-complete block */
   if(block_list->N != 1 || block_list->blocks == NULL || block_list->blocks[0]->complete) { 
     ESL_FAIL(eslFAIL, errbuf, "contract violation in next_block, block_list does not contain exactly 1 incomplete block");
@@ -2944,18 +2944,18 @@ mpi_inspect_next_sequence_using_ssi(ESL_SQFILE *dbfp, ESL_SQ *sq, int64_t nconte
   MPI_BLOCK *cur_block = NULL; /* pointer to current block we are working on */        
 
   /* Contract check */
-  if(dbfp->data.ascii.ssi == NULL) ESL_FAIL(eslEINVAL, errbuf, "No SSI index available (it should've been opened earlier)");
+  if(dbfp->ssi == NULL) ESL_FAIL(eslEINVAL, errbuf, "No SSI index available (it should've been opened earlier)");
 
   /* Get length of 'next' sequence (next sequence in list of 
    * primary keys in SSI index, probably not the next sequence 
    * in the file) */
-  status = esl_ssi_FindNumber(dbfp->data.ascii.ssi, pkey_idx, NULL, NULL, NULL, &L, NULL);
+  status = esl_ssi_FindNumber(dbfp->ssi, pkey_idx, NULL, NULL, NULL, &L, NULL);
   /*
     char *tmpname;
-    status = esl_ssi_FindNumber(dbfp->data.ascii.ssi, pkey_idx, NULL, NULL, NULL, &L, &tmpname);
+    status = esl_ssi_FindNumber(dbfp->ssi, pkey_idx, NULL, NULL, NULL, &L, &tmpname);
     printf("mpi_inspect_next_sequence_using_ssi(): sequence name: %s length %" PRId64 "\n", tmpname, L);
   */
-  if(status == eslENOTFOUND) ESL_FAIL(status, errbuf, "unable to find sequence %ld in SSI index file, try re-indexing with esl-sfetch.", pkey_idx);
+  if(status == eslENOTFOUND) ESL_FAIL(status, errbuf, "unable to find sequence %ld in SSI index file, try re-indexing with `easel sindex`.", pkey_idx);
   if(status == eslEFORMAT)   ESL_FAIL(status, errbuf, "SSI index for database file is in incorrect format.");
   if(status != eslOK)        ESL_FAIL(status, errbuf, "problem with SSI index for database file.");
 
