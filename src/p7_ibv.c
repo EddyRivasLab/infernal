@@ -48,20 +48,66 @@
 #define P7IBV_HALF_NEG_INF    (-5.0e17f)
 #define P7IBV_EPS             1.0f
 #define P7IBV_K_ALIGN         16
-#define P7IBV_OPTIMAL_SANITY  1.0e7f
 
-/* Float-precision guard on the optimal score.  The band threshold test
- * (through >= optimal - margin, margin = max(delta, EPS)) stays reliable
- * while the float ULP at the score magnitude is << margin.  ULP(through)
- * ~= 2*|optimal|*2^-23, so the test is safe while
- *   |optimal| <= margin * 2^23 / (2 * SAFETY).
- * With SAFETY=8 the bound is margin * 2^19.  At the default delta=3000 that
- * is ~1.6e9 milli-bits, which admits genome-scale models (HSV optimal is
- * O(1e7-1e8)).  The old fixed 1e7 guard (tuned to ULP < EPS=1) was far too
- * conservative -- it tripped on HSV/MPXV even though the real band margin is
- * delta, not EPS.  Floor the guard at OPTIMAL_SANITY so tiny deltas still
- * permit reasonable scores. */
-#define P7IBV_ULP_SAFETY_SHIFT 19   /* margin << 2^19 ULPs */
+/* Band threshold: each row's own max through-score minus the margin
+ * (brief 26_0821-144).
+ *
+ * The band admits every cell whose float max-sum F+B through-score is within
+ * margin = max(delta, EPS) of the optimum. In exact arithmetic every row's max
+ * through-score equals the optimum, since the Viterbi path crosses every row,
+ * so thresholding a row against its own max is the same band. In float it is
+ * not: F and B each accumulate rounding along the sequence, and at genome
+ * scale (|optimal| ~ 1e8 milli-bits) F+B on the optimal path drifts from the
+ * separately computed optimum by hundreds of bits (brief 26_0821-142: +327 to
+ * +433 bits on HSV-1, mpox and EBV, against a 1-bit margin). Rows with positive
+ * drift then admit far too many cells, and rows with negative drift admit none.
+ * The row-relative test cancels that between-row drift, leaving only the
+ * within-row rounding difference between cells. The old guard here
+ * (fail if |optimal| > margin * 2^19) modeled only the final comparison's
+ * rounding, not accumulation along L, and never fired. It is replaced by the
+ * drift detector in IBV_ROWSTATS, reported under --devdiag. */
+typedef struct {
+  float   optimal;      /* global optimum, for the drift detector               */
+  int64_t nrows;        /* row scans (the D&C scans each midrow twice)          */
+  int64_t empty_rows;   /* rows with no finite through-score: widened to [1,M]  */
+  float   drift_max;    /* max over rows of (row max - optimal), milli-bits     */
+  float   drift_min;    /* min over rows of (row max - optimal), milli-bits     */
+} IBV_ROWSTATS;
+
+static void
+ibv_rowstats_init(IBV_ROWSTATS *st, float optimal)
+{
+  st->optimal    = optimal;
+  st->nrows      = 0;
+  st->empty_rows = 0;
+  st->drift_max  = -eslINFINITY;
+  st->drift_min  =  eslINFINITY;
+}
+
+static inline void
+ibv_rowstats_add(IBV_ROWSTATS *st, float rowmax)
+{
+  st->nrows++;
+  if (rowmax < P7IBV_HALF_NEG_INF) { st->empty_rows++; return; }
+  float d = rowmax - st->optimal;
+  if (d > st->drift_max) st->drift_max = d;
+  if (d < st->drift_min) st->drift_min = d;
+}
+
+/* One developer line per band. An empty row (no finite through-score) cannot
+ * happen when the optimum is finite, since the optimal path crosses every row;
+ * a nonzero empty_rows count means the band calculation is wrong somewhere. */
+static void
+ibv_rowstats_report(const IBV_ROWSTATS *st, const char *path, int L, int M, float margin, int64_t ncells)
+{
+  if (! cm_StageVerbose()) return;
+  fprintf(stderr, "#IBVBAND path=%s L=%d M=%d margin_bits=%.3f optimal_bits=%.3f scans=%lld empty_rows=%lld drift_max_bits=%.3f drift_min_bits=%.3f ncells=%lld\n",
+          path, L, M, margin / P7IBV_INTSCALE, st->optimal / P7IBV_INTSCALE,
+          (long long) st->nrows, (long long) st->empty_rows,
+          (st->nrows > st->empty_rows) ? st->drift_max / P7IBV_INTSCALE : 0.,
+          (st->nrows > st->empty_rows) ? st->drift_min / P7IBV_INTSCALE : 0.,
+          (long long) ncells);
+}
 
 /* D&C adaptive base_slab: when the caller passes base_slab <= 0, pick the
  * largest slab whose base-case F+B storage (= 2*(slab+1)*3*k_stride floats)
@@ -339,14 +385,16 @@ ibv_backward_one_row(int M, size_t k_stride, int i, int global_L, int do_trunc,
 
 /* ibv_through_scan -- per-row kmin/kmax from F+B through-score.
  *
- * through_scratch: caller-owned k_stride buffer.  Returns (1,M) on empty row.
+ * The cloud is every k whose through-score is >= this row's max - margin
+ * (brief 26_0821-144; see IBV_ROWSTATS). through_scratch: caller-owned
+ * k_stride buffer. Returns (1,M) on an empty row, which <st> counts.
  */
 static void
-ibv_through_scan(int M, size_t k_stride, float thr,
+ibv_through_scan(int M, size_t k_stride, float margin,
                  int ibv_mode, int ibv_width,
                  const float *FM, const float *FI, const float *FD,
                  const float *BM, const float *BI, const float *BD,
-                 float *through_scratch,
+                 float *through_scratch, IBV_ROWSTATS *st,
                  int *ret_kmin, int *ret_kmax, int *ret_kargmax)
 {
   int k;
@@ -369,6 +417,11 @@ ibv_through_scan(int M, size_t k_stride, float thr,
     if (t_d > t) t = t_d;
     through_scratch[k] = t;
   }
+
+  float rowmax = P7IBV_NEG_INF;
+  for (k = 1; k <= M; k++) if (through_scratch[k] > rowmax) rowmax = through_scratch[k];
+  ibv_rowstats_add(st, rowmax);
+  float thr = rowmax - margin;
 
   int   row_kmin = -1, row_kmax = -1;
   int   k_argmax = -1;
@@ -525,6 +578,7 @@ cm_p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_
   int      *i2k = NULL, *kmin = NULL, *kmax = NULL;
   float     optimal, thr;
   float     floor_milli;
+  IBV_ROWSTATS rowstats;
   int       ncells = 0;
   size_t    k_stride;
   size_t    pool_cells;
@@ -669,16 +723,8 @@ cm_p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_
   assert(optimal == optimal);
   floor_milli = (float) delta_milli;
   if (floor_milli < P7IBV_EPS) floor_milli = P7IBV_EPS;
-  {
-    float guard = floor_milli * (float)(1u << P7IBV_ULP_SAFETY_SHIFT);
-    if (guard < P7IBV_OPTIMAL_SANITY) guard = P7IBV_OPTIMAL_SANITY;
-    if (fabsf(optimal) > guard)
-      ESL_FAIL(eslEINVAL, errbuf,
-               "p7_Seq2BandsIBV: |optimal|=%g milli-bits exceeds guard %g "
-               "(float ULP approaches delta=%d margin; need double precision)",
-               (double) optimal, (double) guard, delta_milli);
-  }
-  thr = optimal - floor_milli;
+  thr = optimal - floor_milli;   /* reported in the band dumps only; rows use their own max */
+  ibv_rowstats_init(&rowstats, optimal);
 
   ESL_ALLOC(i2k,  sizeof(int) * (L + 1));
   ESL_ALLOC(kmin, sizeof(int) * (L + 1));
@@ -705,11 +751,11 @@ cm_p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_
                          B_M_curr, B_I_curr, B_D_curr);
 
     if (i >= 2 && i <= L - 2)
-      ibv_through_scan(M, k_stride, thr,
+      ibv_through_scan(M, k_stride, floor_milli,
                        ibv_mode, ibv_width,
                        F_M(i), F_I(i), F_D(i),
                        B_M_curr, B_I_curr, B_D_curr,
-                       through, &kmin[i], &kmax[i], &i2k[i]);
+                       through, &rowstats, &kmin[i], &kmax[i], &i2k[i]);
 
     float *t_M = B_M_prev; B_M_prev = B_M_curr; B_M_curr = t_M;
     float *t_I = B_I_prev; B_I_prev = B_I_curr; B_I_curr = t_I;
@@ -751,6 +797,7 @@ cm_p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_
       ncells = INT_MAX;
     }
     else ncells = (int) ncells64;
+    ibv_rowstats_report(&rowstats, "flat", L, M, floor_milli, ncells64);
   }
 
   {
@@ -1465,7 +1512,8 @@ typedef struct {
   int    *kmin;
   int    *kmax;
   int    *i2k;     /* argmax-k per row (brief 26_0430-137); i2k[i] = Viterbi-trace cell. */
-  float   thr;
+  float   margin;    /* band margin max(delta, EPS), milli-bits (brief 26_0821-144) */
+  IBV_ROWSTATS st;   /* empty-row and drift counts (brief 26_0821-144) */
   int     ibv_mode;  /* brief 26_0430-140: P7IBV_MODE_{DELTA,FIXED,HYBRID} */
   int     ibv_width; /* brief 26_0430-140: fixed-width pad W around argmax-k pin */
   int     kband_pad; /* brief 26_0430-172: k-band child-narrowing pad (do_kband path) */
@@ -1554,11 +1602,11 @@ ibv_dnc_recurse(IBV_DnC_Ctx *ctx,
     /* Per-row through-scan. */
     for (int r = 1; r <= slab_size; r++) {
       size_t off = (size_t) r * 3 * ks;
-      ibv_through_scan(M, ks, ctx->thr,
+      ibv_through_scan(M, ks, ctx->margin,
                        ctx->ibv_mode, ctx->ibv_width,
                        ctx->slab_F + off + 0*ks, ctx->slab_F + off + 1*ks, ctx->slab_F + off + 2*ks,
                        ctx->slab_B + off + 0*ks, ctx->slab_B + off + 1*ks, ctx->slab_B + off + 2*ks,
-                       ctx->through,
+                       ctx->through, &ctx->st,
                        &ctx->kmin[i_lo + r], &ctx->kmax[i_lo + r], &ctx->i2k[i_lo + r]);
     }
     return;
@@ -1632,11 +1680,11 @@ ibv_dnc_recurse(IBV_DnC_Ctx *ctx,
   }
 
   /* Through-scan at i_mid. */
-  ibv_through_scan(M, ks, ctx->thr,
+  ibv_through_scan(M, ks, ctx->margin,
                    ctx->ibv_mode, ctx->ibv_width,
                    F_mid_M, F_mid_I, F_mid_D,
                    ctx->Bmid + 0*ks, ctx->Bmid + 1*ks, ctx->Bmid + 2*ks,
-                   ctx->through, &ctx->kmin[i_mid], &ctx->kmax[i_mid], &ctx->i2k[i_mid]);
+                   ctx->through, &ctx->st, &ctx->kmin[i_mid], &ctx->kmax[i_mid], &ctx->i2k[i_mid]);
 
   /* Recurse top half [i_lo, i_mid] with F_lo + B_mid1. */
   ibv_dnc_recurse(ctx, i_lo, i_mid, depth + 1,
@@ -1805,16 +1853,29 @@ ibv_bwd_row_b(int M, int k_lo, int k_hi, int i, int global_L, int do_trunc,
   }
 }
 
+/* Scalar k-banded mirror of ibv_through_scan(): threshold against this row's
+ * max over [k_lo,k_hi] (brief 26_0821-144). The banded D&C's optimal-path cell
+ * is interior to the band, so that max is the optimum in exact arithmetic. */
 static void
-ibv_through_b(int M, int k_lo, int k_hi, float thr,
+ibv_through_b(int M, int k_lo, int k_hi, float margin,
               const float *FM, const float *FI, const float *FD,
               const float *BM, const float *BI, const float *BD,
+              IBV_ROWSTATS *st,
               int *ret_kmin, int *ret_kmax, int *ret_kargmax)
 {
   int   k, row_kmin = -1, row_kmax = -1, k_argmax = -1;
   float t_argmax = P7IBV_NEG_INF;
   if (k_lo < 1) k_lo = 1;
   if (k_hi > M) k_hi = M;
+  float rowmax = P7IBV_NEG_INF;
+  for (k = k_lo; k <= k_hi; k++) {
+    float t = FM[k] + BM[k], ti = FI[k] + BI[k], td = FD[k] + BD[k];
+    if (ti > t) t = ti;
+    if (td > t) t = td;
+    if (t > rowmax) rowmax = t;
+  }
+  ibv_rowstats_add(st, rowmax);
+  float thr = rowmax - margin;
   for (k = k_lo; k <= k_hi; k++) {
     float t_m = FM[k] + BM[k];
     float t_i = FI[k] + BI[k];
@@ -1903,11 +1964,11 @@ ibv_through_dispatch(IBV_DnC_Ctx *ctx, int wide, int k_lo, int k_hi,
                      int *ret_kmin, int *ret_kmax, int *ret_kargmax)
 {
   if (wide)
-    ibv_through_scan(ctx->M, ctx->k_stride, ctx->thr, ctx->ibv_mode, ctx->ibv_width,
-                     FM, FI, FD, BM, BI, BD, ctx->through, ret_kmin, ret_kmax, ret_kargmax);
+    ibv_through_scan(ctx->M, ctx->k_stride, ctx->margin, ctx->ibv_mode, ctx->ibv_width,
+                     FM, FI, FD, BM, BI, BD, ctx->through, &ctx->st, ret_kmin, ret_kmax, ret_kargmax);
   else
-    ibv_through_b(ctx->M, k_lo, k_hi, ctx->thr,
-                  FM, FI, FD, BM, BI, BD, ret_kmin, ret_kmax, ret_kargmax);
+    ibv_through_b(ctx->M, k_lo, k_hi, ctx->margin,
+                  FM, FI, FD, BM, BI, BD, &ctx->st, ret_kmin, ret_kmax, ret_kargmax);
 }
 
 /* k-banded mirror of ibv_dnc_recurse.  k_lo/k_hi bound the optimal path's
@@ -2181,16 +2242,7 @@ cm_p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
   assert(optimal == optimal);
   floor_milli = (float) delta_milli;
   if (floor_milli < P7IBV_EPS) floor_milli = P7IBV_EPS;
-  {
-    float guard = floor_milli * (float)(1u << P7IBV_ULP_SAFETY_SHIFT);
-    if (guard < P7IBV_OPTIMAL_SANITY) guard = P7IBV_OPTIMAL_SANITY;
-    if (fabsf(optimal) > guard)
-      ESL_FAIL(eslEINVAL, errbuf,
-               "p7_Seq2BandsIBV_dnc: |optimal|=%g milli-bits exceeds guard %g "
-               "(float ULP approaches delta=%d margin; need double precision)",
-               (double) optimal, (double) guard, delta_milli);
-  }
-  thr = optimal - floor_milli;
+  thr = optimal - floor_milli;   /* reported in the band dumps only; rows use their own max */
   /* Reset roll_F for D&C streaming reuse. */
   for (size_t c = 0; c < 6 * ks; c++) ctx.roll_F[c] = P7IBV_NEG_INF;
 
@@ -2217,7 +2269,8 @@ cm_p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
   ctx.kmin     = kmin_arr;
   ctx.kmax     = kmax_arr;
   ctx.i2k      = i2k;
-  ctx.thr      = thr;
+  ctx.margin   = floor_milli;
+  ibv_rowstats_init(&ctx.st, optimal);
   ctx.do_trunc    = do_trunc;     /* brief 26_0430-171 */
   ctx.begin_milli = begin_milli;  /* brief 26_0430-171 */
   ctx.ibv_mode = ibv_mode;   /* brief 26_0430-140 */
@@ -2307,6 +2360,7 @@ cm_p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
       ncells = INT_MAX;
     }
     else ncells = (int) ncells64;
+    ibv_rowstats_report(&ctx.st, do_kband ? "dnc-kband" : "dnc", L, M, floor_milli, ncells64);
   }
 
   {
