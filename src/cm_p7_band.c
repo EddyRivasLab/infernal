@@ -8396,13 +8396,22 @@ cm_p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx,
 
       case p7T_M: /* select_m: which state was predecessor of M(i,k)? */
 	{
-	  float path[4];
-	  int   state[4] = { p7T_M, p7T_I, p7T_D, p7T_B };
-	  path[0] = TSCDELTA(p7P_MM, k-1) * GXB_M(gx, i-1, k-1);
-	  path[1] = TSCDELTA(p7P_IM, k-1) * GXB_I(gx, i-1, k-1);
-	  path[2] = TSCDELTA(p7P_DM, k-1) * GXB_D(gx, i-1, k-1);
-	  path[3] = TSCDELTA(p7P_BM, k-1) * GXB_XMX(gx, i-1, p7G_B);
-	  scur = state[esl_vec_FArgMax(path, 4)];
+	  if (k - 1 == 0) {
+	    /* Node 0 has no M/D state: the only valid entry into M1 is B->M1.
+	     * Without this, a trace that reaches M1 with every predecessor at
+	     * -inf (e.g. the first row after an unbanded gap) took argmax's
+	     * index 0 (M), stepped to k = 0 and read tsc[] at k-1 = -1, out of
+	     * bounds. Same guard as p7b_oa_trace() (brief 26_0821-144). */
+	    scur = p7T_B;
+	  } else {
+	    float path[4];
+	    int   state[4] = { p7T_M, p7T_I, p7T_D, p7T_B };
+	    path[0] = TSCDELTA(p7P_MM, k-1) * GXB_M(gx, i-1, k-1);
+	    path[1] = TSCDELTA(p7P_IM, k-1) * GXB_I(gx, i-1, k-1);
+	    path[2] = TSCDELTA(p7P_DM, k-1) * GXB_D(gx, i-1, k-1);
+	    path[3] = TSCDELTA(p7P_BM, k-1) * GXB_XMX(gx, i-1, p7G_B);
+	    scur = state[esl_vec_FArgMax(path, 4)];
+	  }
 	  k--; i--;
 	}
 	break;
@@ -13881,8 +13890,8 @@ utest_genome_scale(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, int M, int W, int
  * only).  Requires Forward and Backward totals to agree (double engine 0
  * and the float originals), no dead rows, no non-finite cells, consistent
  * F/B, identical Forward scores and posteriors across the three engines,
- * identical OA scores and traces from engines 1 and 2 (see the note at the
- * OA check), and that the regime is real: the N posterior dominates the
+ * identical OA scores and traces from all three engines (see the note at
+ * the OA check), and that the regime is real: the N posterior dominates the
  * first band row.  Before brief 26_0821-141's commit 9, Backward charged
  * only C's loops across a gap and never entered the model from a gap row,
  * so the totals disagreed and this test failed. */
@@ -13899,8 +13908,10 @@ utest_gap_band(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, int M, int LG)
   P7_GMXB    *pp0  = NULL, *pp1 = NULL, *fx = NULL, *bx = NULL;
   P7_TRACE   *tr1  = p7_trace_CreateWithPP();
   P7_TRACE   *tr2  = p7_trace_CreateWithPP();
+  P7_TRACE   *tr0  = p7_trace_CreateWithPP();
+  P7_GMXB    *gx0  = NULL;
   CM_P7_DECSTATS st[3];
-  float       f0, b0, f1, f2, oa1, oa2, ff, fb;
+  float       f0, b0, f1, f2, oa0, oa1, oa2, ff, fb;
   int64_t     c;
   int         i, k, L, e;
 
@@ -13946,19 +13957,27 @@ utest_gap_band(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, int M, int LG)
     for (k = 0; k < P7B_PP_NSCELLS; k++)
       if (pp0->dp[c * p7G_NSCELLS + k] != pp1->dp[c * P7B_PP_NSCELLS + k])
         esl_fatal("utest_gap_band: engine 0/1 posteriors differ at cell %ld", (long) c);
-  /* OA: engines 1 and 2 only.  Engine 0's OA traceback is the float
-   * cm_p7_GOATraceBanded(), which on a band with unbanded gap rows traces
-   * N-state residues as M states with negative k and reads out of bounds
-   * (valgrind) -- a separate, pre-existing defect (brief 26_0821-141 open
-   * item) -- so engine 0 is not run through OA here; its Forward/Backward
-   * and posteriors are compared. */
+  /* OA: all three engines must agree. Before brief 26_0821-144, engine 0's
+   * traceback (cm_p7_GOATraceBanded) lacked p7b_oa_trace()'s "M1 is entered
+   * only from B" guard; on this band it stepped to k = 0 and read tsc[] out
+   * of bounds (valgrind: ~7,200 errors in 20 contexts). Run this test under
+   * valgrind to check that. NOTE: on a gapped band every engine's OA fill
+   * resets N/J/C to -inf at a gap, so the OA score here is -inf and the trace
+   * does not follow the posterior; this test checks agreement and memory
+   * safety, not OA quality across gaps. */
   if (trace_differs(tr1, tr2)) esl_fatal("utest_gap_band: engine 1/2 OA traces differ");
+  gx0 = p7_gmxb_Create(bnd);
+  if (cm_p7_GOptimalAccuracyBanded(gm, pp0, gx0, &oa0) != eslOK) esl_fatal("utest_gap_band: engine 0 OA failed");
+  if (cm_p7_GOATraceBanded(gm, pp0, gx0, tr0) != eslOK)       esl_fatal("utest_gap_band: engine 0 trace failed");
+  if (oa0 != oa1)                                              esl_fatal("utest_gap_band: engine 0/1 OA scores differ: %.4f %.4f", oa0, oa1);
+  if (trace_differs(tr0, tr1))                                 esl_fatal("utest_gap_band: engine 0/1 OA traces differ");
   /* the regime is real: the first band row is 5' flank (N), reached only through the leading gap */
   if (pp0->xmx[p7G_N] < 0.5) esl_fatal("utest_gap_band: N posterior at the first band row only %g", pp0->xmx[p7G_N]);
 
   free(dsq);
   p7_gmxb_Destroy(pp0); p7_gmxb_Destroy(pp1); p7_gmxb_Destroy(fx); p7_gmxb_Destroy(bx);
   p7_trace_Destroy(tr1); p7_trace_Destroy(tr2);
+  p7_gmxb_Destroy(gx0); p7_trace_Destroy(tr0);
   esl_sq_Destroy(core); p7_gbands_Destroy(bnd); p7_profile_Destroy(gm); p7_bg_Destroy(bg); p7_hmm_Destroy(hmm);
 }
 
