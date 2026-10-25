@@ -7517,8 +7517,10 @@ P7BandsAdjustForSubCM(int *kmin, int *kmax, int L, int spos, int epos)
  * Returns:  <eslOK> on success, <ret_bnd> points to new P7_GBANDS.
  *           <eslEMEM> on allocation failure.
  *           
- * Note:     Creates multiple segments for sparse alignments. Gaps between
- *           segments are handled by special state transitions (N/J/C).
+ * Note:     Always makes one segment covering rows 1..L. (An older note
+ *           here said it made multiple segments for sparse alignments; it
+ *           does not, and the banded OA fills cannot handle unbanded rows:
+ *           see p7b_oa_band_check(), brief 26_0821-144.)
  */
 int
 cm_p7_kbands2gbands(int *i2k, int *kmin, int *kmax, int L, int M, P7_GBANDS **ret_bnd)
@@ -8118,6 +8120,23 @@ cm_p7_GDecodingBanded(const P7_PROFILE *gm, const P7_GMXB *fwd, P7_GMXB *bck,
 }
 
 
+/* p7b_oa_band_check(): the banded OA fills require a band with no unbanded
+ * rows: one segment covering rows 1..L. At a gap they reset N/J/C to -inf
+ * (they do not carry them across the gap the way Forward and Backward do),
+ * so every row after a gap is unreachable, the OA score is -inf and the
+ * traceback does not follow the posterior (brief 26_0821-144). cmalign's and
+ * cmsearch's band builders never make such bands, so reject one rather than
+ * align it silently wrong. <L> is the sequence length.
+ * Returns eslOK, or throws eslEINVAL. */
+static int
+p7b_oa_band_check(const P7_GBANDS *bnd, int L)
+{
+  if (bnd->nseg != 1 || bnd->imem[0] != 1 || bnd->imem[1] != L)
+    ESL_EXCEPTION(eslEINVAL, "HMM-only optimal accuracy alignment needs a band covering every residue 1..%d without gaps; this band has %d segment(s) spanning rows %d..%d",
+                  L, bnd->nseg, bnd->nseg >= 1 ? bnd->imem[0] : 0, bnd->nseg >= 1 ? bnd->imem[2*bnd->nseg-1] : 0);
+  return eslOK;
+}
+
 /* Function: p7_GOptimalAccuracyBanded()
  * Date:     EPN*, Wed Mar 18 2026
  *
@@ -8162,6 +8181,8 @@ cm_p7_GOptimalAccuracyBanded(const P7_PROFILE *gm, const P7_GMXB *pp,
   int          M = gm->M;
   float        esc = p7_profile_IsLocal(gm) ? 1.0f : 0.0f;
   float        t1, t2;
+
+  if (p7b_oa_band_check(gx->bnd, gx->bnd->L) != eslOK) return eslEINVAL;   /* brief 26_0821-144 */
 
   xN      = 0.0f;
   xJ      = -eslINFINITY;
@@ -10574,6 +10595,8 @@ cm_p7_GCheckptOA_Banded(const P7_PROFILE *gm, P7_GMXB *pp, P7_TRACE *tr, float *
   float       oasc = 0.;
   int         b;
 
+  if (p7b_oa_band_check(pp->bnd, pp->bnd->L) != eslOK) return eslEINVAL;   /* brief 26_0821-144 */
+
   g = p7b_geo_Create(pp->bnd, gm->M, pp->bnd->L);
   if (g == NULL) { status = eslEMEM; goto ERROR; }
 
@@ -10650,6 +10673,8 @@ cm_p7_GCheckptFBDecodeOA_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm,
   double      fwdsc = 0.;
   float       oasc  = 0.;
   int         b;
+
+  if (p7b_oa_band_check(bnd, L) != eslOK) return eslEINVAL;   /* brief 26_0821-144 */
 
   g = p7b_geo_Create(bnd, gm->M, L);
   if (g == NULL) { status = eslEMEM; goto ERROR; }
@@ -13906,9 +13931,9 @@ utest_genome_scale(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, int M, int W, int
  * second segment.  <LG> is the length of the leading gap (0: interior gap
  * only).  Requires Forward and Backward totals to agree (double engine 0
  * and the float originals), no dead rows, no non-finite cells, consistent
- * F/B, identical Forward scores and posteriors across the three engines,
- * identical OA scores and traces from all three engines (see the note at
- * the OA check), and that the regime is real: the N posterior dominates the
+ * F/B, identical Forward scores and posteriors from engines 0 and 1, that
+ * all three engines' OA refuse the gapped band (see the note at the OA
+ * check), and that the regime is real: the N posterior dominates the
  * first band row.  Before brief 26_0821-141's commit 9, Backward charged
  * only C's loops across a gap and never entered the model from a gap row,
  * so the totals disagreed and this test failed. */
@@ -13951,8 +13976,6 @@ utest_gap_band(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, int M, int LG)
   if (cm_p7_GFBDecodeBandedDouble(dsq, L, gm, pp0, &f0, &b0, &st[0]) != eslOK) esl_fatal("utest_gap_band: engine 0 failed");
   pp1 = p7b_pp_Create(bnd);
   if (cm_p7_GCheckptFBDecode_Banded(dsq, L, gm, pp1, &f1, &st[1]) != eslOK) esl_fatal("utest_gap_band: engine 1 failed");
-  if (cm_p7_GCheckptOA_Banded(gm, pp1, tr1, &oa1) != eslOK)       esl_fatal("utest_gap_band: engine 1 OA failed");
-  if (cm_p7_GCheckptFBDecodeOA_Banded(dsq, L, gm, bnd, tr2, &f2, &oa2, &st[2]) != eslOK) esl_fatal("utest_gap_band: engine 2 failed");
 
   /* the float originals (cmsearch --msvband/--vitband) must agree with themselves too */
   fx = p7_gmxb_Create(bnd); bx = p7_gmxb_Create(bnd);
@@ -13962,32 +13985,30 @@ utest_gap_band(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, int M, int LG)
   if (! isfinite(f0))          esl_fatal("utest_gap_band: no parse (Forward %g)", f0);
   if (fabs(f0 - b0) > 1e-3)    esl_fatal("utest_gap_band: double Forward %.4f != Backward %.4f", f0, b0);
   if (fabs(ff - fb) > 1e-2)    esl_fatal("utest_gap_band: float Forward %.4f != Backward %.4f", ff, fb);
-  for (e = 0; e < 3; e++) {
+  for (e = 0; e < 2; e++) {
     if (st[e].nrow != bnd->nrow) esl_fatal("utest_gap_band: engine %d decoded %ld rows, expected %d", e, (long) st[e].nrow, bnd->nrow);
     if (st[e].ndead != 0)        esl_fatal("utest_gap_band: engine %d has %ld dead rows", e, (long) st[e].ndead);
     if (st[e].nnonfinite != 0)   esl_fatal("utest_gap_band: engine %d has %ld non-finite cells", e, (long) st[e].nnonfinite);
     if (st[e].fb_incons > 1e-3)  esl_fatal("utest_gap_band: engine %d F/B inconsistent by %g nats", e, st[e].fb_incons);
   }
-  if (f0 != f1 || f0 != f2)     esl_fatal("utest_gap_band: engine Forward scores differ: %.4f %.4f %.4f", f0, f1, f2);
-  if (oa1 != oa2)               esl_fatal("utest_gap_band: engine 1/2 OA scores differ: %.4f %.4f", oa1, oa2);
+  if (f0 != f1)                 esl_fatal("utest_gap_band: engine 0/1 Forward scores differ: %.4f %.4f", f0, f1);
   for (c = 0; c < bnd->ncell; c++)
     for (k = 0; k < P7B_PP_NSCELLS; k++)
       if (pp0->dp[c * p7G_NSCELLS + k] != pp1->dp[c * P7B_PP_NSCELLS + k])
         esl_fatal("utest_gap_band: engine 0/1 posteriors differ at cell %ld", (long) c);
-  /* OA: all three engines must agree. Before brief 26_0821-144, engine 0's
-   * traceback (cm_p7_GOATraceBanded) lacked p7b_oa_trace()'s "M1 is entered
-   * only from B" guard; on this band it stepped to k = 0 and read tsc[] out
-   * of bounds (valgrind: ~7,200 errors in 20 contexts). Run this test under
-   * valgrind to check that. NOTE: on a gapped band every engine's OA fill
-   * resets N/J/C to -inf at a gap, so the OA score here is -inf and the trace
-   * does not follow the posterior; this test checks agreement and memory
-   * safety, not OA quality across gaps. */
-  if (trace_differs(tr1, tr2)) esl_fatal("utest_gap_band: engine 1/2 OA traces differ");
+  /* OA: every engine must refuse a band with unbanded rows (brief
+   * 26_0821-144). Their OA fills reset N/J/C to -inf at a gap, so the OA
+   * score would be -inf and the trace would not follow the posterior;
+   * p7b_oa_band_check() throws eslEINVAL instead. (Before that, engine 0's
+   * traceback also read tsc[] out of bounds on this band; the "M1 is
+   * entered only from B" guard in cm_p7_GOATraceBanded stays as defense.) */
+  esl_exception_SetHandler(&esl_nonfatal_handler);
   gx0 = p7_gmxb_Create(bnd);
-  if (cm_p7_GOptimalAccuracyBanded(gm, pp0, gx0, &oa0) != eslOK) esl_fatal("utest_gap_band: engine 0 OA failed");
-  if (cm_p7_GOATraceBanded(gm, pp0, gx0, tr0) != eslOK)       esl_fatal("utest_gap_band: engine 0 trace failed");
-  if (oa0 != oa1)                                              esl_fatal("utest_gap_band: engine 0/1 OA scores differ: %.4f %.4f", oa0, oa1);
-  if (trace_differs(tr0, tr1))                                 esl_fatal("utest_gap_band: engine 0/1 OA traces differ");
+  if (cm_p7_GOptimalAccuracyBanded(gm, pp0, gx0, &oa0) != eslEINVAL)  esl_fatal("utest_gap_band: engine 0 OA accepted a gapped band");
+  if (cm_p7_GCheckptOA_Banded(gm, pp1, tr1, &oa1) != eslEINVAL)       esl_fatal("utest_gap_band: engine 1 OA accepted a gapped band");
+  if (cm_p7_GCheckptFBDecodeOA_Banded(dsq, L, gm, bnd, tr2, &f2, &oa2, &st[2]) != eslEINVAL)
+                                                                       esl_fatal("utest_gap_band: engine 2 accepted a gapped band");
+  esl_exception_ResetDefaultHandler();
   /* the regime is real: the first band row is 5' flank (N), reached only through the leading gap */
   if (pp0->xmx[p7G_N] < 0.5) esl_fatal("utest_gap_band: N posterior at the first band row only %g", pp0->xmx[p7G_N]);
 
