@@ -312,6 +312,17 @@ if test "$enable_fortify" != "no"; then
   CFLAGS="${CFLAGS} -D_FORTIFY_SOURCE=$enable_fortify"
 fi
 
+# HMMER limits profile HMM length to p7_MAXM consensus positions (100000
+# by default, set in hmmer/src/p7_config.h.in under #ifndef).  Every CM
+# carries p7 HMMs as long as the CM's consensus length, and genome-scale
+# CMs exceed 100000, so raise the limit for the whole build (Easel, HMMER
+# and Infernal must all see the same value).  A p7_MAXM already given in
+# CPPFLAGS by the user is left alone.  (brief 26_0821-147)
+case "$CPPFLAGS" in
+  *-Dp7_MAXM=*) ;;
+  *) CPPFLAGS="${CPPFLAGS:+$CPPFLAGS }-Dp7_MAXM=1000000" ;;
+esac
+
 
 # Turn on a sanitizer, if asked.
 #
