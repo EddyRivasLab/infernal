@@ -80,7 +80,7 @@ gc_has("$tmppfx.pk.sto", "bp_cov",  qr/[0-9*]/, "subtest 1: bp_cov covariation d
 # values differ (covariation != conservation) -- a value spot-check:
 assert_same_pair_cols("$tmppfx.pk.sto", "bp_cons", "bp_cov", "subtest 1");
 gc_lines_differ("$tmppfx.pk.sto", "bp_cons", "bp_cov", "subtest 1: bp_cov differs from bp_cons");
-# WRITE-THEN-RE-READ gate (standard Easel reader, via esl-reformat):
+# WRITE-THEN-RE-READ gate (standard Easel reader, via `easel reformat`):
 reread_ok("$tmppfx.pk.sto", "$tmppfx.pk.rr", "subtest 1 (pknot, all three flags)");
 
 ######################################################################
@@ -360,7 +360,7 @@ sub gc_lines_differ {
     $a ne $b or die "FAIL: $where: #=GC $tag1 and $tag2 are byte-identical (expected to differ)\n";
 }
 
-# Write-then-re-read gate: the standard Easel Stockholm reader (via esl-reformat)
+# Write-then-re-read gate: the standard Easel Stockholm reader (via `easel reformat`)
 # must parse the annotated alignment cleanly.
 sub reread_ok {
     my ($file, $out, $where) = @_;
