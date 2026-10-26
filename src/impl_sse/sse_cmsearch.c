@@ -13,7 +13,7 @@
 #include "esl_gumbel.h"
 #include "esl_random.h"
 #include "esl_randomseq.h"
-#include "esl_sqio.h"
+#include "esl_sqfile.h"
 #include "esl_stats.h"
 #include "esl_stopwatch.h"
 #include "esl_vectorops.h"
@@ -312,7 +312,7 @@ main(int argc, char **argv)
   s3_cutoff = f_cutoff;
 
   seq = esl_sq_Create();
-  while ( esl_sqio_Read(sqfp, seq) == eslOK)
+  while ( esl_sqfile_Read(sqfp, seq) == eslOK)
   {
     is_reversed = 0;
     if (seq->n == 0) continue;

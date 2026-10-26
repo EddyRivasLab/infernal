@@ -105,12 +105,14 @@ foreach $line (@sse_hit_lines) {
 
 #printf("retrieving\n");
 # Retrieve sequences
-$sfetch = $opt_R?$opt_R:'esl-sfetch';
+$easel  = $opt_R ? $opt_R : 'easel';
+$sfetch = "$easel sfetch";
+$sindex = "$easel sindex";
 $fa2 = $logfile;
 $fa2 =~ s/2\.log/hits/;
 if (-e $fa2) { system("rm $fa2"); }
 unless (-e "$fafile\.ssi") {
-   system("$sfetch --index $fafile");
+   system("$sindex $fafile");
 }
 for $href (@hit) {
    #@args = ($sfetch, "-c",$href->{start},'\.\.',$href->{stop},$href->{orient}?"-r":"",$fafile,$href->{seq});
@@ -139,7 +141,7 @@ sub main::HELP_MESSAGE {
    print "\t\tRecommended if the seqfile contains only part of the database to be searched\n";
    print "\t-P <n>\tSpecify path <n> for cmsearch\n";
    print "\t-Q <n>\tSpecify path <n> for sse_cmsearch\n";
-   print "\t-R <n>\tSpecify path <n> for esl-sfetch (included with Infernal under easel/mini-apps)\n";
+   print "\t-R <n>\tSpecify path <n> for easel (included with Infernal under easel/miniapps)\n";
 }
 # Version message
 sub main::VERSION_MESSAGE {

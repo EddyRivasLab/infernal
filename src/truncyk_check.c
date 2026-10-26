@@ -10,7 +10,7 @@
 
 #include "easel.h"
 #include "esl_alphabet.h"
-#include "esl_sqio.h"
+#include "esl_sqfile.h"
 #include "esl_msa.h"
 #include "esl_stopwatch.h"
 #include "esl_getopts.h"
@@ -127,7 +127,7 @@ main(int argc, char **argv)
     cm->el_selfsc = (IMPOSSIBLE / (cm->W+1));
 
   seq = esl_sq_Create();
-  while ( esl_sqio_Read(sqfp, seq) == eslOK )
+  while ( esl_sqfile_Read(sqfp, seq) == eslOK )
     {
       /* CYKDemands(cm, sqinfo.len);  */
 

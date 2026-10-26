@@ -749,7 +749,6 @@ AC_CONFIG_FILES([ \
   easel/Makefile               \
   easel/miniapps/Makefile      \
   easel/testsuite/Makefile     \
-  easel/documentation/Makefile \
   ])
 
 # Substitutions in HMMER Userguide .tex files
@@ -784,40 +783,6 @@ AC_CONFIG_FILES([ \
   hmmer/documentation/man/nhmmscan.man    \
   hmmer/documentation/man/phmmer.man      \
   ])
-
-# Substitutions in Easel man pages:
-# EASEL_VERSION, EASEL_DATE, EASEL_COPYRIGHT, EASEL_LICENSE, EASEL_URL
-AC_CONFIG_FILES([ \
-  easel/miniapps/easel.man             \
-  easel/miniapps/easel-afetch.man      \
-  easel/miniapps/easel-afetchn.man     \
-  easel/miniapps/easel-aindex.man      \
-  easel/miniapps/easel-alimanip.man    \
-  easel/miniapps/easel-alimap.man      \
-  easel/miniapps/easel-alipid.man      \
-  easel/miniapps/easel-alirev.man      \
-  easel/miniapps/easel-compalign.man   \
-  easel/miniapps/easel-compstruct.man  \
-  easel/miniapps/easel-construct.man   \
-  easel/miniapps/easel-downsample.man  \
-  easel/miniapps/easel-filter.man      \
-  easel/miniapps/easel-histplot.man    \
-  easel/miniapps/easel-kmer.man        \
-  easel/miniapps/easel-mask.man        \
-  easel/miniapps/easel-msashuf.man     \
-  easel/miniapps/easel-msastat.man     \
-  easel/miniapps/easel-reformat.man    \
-  easel/miniapps/easel-seqrange.man    \
-  easel/miniapps/easel-seqstat.man     \
-  easel/miniapps/easel-sfetch.man      \
-  easel/miniapps/easel-sfetchn.man     \
-  easel/miniapps/easel-shuffle.man     \
-  easel/miniapps/easel-sindex.man      \
-  easel/miniapps/easel-ssdraw.man      \
-  easel/miniapps/easel-synth.man       \
-  easel/miniapps/easel-translate.man   \
-  easel/miniapps/easel-weight.man  
-])
 
 AC_CONFIG_HEADERS([easel/decoy_config.h])   # Put this first to keep gnu 'autoheader' from overwriting a real config file.
 AC_CONFIG_HEADERS(src/config.h)

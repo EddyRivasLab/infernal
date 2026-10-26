@@ -13,7 +13,7 @@
 #include "config.h"
 
 #include "easel.h"
-#include "esl_sqio.h"
+#include "esl_sqfile.h"
 
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */

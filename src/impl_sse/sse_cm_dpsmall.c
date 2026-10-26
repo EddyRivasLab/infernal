@@ -5708,7 +5708,7 @@ fprintf(stderr,"WARNING! sse_debug_print_alpha has not been converted to SSE!\n"
 #include "esl_getopts.h"
 #include "esl_random.h"
 #include "esl_randomseq.h"
-#include "esl_sqio.h"
+#include "esl_sqfile.h"
 #include "esl_stopwatch.h"
 
 #include "funcs.h"

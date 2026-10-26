@@ -18,7 +18,7 @@
 #include "esl_histogram.h"
 #include "esl_random.h"
 #include "esl_randomseq.h"
-#include "esl_sqio.h"
+#include "esl_sqfile.h"
 #include "esl_stats.h"
 #include "esl_vectorops.h"
 #include "esl_wuss.h"

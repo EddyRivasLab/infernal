@@ -6,7 +6,7 @@
 #include "easel.h"
 #include "esl_alphabet.c"
 #include "esl_msa.h"
-#include "esl_sqio.h"
+#include "esl_sqfile.h"
 
 #include "hmmer.h"
 
@@ -74,7 +74,7 @@ main(int argc, char **argv)
    /*SetMarginalScores_reproduce_bug_i27(cm);*/
 
    seq = esl_sq_Create();
-   while ( esl_sqio_Read(sqfp, seq) == eslOK )
+   while ( esl_sqfile_Read(sqfp, seq) == eslOK )
    {
       if (seq->n == 0) continue;
 

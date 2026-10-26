@@ -92,13 +92,13 @@ within the output alignment of
 .PP
 It is possible to merge two or more alignments created by the
 same CM using the Easel miniapp 
-.B esl-alimerge
+.B easel alimerge
 (included in the easel/miniapps/ subdirectory of Infernal). Previous
 versions of 
 .B cmalign 
 included options to merge alignments but they were deprecated upon development
 of
-.B esl-alimerge, 
+.B easel alimerge, 
 which is significantly more memory efficient. 
 
 .PP

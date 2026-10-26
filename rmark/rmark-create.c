@@ -54,7 +54,7 @@
 #include "esl_random.h"
 #include "esl_randomseq.h"
 #include "esl_sq.h"
-#include "esl_sqio.h"
+#include "esl_sqfile.h"
 #include "esl_stack.h"
 #include "esl_vectorops.h"
 
@@ -431,7 +431,7 @@ main(int argc, char **argv)
              */
             esl_sq_FormatDesc(posseqs[npos], "%s/%d", msa->name, npos_this_msa+1);
             /* Write the sequence to the positives-only output file, and its info the positives-only table */
-            esl_sqio_Write(cfg.out_posfp, posseqs[npos], eslSQFILE_FASTA, FALSE);
+            esl_sqfile_Write(cfg.out_posfp, posseqs[npos], eslSQFILE_FASTA, FALSE);
 
             if(cfg.tfp != NULL) {
 
@@ -526,7 +526,7 @@ process_dbfile(struct cfg_s *cfg, char *dbfile, int dbfmt)
   nrequired = ((cfg->negL / cfg->negchunkL) + 1) * cfg->nneg;
 
   while ((nread < nrequired) && 
-	 ((status = esl_sqio_ReadInfo(cfg->dbfp, sq)) == eslOK)) {
+	 ((status = esl_sqfile_ReadInfo(cfg->dbfp, sq)) == eslOK)) {
     if(sq->L > cfg->negchunkL) nread++;
     esl_sq_Reuse(sq);
   }
@@ -539,7 +539,7 @@ process_dbfile(struct cfg_s *cfg, char *dbfile, int dbfmt)
   /* Open SSI index */
   if (esl_sqfile_OpenSSI(cfg->dbfp, NULL) != eslOK) esl_fatal("Failed to open SSI index file");
   /* set number of seqs in db; trust the index */
-  cfg->db_nseq = cfg->dbfp->data.ascii.ssi->nprimary;
+  cfg->db_nseq = cfg->dbfp->ssi->nprimary;
 
   esl_sq_Destroy(sq);
   return eslOK;
@@ -1377,9 +1377,9 @@ synthesize_negatives_and_embed_positives(ESL_GETOPTS *go, struct cfg_s *cfg, ESL
     if(bmk_p != (bmksq->n + 1)) esl_fatal("Error creating output sequence, output length incorrect"); 
 
     /* output the sequence */
-    esl_sqio_Write(cfg->out_bmkfp, bmksq, eslSQFILE_FASTA, FALSE);
+    esl_sqfile_Write(cfg->out_bmkfp, bmksq, eslSQFILE_FASTA, FALSE);
     esl_sq_Reuse(bmksq);
-    if(cfg->nseqfp != NULL) esl_sqio_Write(cfg->nseqfp, negsq, eslSQFILE_FASTA, FALSE);
+    if(cfg->nseqfp != NULL) esl_sqfile_Write(cfg->nseqfp, negsq, eslSQFILE_FASTA, FALSE);
     esl_sq_Reuse(negsq);
   }
 
@@ -1455,17 +1455,17 @@ set_random_segment(ESL_GETOPTS *go, struct cfg_s *cfg, FILE *logfp, ESL_DSQ *dsq
 	 * get its length. This is much slower, but it works.
 	 * 
 	 * Code block that *should* work: 
-	 * if (esl_ssi_FindNumber(cfg->dbfp->data.ascii.ssi, esl_rnd_Roll(cfg->r, cfg->db_nseq), NULL, NULL, NULL, &Lseq, &pkey) != eslOK)
+	 * if (esl_ssi_FindNumber(cfg->dbfp->ssi, esl_rnd_Roll(cfg->r, cfg->db_nseq), NULL, NULL, NULL, &Lseq, &pkey) != eslOK)
 	 * esl_fatal("failed to look up a random seq");
 	 */
 	/* pick a random sequence and get its pkey */
-	if (esl_ssi_FindNumber(cfg->dbfp->data.ascii.ssi, esl_rnd_Roll(cfg->r, cfg->db_nseq), NULL, NULL, NULL, NULL, &pkey) != eslOK)
+	if (esl_ssi_FindNumber(cfg->dbfp->ssi, esl_rnd_Roll(cfg->r, cfg->db_nseq), NULL, NULL, NULL, NULL, &pkey) != eslOK)
 	  esl_fatal("failed to look up a random seq");
 	/* position the sequence file */
 	if(esl_sqfile_PositionByKey(cfg->dbfp, pkey) != eslOK) 
 	  esl_fatal("failed to reposition to a random seq");
 	/* read the random sequence to get its length */
-	if(esl_sqio_Read(cfg->dbfp, dbsq) != eslOK) 
+	if(esl_sqfile_Read(cfg->dbfp, dbsq) != eslOK) 
 	  esl_fatal("failed to read random seq");
 	Lseq = dbsq->L;
       } while (Lseq < L);
@@ -1480,7 +1480,7 @@ set_random_segment(ESL_GETOPTS *go, struct cfg_s *cfg, FILE *logfp, ESL_DSQ *dsq
        * <dbsq> which we only read b/c we need to be able to copy it
        * here. The following line *should* work (and remove the need for 
        * reading the full sequence into memory): 
-       * if ((status = esl_sqio_FetchSubseq(cfg->dbfp, pkey, start, end, sq)) != eslOK) esl_fatal("failed to fetch subseq, status: %d", status);
+       * if ((status = esl_sqfile_FetchSubseq(cfg->dbfp, pkey, start, end, sq)) != eslOK) esl_fatal("failed to fetch subseq, status: %d", status);
        */
       sq->dsq[0] = sq->dsq[L+1] = eslDSQ_SENTINEL;
       memcpy(sq->dsq+1, dbsq->dsq+start, sizeof(ESL_DSQ) * L);

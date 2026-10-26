@@ -95,7 +95,7 @@ sub cmsearch_msa_integrity_check
     `$builddir/easel/miniapps/easel sfetchn -C $fafile $tmppfx.gdf > $tmppfx.fa3`;
     if ($? != 0) { die "FAIL: easel sfetchn failed"; }
 
-    # Grep out name/desc lines because they'll differ: esl-sfetch adds descline.
+    # Grep out name/desc lines because they'll differ: easel sfetch adds descline.
     `$builddir/easel/miniapps/easel reformat -r -u fasta $tmppfx.sto | grep -v "^>" > $tmppfx.fa1 2>/dev/null`;
     if ($? != 0) { die "FAIL: first easel reformat failed"; }
     

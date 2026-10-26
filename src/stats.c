@@ -24,7 +24,7 @@
 #include "esl_histogram.h"
 #include "esl_random.h"
 #include "esl_sq.h"
-#include "esl_sqio.h"
+#include "esl_sqfile.h"
 #include "esl_ssi.h"
 #include "esl_vectorops.h"
 
@@ -178,7 +178,7 @@ int GetDBSize (ESL_SQFILE *sqfp, char *errbuf, long *ret_N, int *ret_nseq, int *
 
   sq = esl_sq_Create(); 
 
-  while ((status = esl_sqio_ReadInfo(sqfp, sq)) == eslOK) {
+  while ((status = esl_sqfile_ReadInfo(sqfp, sq)) == eslOK) {
     N += sq->L;
     namewidth = ESL_MAX(namewidth, strlen(sq->name));
     esl_sq_Reuse(sq); 
@@ -235,7 +235,7 @@ int GetDBInfo (const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, char *errbuf, long *re
   sq = esl_sq_CreateDigital(abc); 
   esl_sqfile_SetDigital(sqfp, abc);
   
-  while ((status = esl_sqio_Read(sqfp, sq)) == eslOK) { 
+  while ((status = esl_sqfile_Read(sqfp, sq)) == eslOK) { 
     nseq++;
     N += sq->n;
     /*printf("new N: %d\n", N);*/

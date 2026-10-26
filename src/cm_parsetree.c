@@ -29,7 +29,7 @@
 #include "esl_dsq.h"
 #include "esl_random.h"
 #include "esl_sq.h"
-#include "esl_sqio.h"
+#include "esl_sqfile.h"
 #include "esl_stack.h"
 #include "esl_vectorops.h"
 

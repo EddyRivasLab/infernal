@@ -63,7 +63,7 @@
 #include "esl_random.h"
 #include "esl_msa.h"
 #include "esl_sq.h"
-#include "esl_sqio.h"
+#include "esl_sqfile.h"
 
 #include "hmmer.h"
 #include "p7_gbands.h"
@@ -115,7 +115,7 @@
 /* length of a sequence 'chunk' that gets processed in cmsearch/cmscan
  * sequences larger than this get broken up into overlapping chunks of this size.
  */
-#define CM_MAX_RESIDUE_COUNT 100000 /* differs from HMMER's default which is MAX_RESIDUE_COUNT from esl_sqio_(ascii|ncbi).c */
+#define CM_MAX_RESIDUE_COUNT 100000 /* differs from HMMER's default which is eslSQFILE_BLOCK_MAXRES from esl_sqfile.h */
 
 /* P7 HMM E-value parameters, borrowed from HMMER, but with 2 new additions: CM_p7_GMU and CM_p7_GLAMBDA */
 #define CM_p7_NEVPARAM 8  /* number of statistical parameters stored in cm->p7_evparam */

@@ -21,7 +21,7 @@
 #include "esl_random.h"
 #include "esl_vectorops.h"
 #include "esl_stack.h"
-#include "esl_sqio.h"
+#include "esl_sqfile.h"
 
 #include "hmmer.h"
 

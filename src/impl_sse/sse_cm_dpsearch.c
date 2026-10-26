@@ -17,7 +17,7 @@
 #include <emmintrin.h>		/* SSE2 */
 
 #include "easel.h"
-#include "esl_sqio.h"
+#include "esl_sqfile.h"
 #include "esl_stack.h"
 #include "esl_vectorops.h"
 #include "esl_sse.h"
@@ -800,7 +800,7 @@ SSE_CYKScan(CM_t *cm, char *errbuf, CM_SCAN_MX *smx, ESL_DSQ *dsq, int i0, int j
 #include <esl_histogram.h>
 #include <esl_random.h>
 #include <esl_randomseq.h>
-#include <esl_sqio.h>
+#include <esl_sqfile.h>
 #include <esl_stats.h>
 #include <esl_stopwatch.h>
 #include <esl_vectorops.h>

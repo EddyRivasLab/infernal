@@ -27,7 +27,7 @@
 #include "esl_msaweight.h"
 #include "esl_random.h"		
 #include "esl_sq.h"		
-#include "esl_sqio.h"
+#include "esl_sqfile.h"
 #include "esl_stack.h"
 #include "esl_sse.h"
 #include "esl_stopwatch.h"
@@ -879,7 +879,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   /* Read the first block */
   sq_block = esl_sq_CreateDigitalBlock(CMALIGN_MAX_NSEQ, cfg->abc);
-  sstatus = esl_sqio_ReadBlock(cfg->sqfp, sq_block, -1, -1, /*max_init_window=*/FALSE, FALSE); /* FALSE says: read complete sequences */
+  sstatus = esl_sqfile_ReadBlock(cfg->sqfp, sq_block, -1, -1, /*max_init_window=*/FALSE, FALSE); /* FALSE says: read complete sequences */
   nxt_sq_block = sq_block; /* special case of first block read */
 
   while(sstatus == eslOK) { 
@@ -909,12 +909,12 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
      * fine for a while.
      */
     nxt_sq_block = esl_sq_CreateDigitalBlock(CMALIGN_MAX_NSEQ, cfg->abc);
-    sstatus = esl_sqio_ReadBlock(cfg->sqfp, nxt_sq_block, -1, -1, /*max_init_window=*/FALSE, FALSE); /* FALSE says: read complete sequences */
+    sstatus = esl_sqfile_ReadBlock(cfg->sqfp, nxt_sq_block, -1, -1, /*max_init_window=*/FALSE, FALSE); /* FALSE says: read complete sequences */
     if(sstatus == eslEOF) { 
       reached_eof = TRUE; /* nxt_sq_block will not have been filled */
       esl_sq_DestroyBlock(nxt_sq_block); 
     }
-    if((! reached_eof) && cfg->do_oneblock) esl_fatal("Error: the sequence file is too big (has > %d seqs or %d residues) for --ileaved or output\nformat other than Pfam. Use esl-reformat to reformat alignment later.", CMALIGN_MAX_NSEQ, CM_MAX_RESIDUE_COUNT);
+    if((! reached_eof) && cfg->do_oneblock) esl_fatal("Error: the sequence file is too big (has > %d seqs or %d residues) for --ileaved or output\nformat other than Pfam. Use `easel reformat` to reformat alignment later.", CMALIGN_MAX_NSEQ, CM_MAX_RESIDUE_COUNT);
 
     /* align the sequences in the block */
 #ifdef HMMER_THREADS
@@ -2989,7 +2989,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   }
 
   /* Our main loop will loop over reading a single large block
-   * (<sq_block>) of sequences, up to MAX_RESIDUE_COUNT
+   * (<sq_block>) of sequences, up to eslSQFILE_BLOCK_MAXRES
    * (1024*1024=1048576) residues, and up to CMALIGN_MAX_NSEQ
    * sequences (10,000), but potentially less if we reach the end of
    * the sequence file first.
@@ -2997,7 +2997,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
   /* Read the first block */
   sq_block = esl_sq_CreateDigitalBlock(CMALIGN_MAX_NSEQ, cfg->abc);
-  sstatus = esl_sqio_ReadBlock(cfg->sqfp, sq_block, -1, -1, /*max_init_window=*/FALSE, FALSE); /* FALSE says: read complete sequences */
+  sstatus = esl_sqfile_ReadBlock(cfg->sqfp, sq_block, -1, -1, /*max_init_window=*/FALSE, FALSE); /* FALSE says: read complete sequences */
   nxt_sq_block = sq_block; /* special case of first block read */
 
 #if DEBUGMPI
@@ -3026,12 +3026,12 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
      * fine for a while.
      */
     nxt_sq_block = esl_sq_CreateDigitalBlock(CMALIGN_MAX_NSEQ, cfg->abc);
-    sstatus = esl_sqio_ReadBlock(cfg->sqfp, nxt_sq_block, -1, -1, /*max_init_window=*/FALSE, FALSE); /* FALSE says: read complete sequences */
+    sstatus = esl_sqfile_ReadBlock(cfg->sqfp, nxt_sq_block, -1, -1, /*max_init_window=*/FALSE, FALSE); /* FALSE says: read complete sequences */
     if(sstatus == eslEOF) { 
       reached_eof = TRUE; /* nxt_sq_block will not have been filled */
       esl_sq_DestroyBlock(nxt_sq_block); 
     }
-    if((! reached_eof) && cfg->do_oneblock) esl_fatal("Error: the sequence file is too big (has > %d seqs or %d residues) for --ileaved or\noutput format other than Pfam. Use esl-reformat to reformat alignment later.", CMALIGN_MAX_NSEQ, MAX_RESIDUE_COUNT);
+    if((! reached_eof) && cfg->do_oneblock) esl_fatal("Error: the sequence file is too big (has > %d seqs or %d residues) for --ileaved or\noutput format other than Pfam. Use `easel reformat` to reformat alignment later.", CMALIGN_MAX_NSEQ, eslSQFILE_BLOCK_MAXRES);
 
     /* allocate an array for all CM_ALNDATA objects we'll receive from workers */
     nmap_cur = (nali == 0) ? nmap_data : 0;
@@ -3727,7 +3727,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
 
   /* If caller declared an input format, decode it */
   if (esl_opt_IsOn(go, "--informat")) {
-    infmt = esl_sqio_EncodeFormat(esl_opt_GetString(go, "--informat"));
+    infmt = esl_sqfile_EncodeFormat(esl_opt_GetString(go, "--informat"));
     if (infmt == eslSQFILE_UNKNOWN) {
       esl_fprintf(stderr, "\nERROR: %s is not a recognized input sequence file format\n\n", esl_opt_GetString(go, "--informat"));
       goto ERROR;
@@ -5035,7 +5035,7 @@ create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char
   return eslOK;
 
  ERROR: 
-  esl_fatal("Out of memory. Reformat to Pfam with esl-reformat and try esl-alimerge --savemem.");
+  esl_fatal("Out of memory. Reformat to Pfam with `easel reformat` and try `easel alimerge --small`.");
   return eslEMEM; /*NEVERREACHED*/
 }
 
