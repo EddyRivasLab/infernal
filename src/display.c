@@ -1003,6 +1003,7 @@ createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface)
       else if (cm->ndtype[nd] == BEGR_nd)
 	{
 	  parent = cm->ndidx[cm->plast[v]];
+	  y      = cm->nodemap[parent];
 	  left   = cm->ndidx[cm->cfirst[y]];
 	  outface[nd] = (outface[parent] == 0) ? 0 : outface[parent] + inface[left];
 	}
