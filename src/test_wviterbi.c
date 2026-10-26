@@ -34,7 +34,7 @@
 #include "esl_getopts.h"
 #include "esl_random.h"
 #include "esl_sq.h"
-#include "esl_sqio.h"
+#include "esl_sqfile.h"
 
 #include "hmmer.h"
 #include "infernal.h"
@@ -62,7 +62,7 @@ static char banner[] = "brief169 windowed-Viterbi band harness";
 int
 main(int argc, char **argv)
 {
-  ESL_GETOPTS  *go      = p7_CreateDefaultApp(options, 2, argc, argv, banner, usage);
+  ESL_GETOPTS  *go      = p7_CreateDefaultApp("test_wviterbi", options, 2, argc, argv, banner, usage);
   char         *cmfile  = esl_opt_GetArg(go, 1);
   char         *seqfile = esl_opt_GetArg(go, 2);
   char         *outdir  = esl_opt_IsOn(go, "-o") ? esl_opt_GetString(go, "-o") : NULL;
@@ -122,7 +122,7 @@ main(int argc, char **argv)
   printf("# %-26s %7s %6s %9s %9s %7s %7s\n",
          "seq", "L", "npins", "wv_ncells", "dlt_ncells", "wv_abw", "i2kdiff");
 
-  while ((status = esl_sqio_Read(sqfp, sq)) == eslOK) {
+  while ((status = esl_sqfile_Read(sqfp, sq)) == eslOK) {
     int   L = sq->n;
     int  *i2k=NULL,*kmin_d=NULL,*kmax_d=NULL,nc_d=0;
     int  *i2k_wv=NULL,*kmin=NULL,*kmax=NULL,nc=0;

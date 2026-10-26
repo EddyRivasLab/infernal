@@ -28,7 +28,7 @@
 #include "esl_alphabet.h"
 #include "esl_getopts.h"
 #include "esl_sq.h"
-#include "esl_sqio.h"
+#include "esl_sqfile.h"
 #include "esl_vectorops.h"
 
 #include "hmmer.h"
@@ -151,7 +151,7 @@ main(int argc, char **argv)
     cm_Fail("Failed to open sequence file %s\n", seqfile);
   
   sq = esl_sq_CreateDigital(abc);
-  status = esl_sqio_Read(sqfp, sq);
+  status = esl_sqfile_Read(sqfp, sq);
   if (status != eslOK) 
     cm_Fail("Failed to read sequence from %s\n", seqfile);
   

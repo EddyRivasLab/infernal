@@ -1337,7 +1337,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
   nseq = 0;
   while (1) {
     ESL_SQ *sq = esl_sq_CreateDigital(cfg->abc);
-    status = esl_sqio_Read(cfg->sqfp, sq);
+    status = esl_sqfile_Read(cfg->sqfp, sq);
     if (status == eslEOF) { esl_sq_Destroy(sq); break; }
     if (status != eslOK)  cm_Fail("Error reading sequence file %s: %s", cfg->sqfile, esl_sqfile_GetErrorBuf(cfg->sqfp));
     if (nseq >= nalloc) {
@@ -2861,7 +2861,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     ESL_ALLOC(sqarr, sizeof(ESL_SQ *) * nalloc);
     while (1) {
       ESL_SQ *sq_tmp = esl_sq_CreateDigital(cfg->abc);
-      status = esl_sqio_Read(cfg->sqfp, sq_tmp);
+      status = esl_sqfile_Read(cfg->sqfp, sq_tmp);
       if (status == eslEOF) { esl_sq_Destroy(sq_tmp); break; }
       if (status != eslOK)  mpi_failure("Error reading sequence file");
       if (nseq >= nalloc) { nalloc *= 2; ESL_REALLOC(sqarr, sizeof(ESL_SQ *) * nalloc); }

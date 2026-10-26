@@ -23,7 +23,7 @@
 #include "esl_alphabet.h"
 #include "esl_getopts.h"
 #include "esl_sq.h"
-#include "esl_sqio.h"
+#include "esl_sqfile.h"
 
 #include "hmmer.h"
 #include "infernal.h"
@@ -56,7 +56,7 @@ trace_to_resmap(const P7_TRACE *tr, int L, int *state, int *kof)
 int
 main(int argc, char **argv)
 {
-  ESL_GETOPTS  *go      = p7_CreateDefaultApp(options, 2, argc, argv, banner, usage);
+  ESL_GETOPTS  *go      = p7_CreateDefaultApp("test_pins2trace", options, 2, argc, argv, banner, usage);
   char         *cmfile  = esl_opt_GetArg(go, 1);
   char         *seqfile = esl_opt_GetArg(go, 2);
   int           p7mode  = esl_opt_GetBoolean(go, "-l") ? p7_UNILOCAL : p7_UNIGLOCAL;
@@ -114,7 +114,7 @@ main(int argc, char **argv)
 
   int tot_seq=0, tot_clean=0, tot_drift=0, tot_fail=0;
 
-  while ((status = esl_sqio_Read(sqfp, sq)) == eslOK) {
+  while ((status = esl_sqfile_Read(sqfp, sq)) == eslOK) {
     int   L = sq->n;
     float vsc;
     int  *i2k=NULL,*kmin=NULL,*kmax=NULL,ncells=0;
