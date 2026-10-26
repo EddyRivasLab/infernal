@@ -90,6 +90,7 @@
 1 exercise  bug/i64-el-dneg        !testsuite/bug-i64.pl! @src/cmbuild@ @src/cmalign@ !testsuite/bug-i64.sto!
 1 exercise  bug/i66-doctor-rprefix !testsuite/bug-i66.pl! @src/cmbuild@ !testsuite/bug-i66.sto!
 1 exercise  bug/degen-pair-struct  !testsuite/bug-degen-pair.pl! @src/cmbuild@ !testsuite/bug-degen-pair.sto!
+1 exercise  bug/sscons-ext-wuss    !testsuite/sscons-exterior-wuss.pl! @src/cmbuild@ @src/cmalign@ @src/cmemit@
 1 exercise  iss21-cmbuild-rf-pb   !testsuite/iss21-cmbuild-rf-msaweight-pb.py! @@ !! %OUTFILES%
 1 exercise  iss33-trunc-pipeline  !testsuite/iss33-trunc-pipeline.pl! @src/cmsearch@ !testsuite/iss33.cm! !testsuite/iss33.fa!
 1 exercise  iss34-bld-frg-slf-ins !testsuite/iss34-bld-frg-slf-ins.pl! @src/cmbuild@ !testsuite/iss34.sto!

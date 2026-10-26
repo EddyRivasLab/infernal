@@ -984,7 +984,10 @@ createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface)
   /* outface - the number of faces above us in the tree
    *           excluding our subtree. if 0, we're external.
    *           Like inface, outface is exclusive of current
-   *           pair.
+   *           pair. An external BIF (outface 0) has external
+   *           BEGL/BEGR children no matter how many stems the
+   *           sibling subtree holds, so single-stranded positions
+   *           between top-level stems are ':', not '-' or ','.
    */
   for (nd = 0; nd < cm->nodes; nd++)
     {
@@ -995,13 +998,13 @@ createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface)
 	  parent = cm->ndidx[cm->plast[v]];
 	  y      = cm->nodemap[parent];
 	  right  = cm->ndidx[cm->cnum[y]];
-	  outface[nd] = outface[parent] + inface[right];
+	  outface[nd] = (outface[parent] == 0) ? 0 : outface[parent] + inface[right];
 	}
       else if (cm->ndtype[nd] == BEGR_nd)
 	{
 	  parent = cm->ndidx[cm->plast[v]];
 	  left   = cm->ndidx[cm->cfirst[y]];
-	  outface[nd] = outface[parent] + inface[left];
+	  outface[nd] = (outface[parent] == 0) ? 0 : outface[parent] + inface[left];
 	}
       else 
 	{
