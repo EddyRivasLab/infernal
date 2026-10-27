@@ -124,6 +124,7 @@ cm_EntropyWeight(CM_t *cm, const Prior_t *pri, double etarget, double min_Neff, 
   struct ew_param_s p;
   double Neff;
   double fx;
+  double xl;                    /* left end of the bisection interval */
   double hmm_re;
   int v, i;
 
@@ -176,10 +177,25 @@ cm_EntropyWeight(CM_t *cm, const Prior_t *pri, double etarget, double min_Neff, 
     else                  { if ((status = cm_eweight_target_f(Neff, &p, &fx)) != eslOK)     goto ERROR; } 
     
     if (fx > 0.) { 
+      /* Bisect over [0, max_Neff], unless that interval does not
+       * bracket a root; then bisect over [min_Neff, max_Neff], which
+       * always does (f(min_Neff) < 0 < f(max_Neff) from the checks
+       * above). Relative entropy is not monotonic in Neff near 0:
+       * with the default Dirichlet mixture priors, the base pair
+       * relative entropy of the prior alone (Neff = 0) can exceed
+       * that at small Neff > 0. So a low target (e.g. --ere 0.38 on
+       * a model with many base pairs) can give f(0) >= 0 while
+       * f(min_Neff) < 0, and bisecting over [0, max_Neff] failed
+       * with "xl,xr do not bracket a root" (brief 26_0821-150).
+       */
+      if(pretend_cm_is_hmm) { if ((status = hmm_eweight_target_f(0., &p, &fx)) != eslOK)    goto ERROR; }
+      else                  { if ((status = cm_eweight_target_f(0., &p, &fx)) != eslOK)     goto ERROR; }
+      xl = (fx < 0.) ? 0. : min_Neff;
+
       if(pretend_cm_is_hmm) { if ((R = esl_rootfinder_Create(hmm_eweight_target_f, &p))    == NULL) {status = eslEMEM; goto ERROR;} }
       else                  { if ((R = esl_rootfinder_Create(cm_eweight_target_f, &p))     == NULL) {status = eslEMEM; goto ERROR;} }
       esl_rootfinder_SetAbsoluteTolerance(R, 0.01); /* getting Neff to ~2 sig digits is fine */
-      if ((status = esl_root_Bisection(R, 0., max_Neff, &Neff)) != eslOK) goto ERROR;
+      if ((status = esl_root_Bisection(R, xl, max_Neff, &Neff)) != eslOK) goto ERROR;
       
       esl_rootfinder_Destroy(R);
     }
