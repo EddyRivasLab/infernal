@@ -7560,6 +7560,21 @@ cm_p7_kbands2gbands(int *i2k, int *kmin, int *kmax, int L, int M, P7_GBANDS **re
   return status;
 }
 
+/* brief 26_0821-151: the double row kernels of the HMM-only engines,
+ * defined below, also run cmsearch's banded Forward/Backward. */
+static inline double p7b_dlogsum(double a, double b);
+static void p7b_fwd_row(const ESL_DSQ *dsq, const P7_PROFILE *gm, int M, double esc,
+                        int i, int kac, int kbc, const double *dpp, int kap, int kbp,
+                        double xB, double xN_in, double xJ_in, double xC_in, double *dpc,
+                        double *o_xE, double *o_xN, double *o_xJ, double *o_xB, double *o_xC);
+static void p7b_bwd_row(const ESL_DSQ *dsq, const P7_PROFILE *gm, int M, double esc,
+                        int i, int L, int kac, int kbc, const double *dpn, int kan, int kbn,
+                        double *xC_io, double *xJ_io, double *xN_io, double *xE_io, double *xB_io,
+                        double *dpc);
+static void p7b_bwd_cross_gap(const ESL_DSQ *dsq, const P7_PROFILE *gm, int M, int i_up, int G,
+                              const double *dpn, int kan, int kbn,
+                              double *xC, double *xJ, double *xN, double *xE);
+
 /* Function: my_p7_GForwardBanded()
  * Date:     EPN*, Sun Mar 16 2026
  * 
@@ -7578,112 +7593,66 @@ cm_p7_kbands2gbands(int *i2k, int *kmin, int *kmax, int L, int M, P7_GBANDS **re
 int
 cm_p7_GForwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, float *opt_sc)
 {
-  int         *bnd_ip = gxb->bnd->imem;          /* ptr to current ia, ib segment band in gxb->bnd */
-  int         *bnd_kp = gxb->bnd->kmem;		 /* ptr to current ka, kb row band in gxb->bnd     */
-  float       *dpc    = gxb->dp;	         /* ptr to current DP matrix cell */
-  float       *xpc    = gxb->xmx;		 /* ptr to current special cell   */
-  float const *tsc    = gm->tsc;		 /* sets up TSC() macro, access to profile's transitions */
-  float const *rsc;				 /* will be set up for MSC(), ISC() macros for residue scores */
-  float       *dpp;	                  	 /* ptr to previous DP matrix cell */
-  float       *last_dpc;			 /* used to reinitialize dpp after each row        */
-  int          ia, ib;				 /* current segment band is rows ia..ib            */
-  int          last_ib;				 /* intersegment interval is last_ib+1..ia-1       */
-  int          kac, kbc;			 /* current row band is kac..kbc                   */
-  int          kap, kbp;			 /* previous row band is kap..kbp                  */
-  int          kbc2;				 /* if kbc==M, kbc2=M-1, main loop goes kac..kbc2 and M is unrolled */
-  float        xE, xN, xJ, xB, xC;               /* tmp scores on special states. only stored when in row bands */
-  float        mvp, ivp, dvp;			 /* M,I,D cell values from previous row i-1     */
-  float        dc;				 /* precalculated D(i,k+1) value on current row */
-  float        sc;				 /* temporary score calculation M(i,k)          */
-  int          g, i, k;				 /* indices running over segments, residues (rows) x_i, model positions (cols) k  */
-  float        esc  = p7_profile_IsLocal(gm) ? 0 : -eslINFINITY;
-  
-  xN      = 0.0f;
-  xJ      = -eslINFINITY;
-  xC      = -eslINFINITY;
-  last_ib = 0;
+  /* brief 26_0821-151: the recursion runs in double, through the same row
+   * kernel as the double HMM-only engines (p7b_fwd_row()); <gxb> receives
+   * a float copy of each finished row.  Nothing read back into the
+   * recursion is float, so rounding no longer accumulates along the
+   * sequence (in float it drifted the score by ~2 bits at L ~ 19,000). */
+  P7_GBANDS *bnd    = gxb->bnd;
+  int        M      = gm->M;
+  double     esc    = p7_profile_IsLocal(gm) ? 0 : -eslINFINITY;
+  double    *buf[2] = { NULL, NULL };
+  double    *prv, *cur;
+  double     xE, xN, xJ, xB, xC;
+  float     *dpc    = gxb->dp;
+  float     *xpc    = gxb->xmx;
+  int       *bnd_ip = bnd->imem;
+  int       *bnd_kp = bnd->kmem;
+  int        maxnc  = 1;
+  int        g, i, r, c, ia, ib, kac, kbc, kap, kbp, nc;
+  int        last_ib = 0;
+  int        status;
 
+  for (r = 0; r < bnd->nrow; r++) maxnc = ESL_MAX(maxnc, bnd->kmem[2*r+1] - bnd->kmem[2*r] + 1);
+  ESL_ALLOC(buf[0], sizeof(double) * maxnc * p7G_NSCELLS);
+  ESL_ALLOC(buf[1], sizeof(double) * maxnc * p7G_NSCELLS);
 
-  for (g = 0; g < gxb->bnd->nseg; g++)
+  xN = 0.0;
+  xJ = -eslINFINITY;
+  xC = -eslINFINITY;
+  r  = 0;
+  for (g = 0; g < bnd->nseg; g++)
     {
       ia = *bnd_ip++;
       ib = *bnd_ip++;
 
-      /* kap,kbp initialization for i=ia:
-       *  left overhang dpp advance must always eval to 0, 
-       *  {m,i,d}vp initialization must always eval to -eslINFINITY.
-       */
-      kap = kbp = gm->M+1;   
-      dpp = dpc;		/* re-initialize dpp */
-      
-      /* re-initialization: specials for previous row ia-1 just outside banded segment.
-       * Guard n*xsc[LOOP] against n=0 with xsc[LOOP]=-inf: IEEE 754 gives 0*(-inf)=NaN.
-       * This occurs with truncated profiles (UNILOCAL/UNIGLOCAL) where LOOP = -inf.
-       */
-      xE  = -eslINFINITY;
+      /* specials for row ia-1, just outside the segment.  Guard n*xsc[LOOP]
+       * against n=0 with xsc[LOOP]=-inf (truncated profiles): 0*(-inf)=NaN. */
       { int gap = ia - last_ib - 1;
-        if (gap > 0) { xN = xN + gap * gm->xsc[p7P_N][p7P_LOOP];
-	               xJ = xJ + gap * gm->xsc[p7P_J][p7P_LOOP];
-	               xC = xC + gap * gm->xsc[p7P_C][p7P_LOOP]; } }
-      xB  = p7_FLogsum( xN + gm->xsc[p7P_N][p7P_MOVE], xJ + gm->xsc[p7P_J][p7P_MOVE]);
+        if (gap > 0) { xN += gap * gm->xsc[p7P_N][p7P_LOOP];
+                       xJ += gap * gm->xsc[p7P_J][p7P_LOOP];
+                       xC += gap * gm->xsc[p7P_C][p7P_LOOP]; } }
+      xB  = p7b_dlogsum(xN + gm->xsc[p7P_N][p7P_MOVE], xJ + gm->xsc[p7P_J][p7P_MOVE]);
+      prv = NULL;
+      kap = kbp = M+1;
 
-      for (i = ia; i <= ib; i++)
-	{
-	  rsc      = gm->rsc[dsq[i]];   /* sets up MSC(k), ISC(k) residue scores for this row i */
-	  dc       = -eslINFINITY;
-	  xE       = -eslINFINITY;
-	  last_dpc = dpc;
-
-	  kac      = *bnd_kp++;         /* current row's band is cells k=kac..kbc  */
-	  kbc      = *bnd_kp++;
-	  kbc2     = (kbc == gm->M ? kbc-1 : kbc); /* a "do_M" flag works too, but this way we avoid an if statement */
-
-	  /* DEBUG: check for dpc overflow before writing this row */
-
-	  /* dpp must advance by any left overhang of previous row; but no more than the entire row */
-	  dpp += (kac-1 > kap ? ESL_MIN(kac-kap-1, kbp-kap+1) * p7G_NSCELLS : 0);
-
-	  if (kac > kap && kac-1 <= kbp) { mvp = *dpp++;       ivp = *dpp++;       dvp = *dpp++;       }
-	  else                           { mvp = -eslINFINITY; ivp = -eslINFINITY; dvp = -eslINFINITY; }
-
-	  for (k = kac; k <= kbc2; k++)
-	    {
-	      *dpc++ = sc = MSC(k) + p7_FLogsum( p7_FLogsum(mvp + TSC(p7P_MM, k-1), ivp + TSC(p7P_IM, k-1)),
-						 p7_FLogsum(dvp + TSC(p7P_DM, k-1), xB  + TSC(p7P_BM, k-1)));
-
-
-	      if (k >= kap && k <= kbp) {  mvp = *dpp++;       ivp = *dpp++;        dvp = *dpp++;       } 	      // an if seems unavoidable. alternatively, might unroll
-	      else                      {  mvp = -eslINFINITY; ivp = -eslINFINITY;  dvp = -eslINFINITY; }	      // all possible (kap,kac)..(kbp,kbc) orderings, but this
-                                                                                                                      // seems too complex
-
-	      *dpc++ = ISC(k) + p7_FLogsum( mvp + TSC(p7P_MI, k), ivp + TSC(p7P_II, k));
-
-	      xE     = p7_FLogsum( p7_FLogsum(sc + esc, dc + esc), xE);/* Mk->E accumulation      */
-
-	      /* next D_k+1 */
-	      *dpc++ = dc;
-	      dc     = p7_FLogsum( sc + TSC(p7P_MD, k), dc + TSC(p7P_DD, k));	     
-	    }
-
-	  if (kbc2 < kbc) /* i.e., if kbc==M and we need to do the final M column: */
-	    {
-	      *dpc++ = sc = MSC(k) + p7_FLogsum( p7_FLogsum(mvp + TSC(p7P_MM, k-1), ivp + TSC(p7P_IM, k-1)),
-						 p7_FLogsum(dvp + TSC(p7P_DM, k-1), xB  + TSC(p7P_BM, k-1)));
-	      *dpc++ = -eslINFINITY; 
-	      *dpc++ = dc;           
-	      xE     = p7_FLogsum( p7_FLogsum(sc, dc), xE);
-	    }
-
-	  *xpc++ = xE;
-	  *xpc++ = xN = xN + gm->xsc[p7P_N][p7P_LOOP];
-	  *xpc++ = xJ = p7_FLogsum( xJ + gm->xsc[p7P_J][p7P_LOOP],  xE + gm->xsc[p7P_E][p7P_LOOP]);
-	  *xpc++ = xB = p7_FLogsum( xJ + gm->xsc[p7P_J][p7P_MOVE],  xN + gm->xsc[p7P_N][p7P_MOVE]);
-	  *xpc++ = xC = p7_FLogsum( xE + gm->xsc[p7P_E][p7P_MOVE],  xC + gm->xsc[p7P_C][p7P_LOOP]);
-
-	  dpp = last_dpc;	/* this skips any right overhang on the previous row, so dpp advances (if necessary) to start of curr row */
-	  kap = kac;
-	  kbp = kbc;
-	}
+      for (i = ia; i <= ib; i++, r++)
+        {
+          kac = *bnd_kp++;
+          kbc = *bnd_kp++;
+          nc  = kbc - kac + 1;
+          cur = buf[r & 1];
+          p7b_fwd_row(dsq, gm, M, esc, i, kac, kbc, prv, kap, kbp, xB, xN, xJ, xC, cur, &xE, &xN, &xJ, &xB, &xC);
+          for (c = 0; c < nc * p7G_NSCELLS; c++) *dpc++ = (float) cur[c];
+          *xpc++ = (float) xE;
+          *xpc++ = (float) xN;
+          *xpc++ = (float) xJ;
+          *xpc++ = (float) xB;
+          *xpc++ = (float) xC;
+          prv = cur;
+          kap = kac;
+          kbp = kbc;
+        }
       last_ib = ib;
     }
 
@@ -7691,8 +7660,14 @@ cm_p7_GForwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *g
    * Guard against 0*(-inf)=NaN when tail=0 and xsc[C][LOOP]=-inf (truncated profiles).
    */
   if (opt_sc != NULL) { int tail = L - last_ib;
-    *opt_sc = (tail > 0 ? xC + tail * gm->xsc[p7P_C][p7P_LOOP] : xC) + gm->xsc[p7P_C][p7P_MOVE]; }
+    *opt_sc = (float) ((tail > 0 ? xC + tail * gm->xsc[p7P_C][p7P_LOOP] : xC) + gm->xsc[p7P_C][p7P_MOVE]); }
+  free(buf[0]); free(buf[1]);
   return eslOK;
+
+ ERROR:
+  if (buf[0]) free(buf[0]);
+  if (buf[1]) free(buf[1]);
+  return status;
 }
 
 /* Function: p7_GBackwardBanded()
@@ -7728,252 +7703,84 @@ cm_p7_GForwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *g
 int
 cm_p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, float *opt_sc)
 {
-  int         *bnd_ip;                           /* ptr to segment band boundaries in gxb->bnd */
-  int         *bnd_kp;                           /* ptr to row band boundaries in gxb->bnd */
-  float       *dpc;                              /* ptr to current DP matrix cell */
-  float       *xpc;                              /* ptr to current special states */
-  float const *tsc    = gm->tsc;                 /* transition scores */
-  float const *rsc;                              /* residue scores for current row */
-  float       *dpn;                              /* ptr to next row DP matrix cell */
-  int          ia, ib;                           /* segment boundaries */
-  int          next_ia;                          /* next segment's ia (for handling gaps) */
-  int          kac, kbc;                         /* current row band: kac..kbc */
-  int          kan, kbn;                         /* next row band: kan..kbn */
-  int          kbc2;                             /* if kbc==M, kbc2=M-1 */
-  float        xE, xN, xJ, xB, xC;               /* special state scores */
-  float        mnext, inext, dnext;              /* M,I,D scores from next row */
-  float        dc;                               /* current D(i,k) being calculated backwards */
-  float        sc;                               /* temporary score for M(i,k) */
-  int          g, i, k;                          /* segment, row, node indices */
-  float        esc  = p7_profile_IsLocal(gm) ? 0 : -eslINFINITY;
+  /* brief 26_0821-151: double recursion through p7b_bwd_row() and
+   * p7b_bwd_cross_gap() (the double HMM-only engines' kernels), float
+   * copies into <gxb>; see cm_p7_GForwardBanded(). */
+  P7_GBANDS *bnd    = gxb->bnd;
+  int        M      = gm->M;
+  int        nrow   = bnd->nrow;
+  double     esc    = p7_profile_IsLocal(gm) ? 0 : -eslINFINITY;
+  double    *buf[2] = { NULL, NULL };
+  double    *nbr    = NULL, *cur;
+  double     xE, xN, xJ, xB, xC;
+  int       *irow   = NULL;
+  int64_t    off    = (int64_t) bnd->ncell * p7G_NSCELLS;   /* start of row r in gxb->dp, counted down */
+  int        maxnc  = 1;
+  int        g, i, r, c, ia, ib, kac, kbc, kan, kbn, nc;
+  int        status;
 
-  /* We'll traverse segments backwards, and reconstruct band pointers backwards.
-   * Position pointers at the END of the arrays, we'll decrement them.
-   */
-  bnd_ip = gxb->bnd->imem + (gxb->bnd->nseg * 2);
-  bnd_kp = gxb->bnd->kmem + (gxb->bnd->nrow * 2);
-  dpc    = gxb->dp  + (gxb->bnd->ncell * p7G_NSCELLS);
-  xpc    = gxb->xmx + (gxb->bnd->nrow  * p7G_NXCELLS);
-  
-  /* Initialize: handle anything after the last segment */
-  xC      = gm->xsc[p7P_C][p7P_MOVE];
-  xE      = xC + gm->xsc[p7P_E][p7P_MOVE];
-  xJ      = xB = xN = -eslINFINITY;
-  next_ia = L+1;
+  ESL_ALLOC(irow, sizeof(int) * (nrow + 1));
+  for (r = 0, g = 0; g < bnd->nseg; g++)
+    for (i = bnd->imem[2*g]; i <= bnd->imem[2*g+1]; i++) irow[r++] = i;
+  for (r = 0; r < nrow; r++) maxnc = ESL_MAX(maxnc, bnd->kmem[2*r+1] - bnd->kmem[2*r] + 1);
+  ESL_ALLOC(buf[0], sizeof(double) * maxnc * p7G_NSCELLS);
+  ESL_ALLOC(buf[1], sizeof(double) * maxnc * p7G_NSCELLS);
 
-  /* Main recursion: work backwards through segments */
-  for (g = gxb->bnd->nseg-1; g >= 0; g--)
+  xC  = gm->xsc[p7P_C][p7P_MOVE];
+  xE  = xC + gm->xsc[p7P_E][p7P_MOVE];
+  xJ  = xB = xN = -eslINFINITY;
+  kan = kbn = M+1;
+  for (r = nrow - 1; r >= 0; r--)
     {
-      ib = *(--bnd_ip);
-      ia = *(--bnd_ip);
-
-      /* Initialize special states for rows beyond this segment (next_ia-1...ib+1) */
-      if (next_ia > ib+1 && next_ia <= L) {
-        /* brief 26_0821-141: an interior gap of G rows below the segment
-         * starting at next_ia (whose first row is dpn, band kan..kbn).  Row
-         * next_ia-1 can enter that segment through B; all gap rows loop in
-         * N, J or C.  This used to charge C's loops only, losing the N and J
-         * paths that Forward counts.  Same arithmetic as p7b_bwd_cross_gap(). */
-        int   G  = next_ia - ib - 1;
-        float xBg = -eslINFINITY;
-        rsc = gm->rsc[dsq[next_ia]];
-        for (k = ESL_MAX(1, kan); k <= ESL_MIN(gm->M, kbn); k++)
-          xBg = p7_FLogsum(xBg, dpn[(k - kan) * p7G_NSCELLS] + TSC(p7P_BM, k-1) + MSC(k));
-        xJ = p7_FLogsum(xJ + gm->xsc[p7P_J][p7P_LOOP], xBg + gm->xsc[p7P_J][p7P_MOVE]);
-        xC = xC + gm->xsc[p7P_C][p7P_LOOP];
-        xN = p7_FLogsum(xN + gm->xsc[p7P_N][p7P_LOOP], xBg + gm->xsc[p7P_N][p7P_MOVE]);
-        if (G > 1) {
-          xJ += (G - 1) * gm->xsc[p7P_J][p7P_LOOP];
-          xC += (G - 1) * gm->xsc[p7P_C][p7P_LOOP];
-          xN += (G - 1) * gm->xsc[p7P_N][p7P_LOOP];
-        }
-        xE = p7_FLogsum(xJ + gm->xsc[p7P_E][p7P_LOOP], xC + gm->xsc[p7P_E][p7P_MOVE]);
+      i   = irow[r];
+      kac = bnd->kmem[2*r];
+      kbc = bnd->kmem[2*r+1];
+      nc  = kbc - kac + 1;
+      if (r == nrow - 1 || irow[r+1] > i + 1) {   /* last row of a segment */
+        if (r < nrow - 1)    /* interior gap below the next segment (brief 26_0821-141) */
+          p7b_bwd_cross_gap(dsq, gm, M, irow[r+1], irow[r+1] - i - 1, nbr, kan, kbn, &xC, &xJ, &xN, &xE);
+        else if (L - i > 0) { xC += (L - i) * gm->xsc[p7P_C][p7P_LOOP];   /* trailing rows: C only */
+                              xE  = p7b_dlogsum(xE, xC + gm->xsc[p7P_E][p7P_MOVE]); }
+        nbr = NULL; kan = kbn = M+1;
       }
-      else if (next_ia > ib+1) {
-        /* trailing rows ib+1..L after the last segment: only C can emit them */
-        xC = xC + (next_ia - ib - 1) * gm->xsc[p7P_C][p7P_LOOP];
-        xE = p7_FLogsum(xE, xC + gm->xsc[p7P_E][p7P_MOVE]);
-      }
-
-      /* Initialize next row bands for i=ib+1 (or end of sequence) */
-      kan = kbn = gm->M+1;
-      dpn = dpc;
-
-      /* Work backwards through rows in this segment */
-      for (i = ib; i >= ia; i--)
-        {
-          rsc      = (i < L) ? gm->rsc[dsq[i+1]] : NULL;
-
-          /* Get current row's band */
-          kbc      = *(--bnd_kp);
-          kac      = *(--bnd_kp);
-          kbc2     = (kbc == gm->M ? kbc-1 : kbc);
-
-          /* ROW L SPECIAL CASE: Initialize row L separately
-           * Following unbanded p7_GBackward() pattern where row L is
-           * initialized completely before main recursion.
-           */
-          if (i == L) {
-            /* Special states for row L */
-            *(--xpc) = xC;                       /* C */
-            *(--xpc) = xB = -eslINFINITY;        /* B */
-            *(--xpc) = xJ = -eslINFINITY;        /* J */
-            *(--xpc) = xN = -eslINFINITY;        /* N */
-            *(--xpc) = xE;                       /* E */
-
-
-            /* Initialize M_M, I_M, D_M */
-            if (kbc == gm->M) {
-              *(--dpc) = xE;              /* D_M <- E */
-              *(--dpc) = -eslINFINITY;    /* I_M (doesn't exist) */
-              *(--dpc) = xE;              /* M_M <- E */
-            }
-
-            /* Backwards sweep through k from M-1 (or kbc2) down to kac
-             * Row L formula: MMX(L,k) = p7_FLogsum(xE + esc, DMX(L,k+1) + TSC(p7P_MD,k))
-             *                DMX(L,k) = p7_FLogsum(xE + esc, DMX(L,k+1) + TSC(p7P_DD,k))
-             *                IMX(L,k) = -eslINFINITY
-             */
-            dc = (kbc == gm->M) ? xE : -eslINFINITY;  /* dc starts as D(L,kbc2+1) */
-            for (k = kbc2; k >= kac; k--) {
-              /* Calculate D(L,k) using D(L,k+1) which is in dc */
-              float dk = p7_FLogsum(xE + esc, dc + TSC(p7P_DD, k));
-              float mk = p7_FLogsum(xE + esc, dc + TSC(p7P_MD, k));
-              
-              *(--dpc) = dk;                                          /* Store D(L,k) */
-              *(--dpc) = -eslINFINITY;                                /* Store I(L,k) = -inf */
-              *(--dpc) = mk;                                          /* Store M(L,k) using D(L,k+1) */
-              
-              
-              dc = dk;  /* D(L,k) becomes D(L,k+1) for next iteration */
-            }
-          
-          /* Debug output for complete row L */
-
-            dpn = dpc;  /* dpn now points to start of row L for row L-1 to read from */
-            kan = kac;
-            kbn = kbc;
-            continue;  /* Skip normal row processing */
-          }
-
-          /* NORMAL ROW (i < L): Calculate special states that depend on next row i+1 */
-          
-          xB = -eslINFINITY;
-          for (k = ESL_MAX(1,kan); k <= ESL_MIN(gm->M, kbn); k++) {
-            if (k >= kan && k <= kbn) {
-              int offset = (k - kan) * p7G_NSCELLS;
-              float m_next = dpn[offset];  /* M(i+1,k) */
-              float contrib = m_next + TSC(p7P_BM, k-1) + (rsc ? MSC(k) : 0);
-              xB = p7_FLogsum(xB, contrib);
-            }
-          }
-          
-          
-          xJ = p7_FLogsum(xJ + gm->xsc[p7P_J][p7P_LOOP], xB + gm->xsc[p7P_J][p7P_MOVE]);
-          xC = xC + gm->xsc[p7P_C][p7P_LOOP];
-          xE = p7_FLogsum(xJ + gm->xsc[p7P_E][p7P_LOOP], xC + gm->xsc[p7P_E][p7P_MOVE]);
-          xN = p7_FLogsum(xN + gm->xsc[p7P_N][p7P_LOOP], xB + gm->xsc[p7P_N][p7P_MOVE]);
-
-          /* Store special states */
-          *(--xpc) = xC;
-          *(--xpc) = xB;
-          *(--xpc) = xJ;
-          *(--xpc) = xN;
-          *(--xpc) = xE;
-
-          /* Handle M_M state: M_M gets E state */
-          if (kbc == gm->M) {
-            *(--dpc) = xE;              /* D_M */
-            *(--dpc) = -eslINFINITY;    /* I_M (doesn't exist) */
-            *(--dpc) = xE;              /* M_M */
-          }
-
-          /* Main recursion: work backwards through k = kbc2...kac */
-          /* Initialize dc to D(i,M): if kbc == M, then D(i,M) = xE; otherwise -inf */
-          dc = (kbc == gm->M) ? xE : -eslINFINITY;
-          for (k = kbc2; k >= kac; k--)
-            {
-              /* Get scores from next row i+1.
-               * mnext (M(i+1,k+1)) and dnext (D(i+1,k+1)) require k+1 in the next
-               * row's band; inext (I(i+1,k)) requires k in the next row's band.
-               * These two conditions are INDEPENDENT: on a vertical insert run the
-               * band can hold k but not k+1, so inext must be tested separately or
-               * the insert chain is silently broken (loses all mass through it).
-               */
-              if (k+1 >= kan && k+1 <= kbn) {
-                int offset = (k+1 - kan) * p7G_NSCELLS;
-                mnext = dpn[offset]   + (rsc ? MSC(k+1) : 0);
-                dnext = dpn[offset+2];
-              } else {
-                mnext = dnext = -eslINFINITY;
-              }
-              if (k >= kan && k <= kbn) {
-                int curr_offset = (k - kan) * p7G_NSCELLS;
-                inext = dpn[curr_offset+1] + (rsc ? ISC(k) : 0);
-              } else {
-                inext = -eslINFINITY;
-              }
-
-
-              /* D(i,k) - compute BEFORE storing 
-               * D(i,k) = logsum(M(i+1,k+1) + TSC(DM,k) + MSC(k+1),
-               *                 D(i,k+1) + TSC(DD,k),
-               *                 xE + esc)
-               * Note: D(i,k+1) is in dc from previous iteration!
-               */
-              float dk = p7_FLogsum(p7_FLogsum(mnext + TSC(p7P_DM, k), dc + TSC(p7P_DD, k)),
-                                    xE + esc);
-              
-
-              *(--dpc) = dk;   /* Store D(i,k) */
-
-              /* I(i,k) */
-              *(--dpc) = p7_FLogsum(mnext + TSC(p7P_IM, k), inext + TSC(p7P_II, k));
-
-              /* M(i,k) - uses dc which is D(i,k+1) from previous iteration */
-              float mk = p7_FLogsum(p7_FLogsum(mnext + TSC(p7P_MM, k), inext + TSC(p7P_MI, k)),
-                                        p7_FLogsum(xE + esc, dc + TSC(p7P_MD, k)));
-              *(--dpc) = sc = mk;
-
-              /* Update dc for next iteration */
-              dc = dk;
-              
-            }
-          
-          /* Debug output for complete rows L and L-1 */
-
-          dpn = dpc;  /* dpn now points to start of row i we just wrote, for next iteration's i-1 to read from */
-          kan = kac;
-          kbn = kbc;
-        }
-      next_ia = ia;
+      cur = buf[r & 1];
+      p7b_bwd_row(dsq, gm, M, esc, i, L, kac, kbc, nbr, kan, kbn, &xC, &xJ, &xN, &xE, &xB, cur);
+      off -= (int64_t) nc * p7G_NSCELLS;
+      for (c = 0; c < nc * p7G_NSCELLS; c++) gxb->dp[off + c] = (float) cur[c];
+      gxb->xmx[(int64_t) r * p7G_NXCELLS + p7G_E] = (float) xE;
+      gxb->xmx[(int64_t) r * p7G_NXCELLS + p7G_N] = (float) xN;
+      gxb->xmx[(int64_t) r * p7G_NXCELLS + p7G_J] = (float) xJ;
+      gxb->xmx[(int64_t) r * p7G_NXCELLS + p7G_B] = (float) xB;
+      gxb->xmx[(int64_t) r * p7G_NXCELLS + p7G_C] = (float) xC;
+      nbr = cur; kan = kac; kbn = kbc;
     }
 
-  /* Handle row i=0: At i=0, only N,B are reachable 
-   * Following unbanded p7_GBackward() pattern */
+  /* Row 0: N(i0-1) = logsum(N(i0) + N_LOOP, B(i0-1) + N_MOVE), B(i0-1)
+   * summed over the first band row's M cells, then N loops down to row 0.
+   * Same as cm_p7_GFBDecodeBandedDouble(). */
   if (opt_sc != NULL) {
-    float xB_0, xN_0;
+    float const *tsc = gm->tsc;
     float const *rsc;
-    
-    /* N(0): N(next_ia-1) = logsum(N(next_ia) + N_LOOP, B(next_ia-1) + N_MOVE),
-     * B(next_ia-1) summed over the first band row's M cells, then N loops
-     * down to row 0.  (brief 26_0821-141: B used to be counted only when the
-     * band starts at row 1, which dropped every parse that stays in N through
-     * a leading unbanded stretch.) */
-    xB_0 = -eslINFINITY;
-    if (next_ia <= L) {
-      int *kp = gxb->bnd->kmem;   /* first band row's band */
-      rsc = gm->rsc[dsq[next_ia]];
-      for (int k = ESL_MAX(1, kp[0]); k <= ESL_MIN(gm->M, kp[1]); k++)
-        xB_0 = p7_FLogsum(xB_0, gxb->dp[(k - kp[0]) * p7G_NSCELLS + p7G_M] + TSC(p7P_BM, k-1) + MSC(k));
+    int          i0  = (nrow > 0) ? irow[0] : L+1;
+    double       xB0 = -eslINFINITY, sc;
+    int          k;
+    if (i0 <= L) {
+      rsc = gm->rsc[dsq[i0]];
+      for (k = ESL_MAX(1, bnd->kmem[0]); k <= ESL_MIN(M, bnd->kmem[1]); k++)
+        xB0 = p7b_dlogsum(xB0, nbr[(k - bnd->kmem[0]) * p7G_NSCELLS + p7G_M] + TSC(p7P_BM, k-1) + MSC(k));
     }
-    xN_0 = p7_FLogsum(xN + gm->xsc[p7P_N][p7P_LOOP], xB_0 + gm->xsc[p7P_N][p7P_MOVE]);
-    if (next_ia > 1) xN_0 += (next_ia - 1) * gm->xsc[p7P_N][p7P_LOOP];
-
-    *opt_sc = xN_0;
+    sc = p7b_dlogsum(xN + gm->xsc[p7P_N][p7P_LOOP], xB0 + gm->xsc[p7P_N][p7P_MOVE]);
+    if (i0 > 1) sc += (i0 - 1) * gm->xsc[p7P_N][p7P_LOOP];
+    *opt_sc = (float) sc;
   }
-
+  free(buf[0]); free(buf[1]); free(irow);
   return eslOK;
+
+ ERROR:
+  if (buf[0]) free(buf[0]);
+  if (buf[1]) free(buf[1]);
+  if (irow)   free(irow);
+  return status;
 }
 
 
@@ -9976,9 +9783,10 @@ cm_p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm,
  *           Replaces the float
  *               my_p7_GForwardBanded + p7_GBackwardBanded + p7_GDecodingBanded
  *           sequence for cmalign's HMM-only alignment, which collapses at
- *           genome scale (see the p7b_dlogsum() comment above).  Those float
- *           functions are left as they are: cmsearch's --msvband/--vitband
- *           paths still use them.
+ *           genome scale (see the p7b_dlogsum() comment above).  Those
+ *           functions still serve cmsearch's --msvband/--vitband paths; since
+ *           brief 26_0821-151 their recursion is double too (through the same
+ *           row kernels), with float output matrices.
  *
  *           Full double F and B matrices are materialized -- that is what
  *           distinguishes this engine from the checkpointed ones -- and
@@ -13846,9 +13654,9 @@ check_decstats(const char *engine, const CM_P7_DECSTATS *st, int L)
   if (st->fb_incons > 1e-3) esl_fatal("utest_genome_scale: %s F/B inconsistent by %g nats", engine, st->fb_incons);
 }
 
-/* float_fb_incons(): the positive control for utest_genome_scale().  Runs
- * the FLOAT banded Forward/Backward that cmalign's HMM-only path used
- * before brief 26_0821-141 (still used by cmsearch --msvband/--vitband)
+/* float_fb_incons(): runs the float-output banded Forward/Backward that
+ * cmalign's HMM-only path used before brief 26_0821-141 (still used by
+ * cmsearch --msvband/--vitband; double recursion since brief 26_0821-151)
  * and returns the same F/B-inconsistency measure as CM_P7_DECSTATS's
  * fb_incons: how far any row's max of F+B minus the Forward total falls
  * outside [-log(nstates), 0]. */
@@ -13899,10 +13707,11 @@ float_fb_incons(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GBANDS *bnd)
  * mode configures it (local, 5'/3' truncation).  Runs all three HMM-OA
  * engines and requires: no dead rows, no non-finite cells, F and B
  * consistent along every row, matching Forward and Backward totals, and
- * identical posteriors, scores and OA traces across the engines.  As a
- * positive control, the float kernels must FAIL the consistency check on
- * the same input; if they stop failing it, the input no longer reaches
- * the regime this test is for.
+ * identical posteriors, scores and OA traces across the engines.  The
+ * float-output kernels cm_p7_GForwardBanded()/cm_p7_GBackwardBanded()
+ * must pass the same consistency check (to 0.05 nats).  While they ran
+ * their recursion in float they failed it by ~40 nats on this input,
+ * which is the evidence the input reaches the regime this test is for.
  *
  * <pA> is each node's A emission probability; <do_fb_control> selects the
  * case.  TRUE: the F/B case above (pA 0.85, ungapped, diagonal band).
@@ -13982,9 +13791,12 @@ utest_genome_scale(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, int M, int W, dou
   /* the test only means something at genome-scale magnitudes ... */
   if (do_fb_control  && fabs(f0)  < 65536.) esl_fatal("utest_genome_scale: |Forward| = %g nats < 2^16; raise -M", fabs(f0));
   if (!do_fb_control && fabs(oa0) < 4096.)  esl_fatal("utest_genome_scale: OA score %g < 2^12; raise -M", fabs(oa0));
-  /* ... where the float kernels demonstrably fail (positive control) */
-  if (do_fb_control && (fincons = float_fb_incons(sq->dsq, L, gm, bnd)) < 1.0)
-    esl_fatal("utest_genome_scale: control failed: float F/B inconsistency only %g nats; raise -M", fincons);
+  /* ... where the float-output kernels (cmsearch's banded F/B) must stay
+   * consistent too.  Before brief 26_0821-151 they also ran the recursion
+   * in float and failed this by ~40 nats on this input; now only the
+   * stored values are rounded, which costs ~0.003 nats. */
+  if (do_fb_control && (fincons = float_fb_incons(sq->dsq, L, gm, bnd)) > 0.05)
+    esl_fatal("utest_genome_scale: float-output F/B inconsistent by %g nats", fincons);
   /* OA positive control (brief 26_0821-151): with fractional posteriors,
    * the OA sums ~L in float lose bits a double keeps.  Summing the traced
    * path's own posteriors in float and in double must disagree, or the
