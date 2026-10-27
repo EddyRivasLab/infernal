@@ -3091,6 +3091,16 @@ typedef struct cm_p7_decstats_s {
                         * F/B disagreement on such rows                       */
 } CM_P7_DECSTATS;
 
+/* CM_P7_GMXBD (brief 26_0821-151): a banded p7 DP matrix in double
+ * precision, laid out exactly like HMMER's float P7_GMXB (dp: ncell *
+ * p7G_NSCELLS, xmx: nrow * p7G_NXCELLS). Holds the non-checkpointed
+ * engine's optimal accuracy matrix, whose values grow to ~L. */
+typedef struct cm_p7_gmxbd_s {
+  double    *dp;
+  double    *xmx;
+  P7_GBANDS *bnd;   /* reference copy; caller frees the band */
+} CM_P7_GMXBD;
+
 /* from cm_alndata.c */
 CM_ALNDATA * cm_alndata_Create(void);
 void         cm_alndata_Destroy(CM_ALNDATA *data, int free_sq);
@@ -3619,8 +3629,10 @@ extern int          cm_p7_kbands2gbands(int *i2k, int *kmin, int *kmax, int L, i
 extern int          cm_p7_GForwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, float *opt_sc);
 extern int          cm_p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, float *opt_sc);
 extern int          cm_p7_GDecodingBanded(const P7_PROFILE *gm, const P7_GMXB *fwd, P7_GMXB *bck, P7_GMXB *pp, float overall_sc);
-extern int          cm_p7_GOptimalAccuracyBanded(const P7_PROFILE *gm, const P7_GMXB *pp, P7_GMXB *gx, float *ret_e);
-extern int          cm_p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx, P7_TRACE *tr);
+extern int          cm_p7_GOptimalAccuracyBanded(const P7_PROFILE *gm, const P7_GMXB *pp, CM_P7_GMXBD *gx, float *ret_e);
+extern int          cm_p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const CM_P7_GMXBD *gx, P7_TRACE *tr);
+extern CM_P7_GMXBD *cm_p7_gmxbd_Create(P7_GBANDS *bnd);                                                                       /* brief 26_0821-151 */
+extern void         cm_p7_gmxbd_Destroy(CM_P7_GMXBD *gxd);                                                                     /* brief 26_0821-151 */
 extern int          cm_p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *pp, float *ret_fwdsc, CM_P7_DECSTATS *opt_st); /* brief 26_0526-016 */
 extern int          cm_p7_GCheckptOA_Banded(const P7_PROFILE *gm, P7_GMXB *pp, P7_TRACE *tr, float *ret_oasc);                    /* brief 26_0526-016 */
 extern int          cm_p7_GFBDecodeBandedDouble(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *pp, float *ret_fwdsc, float *opt_bwdsc, CM_P7_DECSTATS *opt_st); /* brief 26_0821-141 */

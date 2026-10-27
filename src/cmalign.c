@@ -1533,7 +1533,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	  int      ckpt_mode = P7B_OAMEM_CKPTPP;  /* brief 26_0628-081: engine picked by the preflight below */
 	  CM_P7_DECSTATS decst;                    /* brief 26_0821-141: decode counts for --devdiag */
 	  P7_GBANDS *bnd = NULL;
-	  P7_GMXB *bxf   = NULL;
+	  CM_P7_GMXBD *bxf = NULL;   /* double OA matrix (brief 26_0821-151) */
 	  P7_GMXB *bxb   = NULL;
 	  P7_TRACE *vtr  = NULL;
 	  float    bwdsc = 0.;                                                    /* brief 26_0430-135b: capture backward total */
@@ -1871,7 +1871,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	  if (getenv("P135B_FB_INSTRUMENT") != NULL)
 	    fprintf(stderr, "#P135B_FBTOTAL seq=%s M=%d L=%d delta=%d widen=%d ncells=%d fwd=%.6f bwd=%.6f gap=%.6f\n",
 		    sq->name, hmm->M, (int) sq->n, p7ibv_delta, do_widen, ncells, fwdsc, bwdsc, fwdsc - bwdsc);
-	  bxf = p7_gmxb_Create(bnd);
+	  bxf = cm_p7_gmxbd_Create(bnd);
 	  if ((status = p7_GOptimalAccuracyBanded(gm, bxb, bxf, &oasc)) != eslOK)
 	    cm_Fail("p7_GOptimalAccuracyBanded() failed for sequence %s", sq->name);
 
@@ -1894,7 +1894,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 				 band_is_ibv, band_src, &noparse_retried,
 				 &i2k, &kmin, &kmax, &ncells);
 	    p7_gbands_Destroy(bnd); bnd = NULL;
-	    if (bxf) { p7_gmxb_Destroy(bxf); bxf = NULL; }
+	    if (bxf) { cm_p7_gmxbd_Destroy(bxf); bxf = NULL; }
 	    if (bxb) { p7_gmxb_Destroy(bxb); bxb = NULL; }
 	    goto HMM_NOPARSE_RETRY;
 	  }
@@ -1929,7 +1929,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	  free(kmax);
 	  if (vtr) p7_trace_Destroy(vtr);
 	  p7_gbands_Destroy(bnd);
-	  if (bxf) p7_gmxb_Destroy(bxf);
+	  if (bxf) cm_p7_gmxbd_Destroy(bxf);
 	  p7_gmxb_Destroy(bxb);
 	}
 	hmm_set_stats(hstA + (size_t) idx * HMMST_N, hmm_score_bits(hst_raw, do_trunc, bg, sq->dsq, sq->n),
@@ -2407,7 +2407,7 @@ hmm_pipeline_thread(void *arg)
       int      ckpt_mode = P7B_OAMEM_CKPTPP;  /* brief 26_0628-081: engine picked by the preflight below */
       CM_P7_DECSTATS decst;                    /* brief 26_0821-141: decode counts for --devdiag */
       P7_GBANDS *bnd = NULL;
-      P7_GMXB *bxf   = NULL;
+      CM_P7_GMXBD *bxf = NULL;   /* double OA matrix (brief 26_0821-151) */
       P7_GMXB *bxb   = NULL;
       P7_TRACE *vtr  = NULL;
       float    bwdsc = 0.;                                                    /* brief 26_0430-135b: capture backward total */
@@ -2593,7 +2593,7 @@ hmm_pipeline_thread(void *arg)
       if (getenv("P135B_FB_INSTRUMENT") != NULL)
 	fprintf(stderr, "#P135B_FBTOTAL seq=%s M=%d L=%d delta=%d widen=%d ncells=%d fwd=%.6f bwd=%.6f gap=%.6f\n",
 		sq->name, info->hmm->M, (int) sq->n, p7ibv_delta, do_widen, ncells, fwdsc, bwdsc, fwdsc - bwdsc);
-      bxf = p7_gmxb_Create(bnd);
+      bxf = cm_p7_gmxbd_Create(bnd);
       if ((status = p7_GOptimalAccuracyBanded(info->gm, bxb, bxf, &oasc)) != eslOK)
 	cm_Fail("p7_GOptimalAccuracyBanded() failed for sequence %s", sq->name);
 
@@ -2610,7 +2610,7 @@ hmm_pipeline_thread(void *arg)
 			     band_is_ibv, band_src, &noparse_retried,
 			     &i2k, &kmin, &kmax, &ncells);
 	p7_gbands_Destroy(bnd); bnd = NULL;
-	if (bxf) { p7_gmxb_Destroy(bxf); bxf = NULL; }
+	if (bxf) { cm_p7_gmxbd_Destroy(bxf); bxf = NULL; }
 	if (bxb) { p7_gmxb_Destroy(bxb); bxb = NULL; }
 	goto HMM_NOPARSE_RETRY;
       }
@@ -2625,7 +2625,7 @@ hmm_pipeline_thread(void *arg)
       free(kmax);
       if (vtr) p7_trace_Destroy(vtr);
       p7_gbands_Destroy(bnd);
-      if (bxf) p7_gmxb_Destroy(bxf);
+      if (bxf) cm_p7_gmxbd_Destroy(bxf);
       p7_gmxb_Destroy(bxb);
     }
 
@@ -3324,7 +3324,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	int      ckpt_mode_w = P7B_OAMEM_CKPTPP;  /* brief 26_0628-083: engine picked by the preflight below */
 	CM_P7_DECSTATS decst_w;                  /* brief 26_0821-141: decode failure counts */
 	P7_GBANDS *bnd_w = NULL;
-	P7_GMXB *bxf_w  = NULL;
+	CM_P7_GMXBD *bxf_w = NULL;
 	P7_GMXB *bxb_w  = NULL;
 	P7_TRACE *vtr_w = NULL;
 	int       tpos_w;
@@ -3469,7 +3469,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  bxb_w = p7_gmxb_Create(bnd_w);
 	  if (cm_p7_GFBDecodeBandedDouble(dsq, L, gm_w, bxb_w, &fwdsc_w, NULL, &decst_w) != eslOK)
 	    mpi_failure("cm_p7_GFBDecodeBandedDouble() failed");
-	  bxf_w = p7_gmxb_Create(bnd_w);
+	  bxf_w = cm_p7_gmxbd_Create(bnd_w);
 	  p7_GOptimalAccuracyBanded(gm_w, bxb_w, bxf_w, &oasc_w);
 	  p7_GOATraceBanded(gm_w, bxb_w, bxf_w, wtr);
 	}
@@ -3484,7 +3484,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	free(kmax_w);
 	p7_trace_Destroy(vtr_w);
 	p7_gbands_Destroy(bnd_w);
-	p7_gmxb_Destroy(bxf_w);
+	cm_p7_gmxbd_Destroy(bxf_w);
 	p7_gmxb_Destroy(bxb_w);
       }
 

@@ -8137,6 +8137,49 @@ p7b_oa_band_check(const P7_GBANDS *bnd, int L)
   return eslOK;
 }
 
+/* Function: cm_p7_gmxbd_Create()
+ * Incept:   EPN, Tue Oct 27 2026 (w/Claude)  [brief 26_0821-151]
+ *
+ * Purpose:  Allocate a double-precision banded DP matrix for band <bnd>:
+ *           the same layout as p7_gmxb_Create()'s float P7_GMXB.
+ *           Used for the optimal accuracy matrix of
+ *           p7_GOptimalAccuracyBanded()/p7_GOATraceBanded().
+ *
+ * Returns:  the new matrix, or NULL on allocation failure.
+ */
+CM_P7_GMXBD *
+cm_p7_gmxbd_Create(P7_GBANDS *bnd)
+{
+  CM_P7_GMXBD *gxd = NULL;
+  int          status;
+
+  ESL_ALLOC(gxd, sizeof(CM_P7_GMXBD));
+  gxd->dp  = NULL;
+  gxd->xmx = NULL;
+  gxd->bnd = bnd;
+  ESL_ALLOC(gxd->dp,  sizeof(double) * ((int64_t) bnd->ncell * p7G_NSCELLS + 1));
+  ESL_ALLOC(gxd->xmx, sizeof(double) * ((int64_t) bnd->nrow  * p7G_NXCELLS + 1));
+  return gxd;
+
+ ERROR:
+  cm_p7_gmxbd_Destroy(gxd);
+  return NULL;
+}
+
+/* Function: cm_p7_gmxbd_Destroy()
+ * Incept:   EPN, Tue Oct 27 2026 (w/Claude)  [brief 26_0821-151]
+ *
+ * Purpose:  Free a matrix from cm_p7_gmxbd_Create(). The band is not freed.
+ */
+void
+cm_p7_gmxbd_Destroy(CM_P7_GMXBD *gxd)
+{
+  if (gxd == NULL) return;
+  if (gxd->dp)  free(gxd->dp);
+  if (gxd->xmx) free(gxd->xmx);
+  free(gxd);
+}
+
 /* Function: p7_GOptimalAccuracyBanded()
  * Date:     EPN*, Wed Mar 18 2026
  *
@@ -8144,43 +8187,52 @@ p7b_oa_band_check(const P7_GBANDS *bnd, int L)
  *           Forward, but uses ESL_MAX instead of p7_FLogsum, and adds
  *           posterior probability as an accuracy reward for emitting states.
  *
+ *           Brief 26_0821-151: the OA values (sums of posteriors along a
+ *           path, up to ~L) are double, storage included, as in the
+ *           checkpointed engines' p7b_oa_row() (brief 26_0821-144). In
+ *           float, at genome scale the rounding tipped near-ties, so this
+ *           engine's alignments differed from the checkpointed engines'.
+ *           With double, all three engines are byte-identical again. The
+ *           posteriors themselves stay float.
+ *
  * Args:     gm    - profile
  *           pp    - banded posterior matrix (from p7_GDecodingBanded)
- *           gx    - RESULT: banded OA DP matrix (may share banding with pp)
+ *           gx    - RESULT: banded double OA DP matrix, cm_p7_gmxbd_Create()
+ *                   on the same band as pp
  *           ret_e - RETURN: OA score (expected # correct residues)
  *
  * Returns:  eslOK on success.
  */
 int
 cm_p7_GOptimalAccuracyBanded(const P7_PROFILE *gm, const P7_GMXB *pp,
-			  P7_GMXB *gx, float *ret_e)
+			  CM_P7_GMXBD *gx, float *ret_e)
 {
   /* TSCDELTA: 1.0 if transition is possible, FLT_MIN if not */
 #define TSCDELTA(s,k) ( (tsc[(k) * p7P_NTRANS + (s)] == -eslINFINITY) ? FLT_MIN : 1.0)
 
   int         *bnd_ip  = gx->bnd->imem;
   int         *bnd_kp  = gx->bnd->kmem;
-  float       *dpc     = gx->dp;
-  float       *xpc     = gx->xmx;
+  double      *dpc     = gx->dp;
+  double      *xpc     = gx->xmx;
   float const *tsc     = gm->tsc;
   float const *pp_dp;
   float const *pp_xp   = pp->xmx;
-  float       *dpp;
-  float       *last_dpc;
+  double      *dpp;
+  double      *last_dpc;
   int          ia, ib;
   int          last_ib;
   int          kac, kbc;
   int          kap, kbp;
   int          kbc2;
-  float        xE, xN, xJ, xB, xC;
-  float        mvp, ivp, dvp;
-  float        dc;
-  float        sc;
-  float        pp_m;
+  double       xE, xN, xJ, xB, xC;
+  double       mvp, ivp, dvp;
+  double       dc;
+  double       sc;
+  double       pp_m;
   int          g, i, k;
   int          M = gm->M;
-  float        esc = p7_profile_IsLocal(gm) ? 1.0f : 0.0f;
-  float        t1, t2;
+  double       esc = p7_profile_IsLocal(gm) ? 1.0f : 0.0f;
+  double       t1, t2;
 
   if (p7b_oa_band_check(gx->bnd, gx->bnd->L) != eslOK) return eslEINVAL;   /* brief 26_0821-144 */
 
@@ -8301,7 +8353,7 @@ cm_p7_GOptimalAccuracyBanded(const P7_PROFILE *gm, const P7_GMXB *pp,
       last_ib = ib;
     }
 
-  if (ret_e != NULL) *ret_e = xC;
+  if (ret_e != NULL) *ret_e = (float) xC;
   return eslOK;
 
 #undef TSCDELTA
@@ -8317,16 +8369,19 @@ cm_p7_GOptimalAccuracyBanded(const P7_PROFILE *gm, const P7_GMXB *pp,
  *           Builds a lookup table for random access into the banded
  *           matrices, then runs the same traceback logic as p7_GOATrace().
  *
+ *           Brief 26_0821-151: <gx> is double, and every comparison
+ *           below is made in double, as in p7b_oa_trace().
+ *
  * Args:     gm  - profile
  *           pp  - banded posterior matrix
- *           gx  - banded OA DP matrix
+ *           gx  - banded double OA DP matrix (p7_GOptimalAccuracyBanded())
  *           tr  - RESULT: OA trace (caller provides, possibly via Reuse)
  *
  * Returns:  eslOK on success.
  *           eslEMEM on allocation failure.
  */
 int
-cm_p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx,
+cm_p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const CM_P7_GMXBD *gx,
 		  P7_TRACE *tr)
 {
 #define TSCDELTA(s,k) ( (tsc[(k) * p7P_NTRANS + (s)] == -eslINFINITY) ? FLT_MIN : 1.0)
@@ -8425,13 +8480,13 @@ cm_p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx,
 	     * bounds. Same guard as p7b_oa_trace() (brief 26_0821-144). */
 	    scur = p7T_B;
 	  } else {
-	    float path[4];
-	    int   state[4] = { p7T_M, p7T_I, p7T_D, p7T_B };
+	    double path[4];
+	    int    state[4] = { p7T_M, p7T_I, p7T_D, p7T_B };
 	    path[0] = TSCDELTA(p7P_MM, k-1) * GXB_M(gx, i-1, k-1);
 	    path[1] = TSCDELTA(p7P_IM, k-1) * GXB_I(gx, i-1, k-1);
 	    path[2] = TSCDELTA(p7P_DM, k-1) * GXB_D(gx, i-1, k-1);
 	    path[3] = TSCDELTA(p7P_BM, k-1) * GXB_XMX(gx, i-1, p7G_B);
-	    scur = state[esl_vec_FArgMax(path, 4)];
+	    scur = state[esl_vec_DArgMax(path, 4)];
 	  }
 	  k--; i--;
 	}
@@ -8439,7 +8494,7 @@ cm_p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx,
 
       case p7T_D: /* select_d */
 	{
-	  float path[2];
+	  double path[2];
 	  path[0] = TSCDELTA(p7P_MD, k-1) * GXB_M(gx, i, k-1);
 	  path[1] = TSCDELTA(p7P_DD, k-1) * GXB_D(gx, i, k-1);
 	  scur = (path[0] >= path[1]) ? p7T_M : p7T_D;
@@ -8449,7 +8504,7 @@ cm_p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx,
 
       case p7T_I: /* select_i */
 	{
-	  float path[2];
+	  double path[2];
 	  path[0] = TSCDELTA(p7P_MI, k) * GXB_M(gx, i-1, k);
 	  path[1] = TSCDELTA(p7P_II, k) * GXB_I(gx, i-1, k);
 	  scur = (path[0] >= path[1]) ? p7T_M : p7T_I;
@@ -8463,9 +8518,9 @@ cm_p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx,
 
       case p7T_C: /* select_c */
 	{
-	  float t1c = ((gm->xsc[p7P_C][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0f);
-	  float t2c = ((gm->xsc[p7P_E][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f);
-	  float path[2];
+	  double t1c = ((gm->xsc[p7P_C][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0f);
+	  double t2c = ((gm->xsc[p7P_E][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f);
+	  double path[2];
 	  path[0] = t1c * (GXB_XMX(gx, i-1, p7G_C) + GXB_XMX(pp, i, p7G_C));
 	  path[1] = t2c *  GXB_XMX(gx, i, p7G_E);
 	  scur = (path[0] > path[1]) ? p7T_C : p7T_E;
@@ -8474,9 +8529,9 @@ cm_p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx,
 
       case p7T_J: /* select_j */
 	{
-	  float t1j = ((gm->xsc[p7P_J][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0f);
-	  float t2j = ((gm->xsc[p7P_E][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0f);
-	  float path[2];
+	  double t1j = ((gm->xsc[p7P_J][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0f);
+	  double t2j = ((gm->xsc[p7P_E][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0f);
+	  double path[2];
 	  path[0] = t1j * (GXB_XMX(gx, i-1, p7G_J) + GXB_XMX(pp, i, p7G_J));
 	  path[1] = t2j *  GXB_XMX(gx, i, p7G_E);
 	  scur = (path[0] > path[1]) ? p7T_J : p7T_E;
@@ -8485,7 +8540,7 @@ cm_p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx,
 
       case p7T_E: /* select_e: which k did E come from? */
 	{
-	  float max  = -eslINFINITY;
+	  double max = -eslINFINITY;
 	  int   smax = -1;
 	  int   kmax = -1;
 	  int   ri   = row_idx[i];
@@ -8497,8 +8552,8 @@ cm_p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx,
 	    if (ri >= 0) {
 	      int ka = ka_arr[ri], kb = kb_arr[ri];
 	      for (k = ka; k <= kb; k++) {
-		float mv = GXB_M(gx, i, k);
-		float dv = GXB_D(gx, i, k);
+		double mv = GXB_M(gx, i, k);
+		double dv = GXB_D(gx, i, k);
 		if (mv >= max) { max = mv; smax = p7T_M; kmax = k; }
 		if (dv >  max) { max = dv; smax = p7T_D; kmax = k; }
 	      }
@@ -8511,9 +8566,9 @@ cm_p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const P7_GMXB *gx,
 
       case p7T_B: /* select_b */
 	{
-	  float t1b = ((gm->xsc[p7P_N][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f);
-	  float t2b = ((gm->xsc[p7P_J][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f);
-	  float path[2];
+	  double t1b = ((gm->xsc[p7P_N][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f);
+	  double t2b = ((gm->xsc[p7P_J][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f);
+	  double path[2];
 	  path[0] = t1b * GXB_XMX(gx, i, p7G_N);
 	  path[1] = t2b * GXB_XMX(gx, i, p7G_J);
 	  /* Brief 26_0430-131: under a unihit profile (E->J == -inf, set by
@@ -8703,7 +8758,9 @@ p7b_pp_Create(P7_GBANDS *bnd)
  *           F/B (the F/B terms are 8 bytes per value, the posterior 4),
  *           and brief 26_0821-144 for the double-precision OA pass of
  *           modes 1 and 2 (OA seeds, row buffers and traceback window at
- *           8 bytes; mode 0's OA matrix is still float). 141 also counts each checkpoint seed at its own
+ *           8 bytes). Brief 26_0821-151 made mode 0's OA matrix double
+ *           too; it replaces F and B, so mode 0's peak is still the F/B
+ *           phase. 141 also counts each checkpoint seed at its own
  *           row's width rather than at maxnc, and adds the O(nrow)
  *           P7B_GEO tables and traceback row_idx to modes 0 and 1 (which
  *           brief 26_0430-266 had omitted), so each mode's estimate is an
@@ -8798,7 +8855,8 @@ cm_p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int ckpt_mode, double *ret_
   else {
     /* cm_p7_GFBDecodeBandedDouble(): full double F and B, their N/J/C
      * specials per row, and the float 3-cell pp it decodes into; the
-     * float OA matrix the caller allocates afterwards replaces F and B. */
+     * double OA matrix the caller allocates afterwards (brief
+     * 26_0821-151) replaces F and B and is smaller than the two. */
     bytes  = (double) bnd->ncell * p7G_NSCELLS * (2.0 * sizeof(double) + sizeof(float));
     bytes += (double) bnd->nrow  * (p7G_NXCELLS * sizeof(float) + 6.0 * sizeof(double));
     bytes += (double) (4 * sizeof(int) + sizeof(int64_t)) * (double) nrow;   /* P7B_GEO row tables  */
@@ -9930,7 +9988,8 @@ cm_p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm,
  *           3-cell P7_GMXB from p7_gmxb_Create(), ready for
  *           p7_GOptimalAccuracyBanded()/p7_GOATraceBanded().  The double F/B
  *           matrices are freed before returning, so the caller can then
- *           allocate the float OA matrix without the two overlapping.
+ *           allocate the (double, brief 26_0821-151) OA matrix without the
+ *           two overlapping.
  *
  * Args:     dsq       - digital sequence 1..L
  *           L         - sequence length
@@ -13854,7 +13913,8 @@ utest_genome_scale(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, int M, int W, int
   int        *kmin = NULL;
   int        *kmax = NULL;
   P7_GBANDS  *bnd  = p7_gbands_Create();
-  P7_GMXB    *pp0  = NULL, *gx0 = NULL, *pp1 = NULL;
+  P7_GMXB    *pp0  = NULL, *pp1 = NULL;
+  CM_P7_GMXBD *gx0 = NULL;
   P7_TRACE   *tr0  = p7_trace_CreateWithPP();
   P7_TRACE   *tr1  = p7_trace_CreateWithPP();
   P7_TRACE   *tr2  = p7_trace_CreateWithPP();
@@ -13883,7 +13943,7 @@ utest_genome_scale(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, int M, int W, int
   /* engine 0: non-checkpointed */
   pp0 = p7_gmxb_Create(bnd);
   if (cm_p7_GFBDecodeBandedDouble(sq->dsq, L, gm, pp0, &f0, &b0, &st0) != eslOK) esl_fatal("utest_genome_scale: engine 0 failed");
-  gx0 = p7_gmxb_Create(bnd);
+  gx0 = cm_p7_gmxbd_Create(bnd);
   if (cm_p7_GOptimalAccuracyBanded(gm, pp0, gx0, &oa0) != eslOK)   esl_fatal("utest_genome_scale: engine 0 OA failed");
   if (cm_p7_GOATraceBanded(gm, pp0, gx0, tr0) != eslOK)             esl_fatal("utest_genome_scale: engine 0 trace failed");
   /* engine 1: resident posterior */
@@ -13916,7 +13976,7 @@ utest_genome_scale(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, int M, int W, int
     esl_fatal("utest_genome_scale: engine OA traces differ");
 
   free(kmin); free(kmax);
-  p7_gmxb_Destroy(pp0); p7_gmxb_Destroy(gx0); p7_gmxb_Destroy(pp1);
+  p7_gmxb_Destroy(pp0); cm_p7_gmxbd_Destroy(gx0); p7_gmxb_Destroy(pp1);
   p7_trace_Destroy(tr0); p7_trace_Destroy(tr1); p7_trace_Destroy(tr2);
   esl_sq_Destroy(sq);
   p7_gbands_Destroy(bnd); p7_profile_Destroy(gm); p7_bg_Destroy(bg); p7_hmm_Destroy(hmm);
@@ -13951,7 +14011,7 @@ utest_gap_band(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, int M, int LG)
   P7_TRACE   *tr1  = p7_trace_CreateWithPP();
   P7_TRACE   *tr2  = p7_trace_CreateWithPP();
   P7_TRACE   *tr0  = p7_trace_CreateWithPP();
-  P7_GMXB    *gx0  = NULL;
+  CM_P7_GMXBD *gx0 = NULL;
   CM_P7_DECSTATS st[3];
   float       f0, b0, f1, f2, oa0, oa1, oa2, ff, fb;
   int64_t     c;
@@ -14003,7 +14063,7 @@ utest_gap_band(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, int M, int LG)
    * traceback also read tsc[] out of bounds on this band; the "M1 is
    * entered only from B" guard in cm_p7_GOATraceBanded stays as defense.) */
   esl_exception_SetHandler(&esl_nonfatal_handler);
-  gx0 = p7_gmxb_Create(bnd);
+  gx0 = cm_p7_gmxbd_Create(bnd);
   if (cm_p7_GOptimalAccuracyBanded(gm, pp0, gx0, &oa0) != eslEINVAL)  esl_fatal("utest_gap_band: engine 0 OA accepted a gapped band");
   if (cm_p7_GCheckptOA_Banded(gm, pp1, tr1, &oa1) != eslEINVAL)       esl_fatal("utest_gap_band: engine 1 OA accepted a gapped band");
   if (cm_p7_GCheckptFBDecodeOA_Banded(dsq, L, gm, bnd, tr2, &f2, &oa2, &st[2]) != eslEINVAL)
@@ -14015,7 +14075,7 @@ utest_gap_band(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, int M, int LG)
   free(dsq);
   p7_gmxb_Destroy(pp0); p7_gmxb_Destroy(pp1); p7_gmxb_Destroy(fx); p7_gmxb_Destroy(bx);
   p7_trace_Destroy(tr1); p7_trace_Destroy(tr2);
-  p7_gmxb_Destroy(gx0); p7_trace_Destroy(tr0);
+  cm_p7_gmxbd_Destroy(gx0); p7_trace_Destroy(tr0);
   esl_sq_Destroy(core); p7_gbands_Destroy(bnd); p7_profile_Destroy(gm); p7_bg_Destroy(bg); p7_hmm_Destroy(hmm);
 }
 

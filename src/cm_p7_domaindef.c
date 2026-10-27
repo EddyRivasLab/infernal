@@ -614,8 +614,9 @@ glocal_rescore_isolated_domain(P7_DOMAINDEF *ddef, const P7_PROFILE *gm, P7_OPRO
  *
  *            When do_aln=TRUE, runs banded posterior decoding, OA DP,
  *            and OA traceback to produce an alignment display. The
- *            gxfb and gxbb matrices are overwritten (gxbb -> posteriors,
- *            gxfb -> OA scores).
+ *            gxbb matrix is overwritten with posteriors; the OA scores
+ *            go in a separate double matrix (brief 26_0821-151), so gxfb
+ *            keeps the Forward values.
  *
  *            When do_aln=FALSE, skips alignment (Step 1 --noali path).
  *
@@ -629,9 +630,10 @@ cm_p7_domaindef_GlocalByPosteriorHeuristics_Banded(const ESL_SQ *sq, P7_PROFILE 
                                                 float fwdsc, P7_DOMAINDEF *ddef,
                                                 int do_aln)
 {
-  P7_DOMAIN *dom   = NULL;
-  float      oasc  = 0.0f;
-  int        status;
+  P7_DOMAIN   *dom   = NULL;
+  CM_P7_GMXBD *oax   = NULL;
+  float        oasc  = 0.0f;
+  int          status;
 
   if (p7_IsMulti(gm->mode)) return eslEINCONCEIVABLE;
 
@@ -645,11 +647,15 @@ cm_p7_domaindef_GlocalByPosteriorHeuristics_Banded(const ESL_SQ *sq, P7_PROFILE 
     /* Banded posterior decoding: gxbb overwritten with posteriors */
     if ((status = p7_GDecodingBanded(gm, gxfb, gxbb, gxbb, fwdsc)) != eslOK) return status;
 
-    /* Banded OA fill: gxfb overwritten with OA scores */
-    if ((status = p7_GOptimalAccuracyBanded(gm, gxbb, gxfb, &oasc)) != eslOK) return status;
+    /* Banded OA fill, in its own double matrix (brief 26_0821-151; it
+     * used to overwrite gxfb) */
+    if ((oax = cm_p7_gmxbd_Create(gxbb->bnd)) == NULL) return eslEMEM;
+    if ((status = p7_GOptimalAccuracyBanded(gm, gxbb, oax, &oasc)) != eslOK) { cm_p7_gmxbd_Destroy(oax); return status; }
 
     /* Banded OA traceback */
-    if ((status = p7_GOATraceBanded(gm, gxbb, gxfb, ddef->tr)) != eslOK) return status;
+    status = p7_GOATraceBanded(gm, gxbb, oax, ddef->tr);
+    cm_p7_gmxbd_Destroy(oax);
+    if (status != eslOK) return status;
 
     /* No coordinate adjustment needed: domain is 1..L, offset = 0 */
   }
@@ -948,14 +954,22 @@ cm_p7_domaindef_GlocalByPosteriorHeuristics_Banded_Multihit(const ESL_SQ *sq, P7
 		  }
 
 		  if (do_aln) {
-		    /* Banded OA: overwrites sub_fwd_bx with OA scores */
-		    if ((status = p7_GOptimalAccuracyBanded(gm, sub_bck_bx, sub_fwd_bx, &oasc)) != eslOK) {
+		    /* Banded OA in its own double matrix (brief 26_0821-151) */
+		    CM_P7_GMXBD *sub_oa_bx = cm_p7_gmxbd_Create(sub_bnd);
+		    if (sub_oa_bx == NULL) {
+		      status = eslEMEM;
+		      p7_gmxb_Destroy(sub_fwd_bx); p7_gmxb_Destroy(sub_bck_bx); p7_gbands_Destroy(sub_bnd); goto ERROR;
+		    }
+		    if ((status = p7_GOptimalAccuracyBanded(gm, sub_bck_bx, sub_oa_bx, &oasc)) != eslOK) {
+		      cm_p7_gmxbd_Destroy(sub_oa_bx);
 		      p7_gmxb_Destroy(sub_fwd_bx); p7_gmxb_Destroy(sub_bck_bx); p7_gbands_Destroy(sub_bnd); goto ERROR;
 		    }
 		    /* Banded OA Trace */
-		    if ((status = p7_GOATraceBanded(gm, sub_bck_bx, sub_fwd_bx, ddef->tr)) != eslOK) {
+		    if ((status = p7_GOATraceBanded(gm, sub_bck_bx, sub_oa_bx, ddef->tr)) != eslOK) {
+		      cm_p7_gmxbd_Destroy(sub_oa_bx);
 		      p7_gmxb_Destroy(sub_fwd_bx); p7_gmxb_Destroy(sub_bck_bx); p7_gbands_Destroy(sub_bnd); goto ERROR;
 		    }
+		    cm_p7_gmxbd_Destroy(sub_oa_bx);
 		    /* Adjust trace coords: domain starts at position i in original sequence */
 		    for (z = 0; z < ddef->tr->N; z++)
 		      if (ddef->tr->i[z] > 0) ddef->tr->i[z] += i - 1;
