@@ -13902,9 +13902,21 @@ float_fb_incons(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GBANDS *bnd)
  * identical posteriors, scores and OA traces across the engines.  As a
  * positive control, the float kernels must FAIL the consistency check on
  * the same input; if they stop failing it, the input no longer reaches
- * the regime this test is for. */
+ * the regime this test is for.
+ *
+ * <pA> is each node's A emission probability; <do_fb_control> selects the
+ * case.  TRUE: the F/B case above (pA 0.85, ungapped, diagonal band).
+ * FALSE (brief 26_0821-151): the OA case.  There every posterior on that
+ * input is exactly 1, so a float OA matrix sums integers and agrees with
+ * a double one.  Here the model has indels (1% M->I, M->D) and the band
+ * is centered on the emitting trace; with identical nodes the alignment
+ * is shift-invariant, so posteriors spread over the band and the OA sums
+ * (~10^4) are fractional.  Engines 0, 1 and 2 must then still give the
+ * same OA score and trace, which a float OA matrix in engine 0 does not
+ * (OA 10898.0049 vs 10898.0762).  Its control: the traced posteriors
+ * summed in float and in double must disagree. */
 static void
-utest_genome_scale(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, int M, int W, int be_verbose)
+utest_genome_scale(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, int M, int W, double pA, int do_fb_control, int be_verbose)
 {
   P7_HMM     *hmm  = NULL;
   P7_BG      *bg   = p7_bg_Create(abc);
@@ -13918,25 +13930,39 @@ utest_genome_scale(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, int M, int W, int
   P7_TRACE   *tr0  = p7_trace_CreateWithPP();
   P7_TRACE   *tr1  = p7_trace_CreateWithPP();
   P7_TRACE   *tr2  = p7_trace_CreateWithPP();
+  P7_TRACE   *etr  = p7_trace_Create();
   CM_P7_DECSTATS st0, st1, st2;
   float       f0, b0, f1, f2, oa0, oa1, oa2;
-  double      fincons;
+  double      fincons = 0.;
+  float       fpath   = 0.;   /* the OA trace's posteriors summed in float  */
+  double      dpath   = 0.;   /* ... and in double                          */
+  int         z;
   int64_t     c;
   int         i, k, L;
 
   if (p7_hmm_SampleUngapped(r, M, abc, &hmm) != eslOK)             esl_fatal("utest_genome_scale: p7_hmm_SampleUngapped() failed");
   for (k = 1; k <= M; k++) {
-    for (i = 0; i < abc->K; i++) hmm->mat[k][i] = (i == 0) ? 0.85 : 0.15 / (abc->K - 1);
+    for (i = 0; i < abc->K; i++) hmm->mat[k][i] = (i == 0) ? pA : (1. - pA) / (abc->K - 1);
     for (i = 0; i < abc->K; i++) hmm->ins[k][i] = hmm->ins[1][i];
     if (k < M) for (i = 0; i < p7H_NTRANSITIONS; i++) hmm->t[k][i] = hmm->t[1][i];
+    if (! do_fb_control && k < M) {   /* OA case: indels, so the alignment is uncertain */
+      hmm->t[k][p7H_MM] = 0.98; hmm->t[k][p7H_MI] = 0.01; hmm->t[k][p7H_MD] = 0.01;
+      hmm->t[k][p7H_IM] = 0.50; hmm->t[k][p7H_II] = 0.50;
+      hmm->t[k][p7H_DM] = 0.50; hmm->t[k][p7H_DD] = 0.50;
+    }
   }
-  if (p7_CoreEmit(r, hmm, sq, NULL) != eslOK)                      esl_fatal("utest_genome_scale: p7_CoreEmit() failed");
+  if (p7_CoreEmit(r, hmm, sq, etr) != eslOK)                       esl_fatal("utest_genome_scale: p7_CoreEmit() failed");
   L = sq->n;
   if (p7_ProfileConfig(hmm, bg, gm, L, p7_LOCAL) != eslOK)         esl_fatal("utest_genome_scale: p7_ProfileConfig() failed");
   if (p7_ProfileConfig5PrimeAnd3PrimeTrunc(gm, L) != eslOK)        esl_fatal("utest_genome_scale: trunc config failed");
   kmin = malloc(sizeof(int) * (L+1));
   kmax = malloc(sizeof(int) * (L+1));
-  for (i = 1; i <= L; i++) { kmin[i] = ESL_MAX(1, i - W); kmax[i] = ESL_MIN(M, i + W); }
+  if (do_fb_control)   /* diagonal band */
+    for (i = 1; i <= L; i++) { kmin[i] = ESL_MAX(1, i - W); kmax[i] = ESL_MIN(M, i + W); }
+  else {               /* indels: center each row on the emitting node */
+    for (z = 0; z < etr->N; z++)
+      if (etr->i[z] > 0) { kmin[etr->i[z]] = ESL_MAX(1, etr->k[z] - W); kmax[etr->i[z]] = ESL_MIN(M, etr->k[z] + W); }
+  }
   if (cm_p7_GBands_FromKminKmax(kmin, kmax, L, M, bnd) != eslOK)   esl_fatal("utest_genome_scale: band setup failed");
   bnd->L = L; bnd->M = M;   /* cm_p7_GBands_FromKminKmax() sets these before p7_gbands_Reuse() zeroes them */
 
@@ -13954,14 +13980,22 @@ utest_genome_scale(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, int M, int W, int
   if (cm_p7_GCheckptFBDecodeOA_Banded(sq->dsq, L, gm, bnd, tr2, &f2, &oa2, &st2) != eslOK) esl_fatal("utest_genome_scale: engine 2 failed");
 
   /* the test only means something at genome-scale magnitudes ... */
-  if (fabs(f0) < 65536.)  esl_fatal("utest_genome_scale: |Forward| = %g nats < 2^16; raise -M", fabs(f0));
+  if (do_fb_control  && fabs(f0)  < 65536.) esl_fatal("utest_genome_scale: |Forward| = %g nats < 2^16; raise -M", fabs(f0));
+  if (!do_fb_control && fabs(oa0) < 4096.)  esl_fatal("utest_genome_scale: OA score %g < 2^12; raise -M", fabs(oa0));
   /* ... where the float kernels demonstrably fail (positive control) */
-  if ((fincons = float_fb_incons(sq->dsq, L, gm, bnd)) < 1.0)
+  if (do_fb_control && (fincons = float_fb_incons(sq->dsq, L, gm, bnd)) < 1.0)
     esl_fatal("utest_genome_scale: control failed: float F/B inconsistency only %g nats; raise -M", fincons);
+  /* OA positive control (brief 26_0821-151): with fractional posteriors,
+   * the OA sums ~L in float lose bits a double keeps.  Summing the traced
+   * path's own posteriors in float and in double must disagree, or the
+   * input is too easy to tell a float OA matrix from a double one. */
+  for (z = 0; z < tr1->N; z++) { fpath += tr1->pp[z]; dpath += tr1->pp[z]; }
+  if (! do_fb_control && fpath == (float) dpath)
+    esl_fatal("utest_genome_scale: OA control failed: float and double path sums agree (%.4f); raise -M or lower pA", dpath);
 
   if (be_verbose)
-    printf("L=%d Forward=%.4f Backward=%.4f nats; float F/B inconsistency %.3f nats; double: dead=%ld nonfinite=%ld incons=%g drift_max=%g\n",
-           L, f0, b0, fincons, (long) st0.ndead, (long) st0.nnonfinite, st0.fb_incons, st0.drift_max);
+    printf("pA=%.2f L=%d Forward=%.4f Backward=%.4f nats; float F/B inconsistency %.3f nats; double: dead=%ld nonfinite=%ld incons=%g drift_max=%g; OA %.4f, path pp sum float %.4f double %.4f\n",
+           pA, L, f0, b0, fincons, (long) st0.ndead, (long) st0.nnonfinite, st0.fb_incons, st0.drift_max, oa0, fpath, dpath);
   check_decstats("engine 0", &st0, L);
   check_decstats("engine 1", &st1, L);
   check_decstats("engine 2", &st2, L);
@@ -13977,7 +14011,7 @@ utest_genome_scale(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, int M, int W, int
 
   free(kmin); free(kmax);
   p7_gmxb_Destroy(pp0); cm_p7_gmxbd_Destroy(gx0); p7_gmxb_Destroy(pp1);
-  p7_trace_Destroy(tr0); p7_trace_Destroy(tr1); p7_trace_Destroy(tr2);
+  p7_trace_Destroy(tr0); p7_trace_Destroy(tr1); p7_trace_Destroy(tr2); p7_trace_Destroy(etr);
   esl_sq_Destroy(sq);
   p7_gbands_Destroy(bnd); p7_profile_Destroy(gm); p7_bg_Destroy(bg); p7_hmm_Destroy(hmm);
 }
@@ -14101,7 +14135,9 @@ main(int argc, char **argv)
 
   p7_FLogsumInit();
   utest_dlogsum();
-  utest_genome_scale(r, abc, esl_opt_GetInteger(go, "-M"), esl_opt_GetInteger(go, "-W"), esl_opt_GetBoolean(go, "-v"));
+  utest_genome_scale(r, abc, esl_opt_GetInteger(go, "-M"), esl_opt_GetInteger(go, "-W"), 0.85, TRUE,  esl_opt_GetBoolean(go, "-v"));
+  /* brief 26_0821-151: fractional posteriors, so the OA sums need double */
+  utest_genome_scale(r, abc, esl_opt_GetInteger(go, "-M"), esl_opt_GetInteger(go, "-W"), 0.70, FALSE, esl_opt_GetBoolean(go, "-v"));
   { ESL_ALPHABET *nt = esl_alphabet_Create(eslRNA); int t;
     for (t = 0; t < 5; t++) { utest_gap_band(r, nt, 40, 40); utest_gap_band(r, nt, 40, 0); }   /* several random draws */
     esl_alphabet_Destroy(nt); }
