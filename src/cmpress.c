@@ -118,7 +118,7 @@ main(int argc, char **argv)
       p7_profile_Destroy(gm);
       p7_oprofile_Destroy(om);
     }
-  if      (status == eslEFORMAT)   ESL_XFAIL(status, errbuf, "bad file format in CM file %s",             cmfile);
+  if      (status == eslEFORMAT)   { fprintf(stderr, "bad file format in CM file %s\n", cmfile); ESL_XFAIL(status, errbuf, "%s", cmfp->errbuf); }
   else if (status == eslEINCOMPAT) ESL_XFAIL(status, errbuf, "CM file %s contains different alphabets",   cmfile);
   else if (status != eslEOF)       ESL_XFAIL(status, errbuf, "Unexpected error in reading CMs from %s",   cmfile);
 
