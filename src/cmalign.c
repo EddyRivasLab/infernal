@@ -711,7 +711,7 @@ maybe_hmm_autoswitch(ESL_GETOPTS *go, CM_t *cm)
  *   band, engine or algorithm mode: add --p7band --p7kmerchain, i.e. CM DP
  *   in kmerchain bands instead of CP9 HMM bands. Opt out with --hbanded.
  *   The modes left alone, and why:
- *     --hbanded (explicit) the opt-out; esl_opt_IsUsed(), as it is on by default
+ *     --hbanded (explicit) the opt-out; detected by its setter, as it is on by default
  *     --nonbanded          no bands at all
  *     --p7band             keeps its own builder (Viterbi trace unless told)
  *     --sub                the sub-CM is cut at CP9-predicted ends, and
@@ -743,7 +743,11 @@ maybe_kmerchain_default(ESL_GETOPTS *go, CM_t *cm)
     autoswitch_force_opt(go, "--p7kmerchain", NULL);
   }
   else {
-    if (esl_opt_IsUsed    (go, "--hbanded") || esl_opt_GetBoolean(go, "--nonbanded") ||
+    /* --hbanded is on by default and its default value is the string
+     * "default", which is also what typing it stores, so esl_opt_IsUsed()
+     * and esl_opt_IsDefault() can't tell typed from default; the setter can. */
+    if ((esl_opt_GetSetter(go, "--hbanded") != eslARG_SETBY_DEFAULT && esl_opt_GetBoolean(go, "--hbanded")) ||
+        esl_opt_GetBoolean(go, "--nonbanded") ||
         esl_opt_GetBoolean(go, "--p7band")  || esl_opt_GetBoolean(go, "--sub")       ||
         esl_opt_GetBoolean(go, "--small")   || esl_opt_GetBoolean(go, "--cyk")       ||
         esl_opt_GetBoolean(go, "--sample")  || esl_opt_GetBoolean(go, "--ckpt")) return;
