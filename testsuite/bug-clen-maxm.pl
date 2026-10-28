@@ -11,10 +11,12 @@
 # readers now check CLEN against p7_MAXM first and fail with a
 # normal error.
 #
-# We set the CLEN of the second model in 4.c.cm to 2,000,000,000
-# (beyond any p7_MAXM) and check that cmstat reports the first model,
-# then exits with status 1 and an error that names the second model
-# and p7_MAXM.
+# A real over-limit model is too big for the testsuite, so we set
+# only the CLEN of the second model in 4.c.cm to 2,000,000,000
+# (beyond any p7_MAXM); its HMMs stay short, so before the fix the
+# reader accepted the bad CLEN silently. We check that cmstat reports
+# the first model, then exits with status 1 and an error that names
+# the second model and p7_MAXM.
 #
 # EPN, Wed Oct 28 2026 (w/Claude)
 #
