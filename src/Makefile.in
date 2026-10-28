@@ -144,6 +144,7 @@ BENCHMARKS = \
 UTESTS =\
 	cm_tophits_utest\
 	cm_p7_modelmaker_utest\
+	hmmband_utest\
 
 ITESTS =\
 	itest_brute

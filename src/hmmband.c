@@ -633,7 +633,7 @@ cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx
   /* sc is summed log prob of all possible parses of seq i0..j0 */
 
   /* note boundary conditions, ip = 0, i = i0-1 */
-  pmx->mmx[0][0] = fmx->mmx[0][0] + bmx->mmx[0][0] - sc; /* fmx->mmx[0][0] is 0, bmx->mmx[0][0] is overall score */
+  pmx->mmx[0][0] = ICP9PostSc(fmx->mmx[0][0], bmx->mmx[0][0], 0, sc, INT_MIN); /* fmx->mmx[0][0] is 0, bmx->mmx[0][0] is overall score */
   pmx->imx[0][0] = -INFTY; /*need seq to get here*/
   pmx->dmx[0][0] = -INFTY; /*D_0 does not exist*/
   if((mass_m[0] = pmx->mmx[0][0]) > thresh) { 
@@ -646,7 +646,7 @@ cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx
   for (k = 1; k <= M; k++) {
     pmx->mmx[0][k] = -INFTY; /*need seq to get here*/
     pmx->imx[0][k] = -INFTY; /*need seq to get here*/
-    pmx->dmx[0][k] = fmx->dmx[0][k] + bmx->dmx[0][k] - sc;
+    pmx->dmx[0][k] = ICP9PostSc(fmx->dmx[0][k], bmx->dmx[0][k], 0, sc, INT_MIN);
     /* mass_m[k] doesn't change b/c pmx->mmx[0][k] is -INFTY */
     /* mass_i[k] doesn't change b/c pmx->imx[0][k] is -INFTY */
     if((mass_d[k] = pmx->dmx[0][k]) > thresh) { 
@@ -661,7 +661,7 @@ cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx
       i = i0+ip-1;		/* e.g. i is actual index in dsq, runs from i0 to j0 */
       k = 0;
       /* new block EPN, Wed Feb 13 11:58:52 2008 */
-      pmx->mmx[ip][0] = ESL_MAX(fmx->mmx[ip][0] + bmx->mmx[ip][0] - sc, -INFTY); /* M_0 doesn't emit */
+      pmx->mmx[ip][0] = ICP9PostSc(fmx->mmx[ip][0], bmx->mmx[ip][0], 0, sc, -INFTY); /* M_0 doesn't emit */
       if(! nset_m[0]) { 
 	if((mass_m[0] = ILogsum(mass_m[0], pmx->mmx[ip][0])) > thresh) { 
 	  cp9b->pn_min_m[0] = i;
@@ -670,7 +670,7 @@ cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx
       }
       /* end of new block, old line used to be: pmx->mmx[ip][0] = -INFTY; */
 
-      pmx->imx[ip][0] = ESL_MAX(fmx->imx[ip][0] + bmx->imx[ip][0] - hmm->isc[dsq[i]][0] - sc, -INFTY);
+      pmx->imx[ip][0] = ICP9PostSc(fmx->imx[ip][0], bmx->imx[ip][0], hmm->isc[dsq[i]][0], sc, -INFTY);
       /*hmm->isc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
       if(! nset_i[0]) { 
 	if((mass_i[0] = ILogsum(mass_i[0], pmx->imx[ip][0])) > thresh) { 
@@ -682,11 +682,11 @@ cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx
       
       for(k = 1; k <= M; k++)
 	{
-	  pmx->mmx[ip][k] = ESL_MAX(fmx->mmx[ip][k] + bmx->mmx[ip][k] - hmm->msc[dsq[i]][k] - sc, -INFTY);
+	  pmx->mmx[ip][k] = ICP9PostSc(fmx->mmx[ip][k], bmx->mmx[ip][k], hmm->msc[dsq[i]][k], sc, -INFTY);
 	  /*hmm->msc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
-	  pmx->imx[ip][k] = ESL_MAX(fmx->imx[ip][k] + bmx->imx[ip][k] - hmm->isc[dsq[i]][k] - sc, -INFTY);
+	  pmx->imx[ip][k] = ICP9PostSc(fmx->imx[ip][k], bmx->imx[ip][k], hmm->isc[dsq[i]][k], sc, -INFTY);
 	  /*hmm->isc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
-	  pmx->dmx[ip][k] = ESL_MAX(fmx->dmx[ip][k] + bmx->dmx[ip][k] - sc, -INFTY);
+	  pmx->dmx[ip][k] = ICP9PostSc(fmx->dmx[ip][k], bmx->dmx[ip][k], 0, sc, -INFTY);
 
 	  if(! nset_m[k]) { 
 	    if((mass_m[k] = ILogsum(mass_m[k], pmx->mmx[ip][k])) > thresh) { 
@@ -1128,20 +1128,20 @@ cp9_Posterior(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, CP9_MX *fmx, CP9_MX *bmx
   else sc = bmx->mmx[0][0];
 
   /* note boundary conditions, case by case by case... */
-  mx->mmx[0][0] = fmx->mmx[0][0] + bmx->mmx[0][0] - sc; /* fmx->mmx[0][0] is 0, bmx->mmx[1][0] is overall score */
+  mx->mmx[0][0] = ICP9PostSc(fmx->mmx[0][0], bmx->mmx[0][0], 0, sc, INT_MIN); /* fmx->mmx[0][0] is 0, bmx->mmx[1][0] is overall score */
   mx->imx[0][0] = -INFTY; /*need seq to get here*/
   mx->dmx[0][0] = -INFTY; /*D_0 does not exist*/
   for (k = 1; k <= hmm->M; k++) {
       mx->mmx[0][k] = -INFTY; /*need seq to get here*/
       mx->imx[0][k] = -INFTY; /*need seq to get here*/
-      mx->dmx[0][k] = fmx->dmx[0][k] + bmx->dmx[0][k] - sc;
+      mx->dmx[0][k] = ICP9PostSc(fmx->dmx[0][k], bmx->dmx[0][k], 0, sc, INT_MIN);
   }
       
   for (ip = 1; ip <= L; ip++) /* ip is the relative position in the seq */
     {
       i = i0+ip-1;		/* e.g. i is actual index in dsq, runs from i0 to j0 */
       mx->mmx[ip][0] = -INFTY; /*M_0 does not emit*/
-      mx->imx[ip][0] = fmx->imx[ip][0] + bmx->imx[ip][0] - hmm->isc[dsq[i]][0] - sc;
+      mx->imx[ip][0] = ICP9PostSc(fmx->imx[ip][0], bmx->imx[ip][0], hmm->isc[dsq[i]][0], sc, INT_MIN);
       /*hmm->isc[dsq[i]][0] will have been counted in both fmx->imx and bmx->imx*/
       mx->dmx[ip][0] = -INFTY; /*D_0 does not exist*/
 
@@ -1150,11 +1150,11 @@ cp9_Posterior(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, CP9_MX *fmx, CP9_MX *bmx
 	printf("fmx->dmx[ip:%d][0]: %d\n bmx->dmx[ip:%d][0]: %d\n", ip, fmx->dmx[ip][0], ip, bmx->dmx[ip][0]);*/
       for (k = 1; k <= hmm->M; k++) 
 	{
-	  mx->mmx[ip][k] = ESL_MAX(fmx->mmx[ip][k] + bmx->mmx[ip][k] - hmm->msc[dsq[i]][k] - sc, -INFTY);
+	  mx->mmx[ip][k] = ICP9PostSc(fmx->mmx[ip][k], bmx->mmx[ip][k], hmm->msc[dsq[i]][k], sc, -INFTY);
 	  /*hmm->msc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
-	  mx->imx[ip][k] = ESL_MAX(fmx->imx[ip][k] + bmx->imx[ip][k] - hmm->isc[dsq[i]][k] - sc, -INFTY);
+	  mx->imx[ip][k] = ICP9PostSc(fmx->imx[ip][k], bmx->imx[ip][k], hmm->isc[dsq[i]][k], sc, -INFTY);
 	  /*hmm->isc[dsq[i]][k] will have been counted in both fmx->imx and bmx->imx*/
-	  mx->dmx[ip][k] = ESL_MAX(fmx->dmx[ip][k] + bmx->dmx[ip][k] - sc, -INFTY);
+	  mx->dmx[ip][k] = ICP9PostSc(fmx->dmx[ip][k], bmx->dmx[ip][k], 0, sc, -INFTY);
 	  /*printf("fmx->mmx[ip:%d][%d]: %d\n bmx->mmx[ip:%d][%d]: %d\n", ip, k, fmx->mmx[ip][k], ip, k, bmx->mmx[ip][k]);
 	  printf("fmx->imx[ip:%d][%d]: %d\n bmx->imx[ip:%d][%d]: %d\n", ip, k, fmx->imx[ip][k], ip, k, bmx->imx[ip][k]);
 	  printf("fmx->dmx[ip:%d][%d]: %d\n bmx->dmx[ip:%d][%d]: %d\n\n", ip, k, fmx->dmx[ip][k], ip, k, bmx->dmx[ip][k]);*/
@@ -5609,3 +5609,87 @@ cp9_RelaxRootBandsForSearch(CM_t *cm, int i0, int j0, int *imin, int *imax, int 
 
 #endif
 
+
+/*****************************************************************
+ * Unit tests
+ *****************************************************************/
+#ifdef CM_HMMBAND_TESTDRIVE
+
+#include "esl_getopts.h"
+#include "esl_random.h"
+
+/* Function:  utest_ICP9PostSc()
+ * Incept:    EPN, Wed Oct 28 2026 (w/Claude)
+ *
+ * Purpose:   Test ICP9PostSc(), the int CP9 posterior exponent
+ *            f + b - esc - sc that the band builders threshold.
+ *            (1) An off-path cell of a long model (f = b = -INFTY, sc
+ *            large) leaves int range; it must clamp to the floor
+ *            instead of wrapping to a large positive value (which
+ *            ESL_MAX(.., -INFTY) would keep and the band builder would
+ *            add to posterior mass).
+ *            (2) Wherever the int expression does not overflow, the
+ *            result must equal it exactly (floored at -INFTY or not),
+ *            so bands are unchanged below the overflow.
+ */
+static void
+utest_ICP9PostSc(ESL_RANDOMNESS *r, int N)
+{
+  char    msg[] = "ICP9PostSc() unit test failed";
+  int     sc[]  = { 1200000000, 1159829327, INT_MAX - INFTY, 600000000 };
+  int     a, n;
+  int     f, b, esc, s;
+  int64_t x;
+
+  /* (1) f = b = -INFTY with a large total score: -2 INFTY - sc < INT_MIN */
+  for(a = 0; a < 4; a++) {
+    x = -2 * (int64_t) INFTY - sc[a];
+    if(x >= INT_MIN) continue; /* in range, covered by (2) */
+    if(ICP9PostSc(-INFTY, -INFTY, 0, sc[a], -INFTY)  != -INFTY)  esl_fatal("%s: sc %d, floor -INFTY", msg, sc[a]);
+    if(ICP9PostSc(-INFTY, -INFTY, 0, sc[a], INT_MIN) != INT_MIN) esl_fatal("%s: sc %d, floor INT_MIN", msg, sc[a]);
+  }
+  /* brief 26_0821-148's fit, min exponent = -INFTY - sc - 586 M: a 1M-node genome model */
+  if(ICP9PostSc(-INFTY, -586000000, 0, 1067000000, -INFTY) != -INFTY) esl_fatal("%s: 1M-node fit", msg);
+  /* a cell with a negative emission score must not wrap upward either */
+  if(ICP9PostSc(-INFTY, -INFTY, -INFTY, 2000000000, -INFTY) != -INFTY) esl_fatal("%s: negative esc", msg);
+  /* the positive side saturates at INT_MAX */
+  if(ICP9PostSc(INT_MAX, INT_MAX, 0, 0, -INFTY) != INT_MAX) esl_fatal("%s: INT_MAX", msg);
+
+  /* (2) random in-range cells: identical to the int expression */
+  for(n = 0; n < N; n++) {
+    f   = -INFTY + (int) esl_rnd_Roll(r, INFTY + 1000000);
+    b   = -INFTY + (int) esl_rnd_Roll(r, INFTY + 1000000);
+    esc = (int) esl_rnd_Roll(r, 20000) - 10000;
+    s   = (int) esl_rnd_Roll(r, 100000000);
+    x   = (int64_t) f + b;                if(x < INT_MIN || x > INT_MAX) continue;
+    x   = x - esc;                        if(x < INT_MIN || x > INT_MAX) continue;
+    x   = x - s;                          if(x < INT_MIN || x > INT_MAX) continue;
+    if(ICP9PostSc(f, b, esc, s, INT_MIN) != f + b - esc - s)                  esl_fatal("%s: in-range raw (%d %d %d %d)",     msg, f, b, esc, s);
+    if(ICP9PostSc(f, b, esc, s, -INFTY)  != ESL_MAX(f + b - esc - s, -INFTY)) esl_fatal("%s: in-range floored (%d %d %d %d)", msg, f, b, esc, s);
+  }
+}
+
+static ESL_OPTIONS options[] = {
+  /* name     type          default  env  range toggles reqs incomp  help                                docgroup*/
+  { "-h",        eslARG_NONE, FALSE, NULL, NULL,  NULL,  NULL, NULL, "show brief help and exit",          0 },
+  { "--version", eslARG_NONE, FALSE, NULL, NULL,  NULL,  NULL, NULL, "show version info and exit",        0 },
+  { "-s",        eslARG_INT,    "0", NULL, NULL,  NULL,  NULL, NULL, "set random number seed to <n>",     0 },
+  { "-N",        eslARG_INT, "1000000", NULL, "n>0", NULL, NULL, NULL, "number of random cells to test", 0 },
+  {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+};
+static char usage[]  = "[-options]";
+static char banner[] = "unit test driver for hmmband.c (int CP9 posterior exponent)";
+
+int
+main(int argc, char **argv)
+{
+  ESL_GETOPTS    *go = cm_CreateDefaultApp("hmmband_utest", options, 0, argc, argv, banner, usage);
+  ESL_RANDOMNESS *r  = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
+
+  utest_ICP9PostSc(r, esl_opt_GetInteger(go, "-N"));
+
+  esl_randomness_Destroy(r);
+  esl_getopts_Destroy(go);
+  return 0;
+}
+#endif /*CM_HMMBAND_TESTDRIVE*/
