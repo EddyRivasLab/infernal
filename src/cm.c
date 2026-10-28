@@ -338,6 +338,32 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, int clen, const ESL_ALPHABET *ab
   return; /* never reached */
 }
 
+/* Function:  cm_CheckConsensusLength()
+ * Incept:    EPN, Wed Oct 28 2026 (w/Claude)
+ *
+ * Purpose:   Check that consensus length <clen> of model <name> is at
+ *            least 1 and at most p7_MAXM, the largest profile HMM
+ *            this build's HMMER accepts. Every CM carries profile
+ *            HMMs as long as its consensus, so a larger model cannot
+ *            be used; HMMER would abort with a fatal exception the
+ *            first time one of its HMMs is created. Callers check
+ *            before that, and before any work that scales with
+ *            <clen>. p7_MAXM is a build-time setting (brief
+ *            26_0821-148).
+ *
+ * Returns:   <eslOK> if <clen> is in range.
+ *            <eslERANGE> if not, with a message in <errbuf>.
+ */
+int
+cm_CheckConsensusLength(const char *name, int clen, char *errbuf)
+{
+  if(name == NULL) name = "(unnamed)";
+  if(clen < 1)       ESL_FAIL(eslERANGE, errbuf, "model %.20s: invalid consensus length %d", name, clen);
+  /* eslERRBUFSIZE is 128: the name is cut to 20 chars so the hint fits */
+  if(clen > p7_MAXM) ESL_FAIL(eslERANGE, errbuf, "model %.20s: consensus length %d exceeds p7_MAXM=%d; raise it with ./configure CPPFLAGS=-Dp7_MAXM=<n>", name, clen, p7_MAXM);
+  return eslOK;
+}
+
 /* Function: CMZero()
  * Date:     SRE, Mon Jul 31 19:14:31 2000 [St. Louis]
  *

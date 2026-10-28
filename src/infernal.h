@@ -2889,6 +2889,7 @@ typedef struct {
 extern CM_t *CreateCM(int nnodes, int nstates, int clen, const ESL_ALPHABET *abc);
 extern CM_t *CreateCMShell(void);
 extern void  CreateCMBody(CM_t *cm, int nnodes, int nstates, int clen, const ESL_ALPHABET *abc);
+extern int   cm_CheckConsensusLength(const char *name, int clen, char *errbuf);
 extern void  CMZero(CM_t *cm);
 extern void  CMRenormalize(CM_t *cm);
 extern void  FreeCM(CM_t *cm);

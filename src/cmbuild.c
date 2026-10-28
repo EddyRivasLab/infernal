@@ -643,7 +643,13 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
           }
 
           /* msa -> cm */
-          if ((status = process_build_workunit(go, cfg, errbuf, msa, &cm, &mtr, &tr)) != eslOK) cm_Fail(errbuf);
+          if ((status = process_build_workunit(go, cfg, errbuf, msa, &cm, &mtr, &tr)) != eslOK) {
+            /* a model too long for this build (cm_CheckConsensusLength()) is
+             * rejected before it is built: if no CM was written yet, don't
+             * leave an empty CM file behind */
+            if (status == eslERANGE && ftell(cfg->cmoutfp) == 0) { fclose(cfg->cmoutfp); cfg->cmoutfp = NULL; remove(cfg->cmfile); }
+            cm_Fail(errbuf);
+          }
           /* optionally, iterate over cm -> parsetrees -> msa -> cm ... until convergence, via EM or Gibbs */
           if ( esl_opt_IsOn(go, "--refine")) {
             fprintf(cfg->ofp, "#\n");

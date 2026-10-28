@@ -2002,6 +2002,7 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
   if (cm->name == NULL)   ESL_XFAIL(status, cmfp->errbuf, "Failed to read NAME line in header section");
   if (abc      == NULL)   ESL_XFAIL(status, cmfp->errbuf, "Failed to read ALPH line in header section");
   if (tmp_null == NULL)   ESL_XFAIL(status, cmfp->errbuf, "Failed to read NULL line in header section");
+  if (cm_CheckConsensusLength(cm->name, cm->clen, cmfp->errbuf) != eslOK) { status = eslEFORMAT; goto ERROR; }
 
   /* Check to make sure we parsed CM E-value stats correctly. 
    */
@@ -2472,6 +2473,7 @@ read_bin_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
   if (! fread((char *) &(cm->M),         sizeof(int), 1, cmfp->f)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read number of states");
   if (! fread((char *) &(cm->nodes),     sizeof(int), 1, cmfp->f)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read number of nodes");
   if (! fread((char *) &(cm->clen),      sizeof(int), 1, cmfp->f)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read consensus length");
+  if (cm->clen < 1)                                                ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "invalid consensus length %d", cm->clen);
   if (! fread((char *) &alphabet_type,   sizeof(int), 1, cmfp->f)) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read alphabet_type");
 
   /* Set or verify alphabet. */
@@ -2515,6 +2517,7 @@ read_bin_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
   
   /* Annotations. */
   if (read_bin_string(cmfp->f, &(cm->name)) != eslOK)                                                ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read name");
+  if (cm_CheckConsensusLength(cm->name, cm->clen, cmfp->errbuf) != eslOK) { status = eslEFORMAT; goto ERROR; } /* before the clen-sized arrays and the p7 HMMs */
   if ((cm->flags & CMH_ACC)  && read_bin_string(cmfp->f, &(cm->acc))  != eslOK)                      ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read acc");
   if ((cm->flags & CMH_DESC) && read_bin_string(cmfp->f, &(cm->desc)) != eslOK)                      ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read desc");
   if ((cm->flags & CMH_RF)   && ! fread((char *) cm->rf,        sizeof(char), cm->clen+2, cmfp->f))  ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read rf");        /* +2: 1..M and trailing \0 */
@@ -2797,6 +2800,7 @@ read_asc_1p0_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
 	    {
 	      ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "ERROR, ALPHABET, STATES and NODES lines should precede CLEN line");
 	    }
+	  if (cm_CheckConsensusLength(cm->name, clen, cmfp->errbuf) != eslOK) { status = eslEFORMAT; goto ERROR; }
 	  CreateCMBody(cm, N, M, clen, abc);
 	}
       /* comlog and ctime info. Careful, we want the full line, so a token becomes a full line 

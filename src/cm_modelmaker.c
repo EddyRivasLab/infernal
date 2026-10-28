@@ -185,6 +185,10 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_el, int use_wts, 
     }
     else clen++; 
   }
+  /* clen-1 is the consensus length: reject a model too long for this
+   * build's profile HMMs now, before building it (cmbuild's QDB step
+   * would otherwise run for hours first) */
+  if (clen > 1 && (status = cm_CheckConsensusLength(msa->name, clen-1, errbuf)) != eslOK) goto ERROR;
   /* build c2a_map and a2c_map, we need clen before we can allocate c2a_map, hence the second apos=1..alen loop */
   ESL_ALLOC(c2a_map, sizeof(int) * (clen+1)); 
   ESL_ALLOC(a2c_map, sizeof(int) * (msa->alen+1)); 
