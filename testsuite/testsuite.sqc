@@ -86,6 +86,7 @@
 1 exercise  bug/sscons-ext-wuss    !testsuite/sscons-exterior-wuss.pl! @src/cmbuild@ @src/cmalign@ @src/cmemit@
 1 exercise  bug/eweight-bracket    !testsuite/bug-eweight-bracket.pl! @src/cmbuild@ !testsuite/bug-eweight-bracket.sto!
 1 exercise  cmbuild/entropy-filter  !testsuite/i-entropy-filter-choice.pl! @src/cmbuild@ !testsuite/RIBOSUM85-60.mat!
+1 exercise  bug/clen-maxm           !testsuite/bug-clen-maxm.pl! @src/cmstat@ !testsuite/4.c.cm!
 1 exercise  iss21-cmbuild-rf-pb   !testsuite/iss21-cmbuild-rf-msaweight-pb.py! @@ !! %OUTFILES%
 1 exercise  iss33-trunc-pipeline  !testsuite/iss33-trunc-pipeline.pl! @src/cmsearch@ !testsuite/iss33.cm! !testsuite/iss33.fa!
 1 exercise  iss34-bld-frg-slf-ins !testsuite/iss34-bld-frg-slf-ins.pl! @src/cmbuild@ !testsuite/iss34.sto!
