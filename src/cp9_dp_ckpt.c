@@ -592,24 +592,24 @@ cp9_CheckptFB2HMMBands(CP9_t *cp9, char *errbuf, ESL_DSQ *dsq, int i0, int j0, C
       B = &(seg[r-a]);
       if(r == 0) {
         /* boundary row, i = i0-1: only M_0 and the D states can be occupied */
-        p_m = F->m[0] + B->m[0] - sc;
+        p_m = ICP9PostSc(F->m[0], B->m[0], 0, sc, INT_MIN);
         cp9ck_set(p_m, pos0, &(mass_m[0]), &(nc_m[0]), thr, nthr, &(cb->pn_min_m[0]), stride);
         for(k = 1; k <= M; k++) {
-          p_d = F->d[k] + B->d[k] - sc;
+          p_d = ICP9PostSc(F->d[k], B->d[k], 0, sc, INT_MIN);
           cp9ck_set(p_d, pos0, &(mass_d[k]), &(nc_d[k]), thr, nthr, &(cb->pn_min_d[k]), stride);
           cb->occ[k] = ILogsum(-INFTY, ILogsum(-INFTY, p_d));
         }
       }
       else {
         i = i0 + r - 1;
-        p_m = ESL_MAX(F->m[0] + B->m[0] - sc, -INFTY);
+        p_m = ICP9PostSc(F->m[0], B->m[0], 0, sc, -INFTY);
         cp9ck_fold(p_m, i, &(mass_m[0]), &(nc_m[0]), thr, nthr, &(cb->pn_min_m[0]), stride);
-        p_i = ESL_MAX(F->i[0] + B->i[0] - cp9->isc[dsq[i]][0] - sc, -INFTY);
+        p_i = ICP9PostSc(F->i[0], B->i[0], cp9->isc[dsq[i]][0], sc, -INFTY);
         cp9ck_fold(p_i, i, &(mass_i[0]), &(nc_i[0]), thr, nthr, &(cb->pn_min_i[0]), stride);
         for(k = 1; k <= M; k++) {
-          p_m = ESL_MAX(F->m[k] + B->m[k] - cp9->msc[dsq[i]][k] - sc, -INFTY);
-          p_i = ESL_MAX(F->i[k] + B->i[k] - cp9->isc[dsq[i]][k] - sc, -INFTY);
-          p_d = ESL_MAX(F->d[k] + B->d[k] - sc, -INFTY);
+          p_m = ICP9PostSc(F->m[k], B->m[k], cp9->msc[dsq[i]][k], sc, -INFTY);
+          p_i = ICP9PostSc(F->i[k], B->i[k], cp9->isc[dsq[i]][k], sc, -INFTY);
+          p_d = ICP9PostSc(F->d[k], B->d[k], 0, sc, -INFTY);
           cp9ck_fold(p_m, i, &(mass_m[k]), &(nc_m[k]), thr, nthr, &(cb->pn_min_m[k]), stride);
           cp9ck_fold(p_i, i, &(mass_i[k]), &(nc_i[k]), thr, nthr, &(cb->pn_min_i[k]), stride);
           cp9ck_fold(p_d, i, &(mass_d[k]), &(nc_d[k]), thr, nthr, &(cb->pn_min_d[k]), stride);
@@ -640,15 +640,15 @@ cp9_CheckptFB2HMMBands(CP9_t *cp9, char *errbuf, ESL_DSQ *dsq, int i0, int j0, C
       B = &(broll[r%2]);
       if(r > 0) {
         i = i0 + r - 1;
-        p_m = ESL_MAX(F->m[0] + B->m[0] - sc, -INFTY);
-        p_i = ESL_MAX(F->i[0] + B->i[0] - cp9->isc[dsq[i]][0] - sc, -INFTY);
+        p_m = ICP9PostSc(F->m[0], B->m[0], 0, sc, -INFTY);
+        p_i = ICP9PostSc(F->i[0], B->i[0], cp9->isc[dsq[i]][0], sc, -INFTY);
         cp9ck_fold(p_m,    i, &(mass_m[0]), &(nc_m[0]), thr, nthr, &(cb->pn_max_m[0]), stride);
         cp9ck_fold(p_i,    i, &(mass_i[0]), &(nc_i[0]), thr, nthr, &(cb->pn_max_i[0]), stride);
         cp9ck_fold(-INFTY, i, &(mass_d[0]), &(nc_d[0]), thr, nthr, &(cb->pn_max_d[0]), stride); /* D_0 doesn't exist */
         for(k = 1; k <= M; k++) {
-          p_m = ESL_MAX(F->m[k] + B->m[k] - cp9->msc[dsq[i]][k] - sc, -INFTY);
-          p_i = ESL_MAX(F->i[k] + B->i[k] - cp9->isc[dsq[i]][k] - sc, -INFTY);
-          p_d = ESL_MAX(F->d[k] + B->d[k] - sc, -INFTY);
+          p_m = ICP9PostSc(F->m[k], B->m[k], cp9->msc[dsq[i]][k], sc, -INFTY);
+          p_i = ICP9PostSc(F->i[k], B->i[k], cp9->isc[dsq[i]][k], sc, -INFTY);
+          p_d = ICP9PostSc(F->d[k], B->d[k], 0, sc, -INFTY);
           cp9ck_fold(p_m, i, &(mass_m[k]), &(nc_m[k]), thr, nthr, &(cb->pn_max_m[k]), stride);
           cp9ck_fold(p_i, i, &(mass_i[k]), &(nc_i[k]), thr, nthr, &(cb->pn_max_i[k]), stride);
           cp9ck_fold(p_d, i, &(mass_d[k]), &(nc_d[k]), thr, nthr, &(cb->pn_max_d[k]), stride);
@@ -656,10 +656,10 @@ cp9_CheckptFB2HMMBands(CP9_t *cp9, char *errbuf, ESL_DSQ *dsq, int i0, int j0, C
       }
       else {
         /* boundary row, i = i0-1 */
-        p_m = F->m[0] + B->m[0] - sc;
+        p_m = ICP9PostSc(F->m[0], B->m[0], 0, sc, INT_MIN);
         cp9ck_fold(p_m, pos0, &(mass_m[0]), &(nc_m[0]), thr, nthr, &(cb->pn_max_m[0]), stride);
         for(k = 1; k <= M; k++) {
-          p_d = F->d[k] + B->d[k] - sc;
+          p_d = ICP9PostSc(F->d[k], B->d[k], 0, sc, INT_MIN);
           cp9ck_fold(p_d, pos0, &(mass_d[k]), &(nc_d[k]), thr, nthr, &(cb->pn_max_d[k]), stride);
         }
       }

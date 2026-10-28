@@ -33,6 +33,7 @@
 1 exercise  utest/cm_p7_modelmaker @src/cm_p7_modelmaker_utest@
 1 exercise  utest/cm_p7_band  @src/cm_p7_band_utest@
 1 exercise  utest/p7_ibv      @src/p7_ibv_utest@
+1 exercise  utest/hmmband     @src/hmmband_utest@
 
 ################################################################
 # Integration tests

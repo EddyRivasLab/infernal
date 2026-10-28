@@ -6276,7 +6276,7 @@ cp9_PosteriorP7B(ESL_DSQ *dsq, char *errbuf, int L, CP9_t *hmm, CP9_MX *fmx, CP9
 
   /* note boundary conditions, i = 1 */
   assert(kmin[0] == 0);
-  pmx->mmx[0][0] = fmx->mmx[0][0] + bmx->mmx[0][0] - sc; /* fmx->mmx[0][0] is 0, bmx->mmx[1][0] is overall score */
+  pmx->mmx[0][0] = ICP9PostSc(fmx->mmx[0][0], bmx->mmx[0][0], 0, sc, INT_MIN); /* fmx->mmx[0][0] is 0, bmx->mmx[1][0] is overall score */
   pmx->imx[0][0] = -INFTY; /*need seq to get here*/
   pmx->dmx[0][0] = -INFTY; /*D_0 does not exist*/
   i  = 0;
@@ -6286,7 +6286,7 @@ cp9_PosteriorP7B(ESL_DSQ *dsq, char *errbuf, int L, CP9_t *hmm, CP9_MX *fmx, CP9
   for (k = kn; k <= kx; k++, kp++) {
     pmx->mmx[0][kp] = -INFTY; /*need seq to get here*/
     pmx->imx[0][kp] = -INFTY; /*need seq to get here*/
-    pmx->dmx[0][kp] = fmx->dmx[0][kp] + bmx->dmx[0][kp] - sc;
+    pmx->dmx[0][kp] = ICP9PostSc(fmx->dmx[0][kp], bmx->dmx[0][kp], 0, sc, INT_MIN);
   }
 
   for (i = 1; i <= L; i++) {
@@ -6294,8 +6294,8 @@ cp9_PosteriorP7B(ESL_DSQ *dsq, char *errbuf, int L, CP9_t *hmm, CP9_MX *fmx, CP9
       if(INBAND(i,0)) { 
 	kp = k - kmin[i];
 	assert(kp == 0);
-	pmx->mmx[i][kp] = ESL_MAX(fmx->mmx[i][kp] + bmx->mmx[i][kp] - sc, -INFTY); /* M_0 doesn't emit */
-	pmx->imx[i][kp] = ESL_MAX(fmx->imx[i][kp] + bmx->imx[i][kp] - hmm->isc[dsq[i]][0] - sc, -INFTY);
+	pmx->mmx[i][kp] = ICP9PostSc(fmx->mmx[i][kp], bmx->mmx[i][kp], 0, sc, -INFTY); /* M_0 doesn't emit */
+	pmx->imx[i][kp] = ICP9PostSc(fmx->imx[i][kp], bmx->imx[i][kp], hmm->isc[dsq[i]][0], sc, -INFTY);
 	/*hmm->isc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
 	pmx->dmx[i][kp] = -INFTY; /* D_0 doesn't exist */
       }
@@ -6305,11 +6305,11 @@ cp9_PosteriorP7B(ESL_DSQ *dsq, char *errbuf, int L, CP9_t *hmm, CP9_MX *fmx, CP9
       kp = kn - kmin[i];
       for(k = kn; k <= kx; k++, kp++)
 	{
-	  pmx->mmx[i][kp] = ESL_MAX(fmx->mmx[i][kp] + bmx->mmx[i][kp] - hmm->msc[dsq[i]][k] - sc, -INFTY);
+	  pmx->mmx[i][kp] = ICP9PostSc(fmx->mmx[i][kp], bmx->mmx[i][kp], hmm->msc[dsq[i]][k], sc, -INFTY);
 	  /*hmm->msc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
-	  pmx->imx[i][kp] = ESL_MAX(fmx->imx[i][kp] + bmx->imx[i][kp] - hmm->isc[dsq[i]][k] - sc, -INFTY);
+	  pmx->imx[i][kp] = ICP9PostSc(fmx->imx[i][kp], bmx->imx[i][kp], hmm->isc[dsq[i]][k], sc, -INFTY);
 	  /*hmm->isc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
-	  pmx->dmx[i][kp] = ESL_MAX(fmx->dmx[i][kp] + bmx->dmx[i][kp] - sc, -INFTY);
+	  pmx->dmx[i][kp] = ICP9PostSc(fmx->dmx[i][kp], bmx->dmx[i][kp], 0, sc, -INFTY);
 	}
     }	  
 
@@ -6421,7 +6421,7 @@ cp9_FB2HMMBandsP7B(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *
 
   /* note boundary conditions, i = 1 */
   assert(kmin[0] == 0);
-  pmx->mmx[0][0] = fmx->mmx[0][0] + bmx->mmx[0][0] - sc; /* fmx->mmx[0][0] is 0, bmx->mmx[1][0] is overall score */
+  pmx->mmx[0][0] = ICP9PostSc(fmx->mmx[0][0], bmx->mmx[0][0], 0, sc, INT_MIN); /* fmx->mmx[0][0] is 0, bmx->mmx[1][0] is overall score */
   pmx->imx[0][0] = -INFTY; /*need seq to get here*/
   pmx->dmx[0][0] = -INFTY; /*D_0 does not exist*/
   if((mass_m[0] = pmx->mmx[0][0]) > thresh) { 
@@ -6438,7 +6438,7 @@ cp9_FB2HMMBandsP7B(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *
   for (k = kn; k <= kx; k++, kp++) {
     pmx->mmx[0][kp] = -INFTY; /*need seq to get here*/
     pmx->imx[0][kp] = -INFTY; /*need seq to get here*/
-    pmx->dmx[0][kp] = fmx->dmx[0][kp] + bmx->dmx[0][kp] - sc;
+    pmx->dmx[0][kp] = ICP9PostSc(fmx->dmx[0][kp], bmx->dmx[0][kp], 0, sc, INT_MIN);
     /* mass_m[k] doesn't change b/c pmx->mmx[0][kp] is -INFTY */
     /* mass_i[k] doesn't change b/c pmx->imx[0][kp] is -INFTY */
     if((mass_d[k] = pmx->dmx[0][kp]) > thresh) { 
@@ -6453,7 +6453,7 @@ cp9_FB2HMMBandsP7B(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *
       if(INBAND(i,0)) { 
 	kp = k - kmin[i];
 	assert(kp == 0);
-	pmx->mmx[i][kp] = ESL_MAX(fmx->mmx[i][kp] + bmx->mmx[i][kp] - sc, -INFTY); /* M_0 doesn't emit */
+	pmx->mmx[i][kp] = ICP9PostSc(fmx->mmx[i][kp], bmx->mmx[i][kp], 0, sc, -INFTY); /* M_0 doesn't emit */
 	if(! nset_m[0]) { 
 	  if((mass_m[0] = ILogsum(mass_m[0], pmx->mmx[i][kp])) > thresh) { 
 	    cp9b->pn_min_m[0] = i;
@@ -6461,7 +6461,7 @@ cp9_FB2HMMBandsP7B(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *
 	  }
 	}
 	
-	pmx->imx[i][kp] = ESL_MAX(fmx->imx[i][kp] + bmx->imx[i][kp] - hmm->isc[dsq[i]][0] - sc, -INFTY);
+	pmx->imx[i][kp] = ICP9PostSc(fmx->imx[i][kp], bmx->imx[i][kp], hmm->isc[dsq[i]][0], sc, -INFTY);
 	/*hmm->isc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
 	if(! nset_i[0]) { 
 	  if((mass_i[0] = ILogsum(mass_i[0], pmx->imx[i][kp])) > thresh) { 
@@ -6477,11 +6477,11 @@ cp9_FB2HMMBandsP7B(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *
       kp = kn - kmin[i];
       for(k = kn; k <= kx; k++, kp++)
 	{
-	  pmx->mmx[i][kp] = ESL_MAX(fmx->mmx[i][kp] + bmx->mmx[i][kp] - hmm->msc[dsq[i]][k] - sc, -INFTY);
+	  pmx->mmx[i][kp] = ICP9PostSc(fmx->mmx[i][kp], bmx->mmx[i][kp], hmm->msc[dsq[i]][k], sc, -INFTY);
 	  /*hmm->msc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
-	  pmx->imx[i][kp] = ESL_MAX(fmx->imx[i][kp] + bmx->imx[i][kp] - hmm->isc[dsq[i]][k] - sc, -INFTY);
+	  pmx->imx[i][kp] = ICP9PostSc(fmx->imx[i][kp], bmx->imx[i][kp], hmm->isc[dsq[i]][k], sc, -INFTY);
 	  /*hmm->isc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
-	  pmx->dmx[i][kp] = ESL_MAX(fmx->dmx[i][kp] + bmx->dmx[i][kp] - sc, -INFTY);
+	  pmx->dmx[i][kp] = ICP9PostSc(fmx->dmx[i][kp], bmx->dmx[i][kp], 0, sc, -INFTY);
 
 	  if(! nset_m[k]) { 
 	    if((mass_m[k] = ILogsum(mass_m[k], pmx->mmx[i][kp])) > thresh) { 

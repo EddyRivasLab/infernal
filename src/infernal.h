@@ -57,6 +57,9 @@
 #include <p7_config.h>
 #include "config.h"
 
+#include <limits.h>
+#include <stdint.h>
+
 #include "easel.h"
 #include "esl_alphabet.h"
 #include "esl_mixdchlet.h"
@@ -3986,6 +3989,30 @@ FLogsum(float s1, float s2)
   const float max = ESL_MAX(s1, s2);
   const float min = ESL_MIN(s1, s2);
   return  (min == -eslINFINITY || (max-min) >= 23.f) ? max : max + flogsum_lookup[(int)((max-min)*INTSCALE)];
+}
+
+/* ICP9PostSc()
+ *
+ * Posterior exponent of one cell of an int (milli-bit) CP9
+ * Forward/Backward pair: <f> + <b> - <esc> - <sc>, where <esc> is the
+ * cell's emission score (0 for non-emitters) and <sc> the total score.
+ *
+ * Computed in int64_t, then clamped to [<minsc>, INT_MAX]. Off-path
+ * cells have <f> and <b> both near -INFTY, so in int arithmetic the
+ * expression leaves int range once <sc> is large (about 700 K
+ * consensus positions for a genome model) and wraps to a large
+ * positive value (brief 26_0821-148). Pass <minsc> = -INFTY where the
+ * caller floors the posterior at -INFTY and INT_MIN where it stores
+ * the raw value: in either case the result is exactly the int
+ * expression's whenever that does not overflow.
+ */
+static inline int
+ICP9PostSc(int f, int b, int esc, int sc, int minsc)
+{
+  int64_t p = (int64_t) f + (int64_t) b - (int64_t) esc - (int64_t) sc;
+  if(p < (int64_t) minsc)   return minsc;
+  if(p > (int64_t) INT_MAX) return INT_MAX;
+  return (int) p;
 }
 
 /* from mpisupport.c */
