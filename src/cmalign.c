@@ -134,7 +134,7 @@ static ESL_OPTIONS options[] = {
   { "--hmmnoband",   eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--hmm",   "--hmmvit", "w/--hmm, do not use Viterbi bands for OA alignment",              2 },
   { "--nohmm",       eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,        "--hmm", "do not auto-switch to HMM mode on 0-basepair CMs",               2 },
   /* options affecting speed and memory */
-  { "--hbanded",     eslARG_NONE,   "default", NULL,        NULL,    ACCOPTS,        NULL,                     NULL, "accelerate using CM plan 9 HMM derived bands",               3 },
+  { "--hbanded",     eslARG_NONE,   "default", NULL,        NULL,    ACCOPTS,        NULL,                     NULL, "accelerate using CM plan 9 HMM derived bands [default: CLEN<=4000]", 3 },
   { "--tau",         eslARG_REAL,      "1e-7", NULL, "1e-18<x<1",       NULL,        NULL,            "--nonbanded", "set tail loss prob for HMM bands to <x>",                    3 },
   { "--mxsize",      eslARG_REAL,    "1024.0", NULL,      "x>0.",       NULL,        NULL,                     NULL, "set maximum allowable DP matrix size to <x> Mb",             3 },
   { "--fixedtau",    eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,            "--nonbanded", "do not adjust tau (tighten bands) until mx < limit", 3 },
@@ -160,7 +160,7 @@ static ESL_OPTIONS options[] = {
   { "--p7wvpad-file",eslARG_INFILE,    NULL,  NULL,        NULL,       NULL, "--p7ibv-wv",   "--p7wv-nsamp,--p7wv-pad", "load WV pad from <f> (skips per-run calibration)",  3 },
   { "--p7wv-pad",    eslARG_INT,        "30", NULL,      "n>=0",       NULL, "--p7ibv-wv",   "--p7wv-calib", "constant WV band half-width (no calibration)",     3 },
   { "--p7wv-calib",  eslARG_NONE,       FALSE, NULL,        NULL,       NULL, "--p7ibv-wv",   "--p7wvpad-file", "opt back in to per-node WV pad calibration",       3 },
-  { "--p7kmerchain", eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL, "--p7ibv,--p7pinbridge", "genome-scale k-mer seed+chain bands (--p7band/--hmm)", 3 },
+  { "--p7kmerchain", eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL, "--p7ibv,--p7pinbridge", "k-mer seed+chain bands, w/--p7band or --hmm [default: CLEN>4000]", 3 },
   { "--p7kmerchain-ramp",  eslARG_NONE,  FALSE, NULL,        NULL,       NULL, "--p7kmerchain",                   NULL, "kmerchain: interpolated ramp between anchors, not flat band", 3 },
   { "--p7kmerchain-alpha", eslARG_REAL, "0.75", NULL,      "x>=0",       NULL, "--p7kmerchain-ramp",              NULL, "kmerchain ramp-slack alpha [default 0.75]",       3 },
   { "--p7kmerchain-mink", eslARG_INT,      "0", NULL,      "n>=0",       NULL,        NULL,                     NULL, "gate kmerchain if no exact match is >= <n> nt [default 0=off]", 3 },
@@ -586,12 +586,21 @@ main(int argc, char **argv)
  * NULL; for valued options, <strval> must be a string with program
  * lifetime (a string literal), because the cmdline path stores the
  * pointer without allocating (valloc stays 0). Mirrors easel's internal
- * set_option() do_alloc=FALSE path. Used only by maybe_hmm_autoswitch().
+ * set_option() do_alloc=FALSE path, including its last step: each option
+ * toggle-tied to <optname> that is on is turned off, as if by the command
+ * line (so forcing --p7band turns --hbanded off, as typing it does).
+ * Getopts' requirement and incompatibility checks have already run when
+ * this is called, so callers must only force combinations those checks
+ * would accept. Used only by maybe_hmm_autoswitch() and
+ * maybe_kmerchain_default().
  */
 static void
 autoswitch_force_opt(ESL_GETOPTS *go, char *optname, char *strval)
 {
-  int opti = -1, i;
+  int   opti = -1, togi, i;
+  char *s;
+  int   n;
+
   for (i = 0; i < go->nopts; i++)
     if (strcmp(optname, go->opt[i].name) == 0) { opti = i; break; }
   if (opti == -1) cm_Fail("autoswitch_force_opt(): no such option %s", optname);
@@ -602,6 +611,18 @@ autoswitch_force_opt(ESL_GETOPTS *go, char *optname, char *strval)
     go->val[opti] = go->opt[opti].defval ? go->opt[opti].defval : (char *) TRUE;
   else
     go->val[opti] = strval;
+
+  /* unset all options toggle-tied to this one (a comma-separated list) */
+  for (s = go->opt[opti].toggle_opts; s != NULL && *s != '\0'; s += (s[n] == ',') ? n+1 : n) {
+    n = strcspn(s, ",");
+    for (togi = 0; togi < go->nopts; togi++)
+      if (strlen(go->opt[togi].name) == (size_t) n && strncmp(s, go->opt[togi].name, n) == 0) break;
+    if (togi == go->nopts) cm_Fail("autoswitch_force_opt(): bad toggle list for %s", optname);
+    if (togi == opti || go->val[togi] == NULL) continue;
+    go->setby[togi] = eslARG_SETBY_CMDLINE;
+    if (go->valloc[togi] > 0) { free(go->val[togi]); go->valloc[togi] = 0; }
+    go->val[togi] = NULL;
+  }
 }
 
 /* maybe_hmm_autoswitch()
@@ -616,12 +637,15 @@ autoswitch_force_opt(ESL_GETOPTS *go, char *optname, char *strval)
  * preserving, not an approximation.
  *
  * If the loaded CM has 0 basepairs and the user requested no explicit
- * alignment mode, force the memory-minimal production HMM path
- * (--hmm --p7ibv) by setting those options in <go> as if given on the
- * command line, then emit a one-line note to stderr (only if
- * INFERNAL_STAGE_VERBOSE is set). The IBV band margin is --p7ibv-delta's
- * own default (20000 milli-bits) at every model size, or whatever the user
- * gives.
+ * alignment mode, force HMM-only mode (--hmm) by setting it in <go> as if
+ * given on the command line, then emit a one-line note to stderr (only if
+ * INFERNAL_STAGE_VERBOSE is set). The band builder is --p7ibv at CLEN <=
+ * CM_KMERCHAIN_DEFAULT_MINM, with --p7ibv-delta's own default margin
+ * (20000 milli-bits) or whatever the user gives. Above it,
+ * maybe_kmerchain_default() picks --p7kmerchain, as for every other
+ * HMM-only run (brief 26_0821-155). The user can't reach here with a
+ * builder of their own: --p7ibv and --p7kmerchain require --hmm or
+ * --p7band, and both of those return early below.
  *
  * History: brief 26_0526-013's follow-up (2026-08-07) forced a tight
  * --p7ibv-delta 1000 above CLEN 4000 (CM_AUTOSWITCH_TIGHT_DELTA_MINM). That
@@ -634,9 +658,11 @@ autoswitch_force_opt(ESL_GETOPTS *go, char *optname, char *strval)
  * 20000 came within 1 bit of it on every row (10000: 34 of 36 rows off,
  * median 25 bits), and 20000 had the best alignments. The band calculation,
  * which dominates the run time, does not depend on the margin; the wider
- * band costs seconds. So the size-conditional override was removed. bps>0
- * CMs are never touched, and --nohmm still forces the historical CM-DP
- * default.
+ * band costs seconds. So the size-conditional override was removed. Then
+ * brief 26_0821-155 made kmerchain the builder above CLEN 4000 (about as
+ * accurate as IBV there, and ~360x faster on genomes; briefs
+ * 26_0821-144/26_0821-152). bps>0 CMs are never touched here, and --nohmm
+ * still forces CM DP.
  */
 /* TRUE once maybe_hmm_autoswitch() has switched to HMM mode. The switch
  * sets options as if given on the command line, so esl_opt_IsUsed()
@@ -655,13 +681,76 @@ maybe_hmm_autoswitch(ESL_GETOPTS *go, CM_t *cm)
       esl_opt_GetBoolean(go, "--p7band")) return;
 
   autoswitch_force_opt(go, "--hmm", NULL);
-  if (! esl_opt_GetBoolean(go, "--p7ibv"))
+  if (cm->clen <= CM_KMERCHAIN_DEFAULT_MINM && ! esl_opt_GetBoolean(go, "--p7ibv"))
     autoswitch_force_opt(go, "--p7ibv", NULL);
   hmm_autoswitched = TRUE;
 
-  if(cm_StageVerbose()) /* brief 26_0821-133: informational, developer-only */
-    fprintf(stderr, "# 0-basepair CM: auto-switched to HMM mode (--p7ibv --p7ibv-delta %d); use --nohmm to force CM DP\n",
-            esl_opt_GetInteger(go, "--p7ibv-delta"));
+  if(cm_StageVerbose()) { /* brief 26_0821-133: informational, developer-only */
+    if (esl_opt_GetBoolean(go, "--p7ibv"))
+      fprintf(stderr, "# 0-basepair CM: auto-switched to HMM mode (--p7ibv --p7ibv-delta %d); use --nohmm to force CM DP\n",
+              esl_opt_GetInteger(go, "--p7ibv-delta"));
+    else
+      fprintf(stderr, "# 0-basepair CM: auto-switched to HMM mode; use --nohmm to force CM DP\n");
+  }
+}
+
+/* maybe_kmerchain_default()
+ *
+ * Above CM_KMERCHAIN_DEFAULT_MINM consensus columns (CLEN > 4000),
+ * kmerchain (k-mer seed-and-chain p7 bands, --p7kmerchain) is the default
+ * band builder (brief 26_0821-155). Must be called after
+ * maybe_hmm_autoswitch(). Forces options in <go> as if given on the
+ * command line:
+ *
+ *   HMM-only mode (--hmm, explicit or auto-switched) with no band choice
+ *   of the user's (--p7ibv, --p7kmerchain, --hmmvit, --hmmnoband): add
+ *   --p7kmerchain. Before, explicit --hmm used p7 Viterbi-trace bands and
+ *   the 0-bp auto-switch used --p7ibv. Opt out with --hmm --p7ibv.
+ *
+ *   CM mode (any bp CM; a 0-bp CM with --nohmm), when the user chose no
+ *   band, engine or algorithm mode: add --p7band --p7kmerchain, i.e. CM DP
+ *   in kmerchain bands instead of CP9 HMM bands. Opt out with --hbanded.
+ *   The modes left alone, and why:
+ *     --hbanded (explicit) the opt-out; esl_opt_IsUsed(), as it is on by default
+ *     --nonbanded          no bands at all
+ *     --p7band             keeps its own builder (Viterbi trace unless told)
+ *     --sub                the sub-CM is cut at CP9-predicted ends, and
+ *                          kmerchain bands were never measured with it
+ *     --small              d&c CYK; requires --nonbanded anyway
+ *     --cyk, --sample      algorithm choices whose band source was not
+ *                          measured with kmerchain: keep CP9 bands
+ *     --ckpt               developer engine choice (checkpointed CP9-banded OA)
+ *   Modifiers such as -g, --notrunc, --tau, --fixedtau and --mxsize don't
+ *   suppress it: brief 26_0821-137 measured kmerchain under VADR's line
+ *   (-g --tau 0.001 --fixedtau --mxsize 4000 ...).
+ *
+ * The forced combinations pass every option check in
+ * process_commandline(): --p7kmerchain requires --p7band or --hmm and is
+ * incompatible with --p7ibv, --p7pinbridge, --hmmvit and --hmmnoband,
+ * all of which are excluded above (--p7pinbridge requires --p7band).
+ */
+/* TRUE once maybe_kmerchain_default() has chosen kmerchain; output_header()
+ * reads it to say the band builder was auto-selected. */
+static int kmerchain_autoselected = FALSE;
+static void
+maybe_kmerchain_default(ESL_GETOPTS *go, CM_t *cm)
+{
+  if (cm->clen <= CM_KMERCHAIN_DEFAULT_MINM) return;
+
+  if (esl_opt_GetBoolean(go, "--hmm")) {
+    if (esl_opt_GetBoolean(go, "--p7ibv")  || esl_opt_GetBoolean(go, "--p7kmerchain") ||
+        esl_opt_GetBoolean(go, "--hmmvit") || esl_opt_GetBoolean(go, "--hmmnoband")) return;
+    autoswitch_force_opt(go, "--p7kmerchain", NULL);
+  }
+  else {
+    if (esl_opt_IsUsed    (go, "--hbanded") || esl_opt_GetBoolean(go, "--nonbanded") ||
+        esl_opt_GetBoolean(go, "--p7band")  || esl_opt_GetBoolean(go, "--sub")       ||
+        esl_opt_GetBoolean(go, "--small")   || esl_opt_GetBoolean(go, "--cyk")       ||
+        esl_opt_GetBoolean(go, "--sample")  || esl_opt_GetBoolean(go, "--ckpt")) return;
+    autoswitch_force_opt(go, "--p7band", NULL); /* turns --hbanded off */
+    autoswitch_force_opt(go, "--p7kmerchain", NULL);
+  }
+  kmerchain_autoselected = TRUE;
 }
 
 /* use_glocal_config()
@@ -790,10 +879,12 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   status = cm_file_Read(cfg->cmfp, TRUE, &(cfg->abc), NULL);
   if(status != eslEOF) cm_Fail("CM file %s does not contain just one CM\n", cfg->cmfp->fname);
 
-  /* 0-basepair CMs: auto-switch to the fast HMM path (--hmm --p7ibv) unless
-   * the user requested an explicit mode or passed --nohmm. Must run before
-   * output_header() and initialize_cm() so they see the switched options. */
+  /* 0-basepair CMs: auto-switch to the fast HMM path (--hmm) unless the
+   * user requested an explicit mode or passed --nohmm; then, above CLEN
+   * 4000, default to kmerchain bands. Must run before output_header() and
+   * initialize_cm() so they see the switched options. */
   maybe_hmm_autoswitch(go, cm);
+  maybe_kmerchain_default(go, cm);
 
   if(cfg->ofp != stdout) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm, ncpus);
 
@@ -2832,9 +2923,11 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   status = cm_file_Read(cfg->cmfp, TRUE, &(cfg->abc), NULL);
   if(status != eslEOF) mpi_failure("CM file %s does not contain just one CM\n", cfg->cmfp->fname);
 
-  /* 0-basepair CM auto-switch to HMM mode (see maybe_hmm_autoswitch); must
+  /* 0-basepair CM auto-switch to HMM mode, and the CLEN > 4000 kmerchain
+   * default (see maybe_hmm_autoswitch(), maybe_kmerchain_default()); must
    * match the worker's switch so master/worker agree on the dispatch path. */
   maybe_hmm_autoswitch(go, cm);
+  maybe_kmerchain_default(go, cm);
 
   nworkers  = cfg->nproc - 1;
   if(cfg->ofp != stdout) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm, nworkers+1);
@@ -3223,9 +3316,11 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   status = cm_file_Read(cfg->cmfp, TRUE, &(cfg->abc), NULL);
   if(status != eslEOF) mpi_failure("CM file %s does not contain just one CM\n", cfg->cmfp->fname);
 
-  /* 0-basepair CM auto-switch to HMM mode (see maybe_hmm_autoswitch); must
+  /* 0-basepair CM auto-switch to HMM mode, and the CLEN > 4000 kmerchain
+   * default (see maybe_hmm_autoswitch(), maybe_kmerchain_default()); must
    * match the master's switch so master/worker agree on the dispatch path. */
   maybe_hmm_autoswitch(go, cm);
+  maybe_kmerchain_default(go, cm);
 
   if((status = initialize_cm(go, cfg, errbuf, cm)) != eslOK) mpi_failure(errbuf);
 
@@ -3933,8 +4028,11 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *sqfile, CM_t
                esl_opt_IsUsed(go, "--p7ibv-mode") ? ", mode " : "",
                esl_opt_IsUsed(go, "--p7ibv-mode") ? esl_opt_GetString(go, "--p7ibv-mode") : "");
     }
-    else if (esl_opt_GetBoolean(go, "--p7kmerchain"))  snprintf(bdesc, sizeof(bdesc), "kmerchain (k-mer seed and chain)%s",
-                                                                esl_opt_GetBoolean(go, "--p7kmerchain-ramp") ? ", ramp" : "");
+    else if (esl_opt_GetBoolean(go, "--p7kmerchain"))  snprintf(bdesc, sizeof(bdesc), "kmerchain (k-mer seed and chain)%s%s",
+                                                                esl_opt_GetBoolean(go, "--p7kmerchain-ramp") ? ", ramp" : "",
+                                                                (! kmerchain_autoselected) ? "" :
+                                                                (in_hmm ? " [auto-selected for CLEN > 4000; --hmm --p7ibv for IBV bands]" :
+                                                                          " [auto-selected for CLEN > 4000; --hbanded for CP9 HMM bands]"));
     else if (! in_hmm && esl_opt_GetBoolean(go, "--p7pinbridge")) snprintf(bdesc, sizeof(bdesc), "pin-bridge prefilter + banded p7 Viterbi trace");
     else                                               snprintf(bdesc, sizeof(bdesc), "p7 Viterbi trace (default)");
     fprintf(ofp, "# p7 band method:                              %s\n", bdesc);
