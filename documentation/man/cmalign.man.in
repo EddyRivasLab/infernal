@@ -49,6 +49,24 @@ described below for the
 option. HMM banding can be turned off with the 
 .B --nonbanded
 option.
+.PP
+For models with a consensus length (CLEN) greater than 4000, such as
+those of whole viral genomes, the default bands are derived
+differently: exact k-mer matches between the sequence and the model's
+consensus sequence are chained into one colinear set of anchors, and
+the bands are drawn around them. At that scale this is much faster and uses much
+less memory than the
+.B --hbanded
+calculation. Use
+.B --hbanded
+to get the plan 9 HMM bands for such a model. Models with zero
+basepairs are aligned with the profile HMM alone (no CM) unless
+.B --nohmm
+is used; above CLEN 4000 they also use the k-mer chain bands by
+default, and
+.B --hmm --p7ibv
+selects the Forward/Backward-derived bands used for smaller models
+instead. The bands chosen are reported in the output header.
 
 .PP
 By default, 
@@ -298,7 +316,10 @@ as the "sub CMs" described by Weinberg and Ruzzo.
 
 .TP
 .B --hbanded
-This option is turned on by default. Accelerate alignment by pruning
+This option is turned on by default for models with a consensus length
+of 4000 or less. For longer models the default bands are k-mer chain
+bands (see DESCRIPTION), and this option must be given to use the bands
+described here. Accelerate alignment by pruning
 away regions of the CM DP matrix that are deemed negligible by an HMM.
 First, each sequence is scored with a CM plan 9 HMM derived from the
 CM using the Forward and Backward HMM algorithms to calculate

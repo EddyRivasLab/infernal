@@ -100,6 +100,7 @@
 #define DEFAULT_HB_MXSIZE_MAX_W     3000.          /* a CM window size (cm->W) of this or higher results in max matrix size (DEFAULT_HB_MXSIZE_MAX_MB) */
 #define DEFAULT_HB_MXSIZE_MIN_MB    256.           /* minimum for auto-determined maximum HMM banded matrix size */
 #define DEFAULT_HB_MXSIZE_MIN_W     1000.          /* a CM window size (cm->W) of this or lower results in min matrix size (DEFAULT_HB_MXSIZE_MIN_MB) */
+#define CM_KMERCHAIN_DEFAULT_MINM   4000           /* cmalign: models with CLEN > this get kmerchain p7 bands by default (brief 26_0821-155) */
 
 /* Hard-coded values (not changeable by command-line options). 
  * All of these are related to HMM band tightening to reduce
