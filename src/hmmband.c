@@ -1244,7 +1244,7 @@ cp9_ValidateBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int i0, int j0, int 
   int sd;           /* minimum d allowed for a state, ex: MP_st = 2, ML_st = 1. etc. */
   int max_sdl_sdr;  /* maximum of StateLeftDelta, StateRightDelta for a state */
   int dn;           /* max_sdl_sdr if do_trunc, else sd */
-  int hd_needed;
+  int64_t hd_needed; /* int64: must match cp9b->hd_needed, which can exceed 2^31 for genome-scale M*L */
   int j;
 
 
@@ -1348,14 +1348,14 @@ cp9_GrowHDBands(CP9Bands_t *cp9b, char *errbuf)
 {
   int status;
   int v;
-  int cur_size = 0;
+  int64_t cur_size = 0; /* int64: total hd cells across all states can exceed 2^31 for genome-scale M*L */
   int jbw;
 
   /* count size we need for hdmin/hdmax given current jmin, jmax */
   cp9b->hd_needed = 0; /* we'll rewrite this */
   for(v = 0; v < cp9b->cm_M; v++) {
     cp9b->hd_needed += cp9b->jmax[v] - cp9b->jmin[v] + 1;
-    /* printf("hd needed v: %4d bw: %4d total: %5d\n", v, cp9b->jmax[v] - cp9b->jmin[v] + 1, cp9b->hd_needed);  */
+    /* printf("hd needed v: %4d bw: %4d total: %" PRId64 "\n", v, cp9b->jmax[v] - cp9b->jmin[v] + 1, cp9b->hd_needed);  */
   }
   if(cp9b->hd_alloced < cp9b->hd_needed) {
     void *tmp;
