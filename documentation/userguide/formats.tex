@@ -23,7 +23,7 @@ CONS     yes
 MAP      yes
 P7NODEPAD yes
 DATE     Wed Jun 13 05:40:07 2012
-COM      [1] ./cmbuild Cobalamin.cm ../tutorial/Cobalamin.sto
+COM      [1] ./cmbuild --p7pad Cobalamin.cm ../tutorial/Cobalamin.sto
 COM      [2] ./cmcalibrate Cobalamin.cm
 PBEGIN   0.05
 PEND     0.05
@@ -227,8 +227,10 @@ present in \prog{INFERNAL1/b} format. If \prog{yes}, the per-node pad
 fields on each node line (see below) are valid and contain the
 empirically-derived band-pad widths used by the p7 HMM Viterbi banding
 pipeline in \prog{cmsearch} / \prog{cmscan}. These pads are computed
-by \prog{cmbuild} via Monte Carlo simulation and stored in the CM
-file so they do not need to be recomputed at search time. If
+by \prog{cmbuild} or \prog{cmconvert} via Monte Carlo simulation, only
+when the \prog{--p7pad} option is given (they are not computed by
+default), and stored in the CM file so they do not need to be
+recomputed at search time. If
 \prog{no}, the per-node pad fields are ignored and the pipeline falls
 back to either a default uniform pad or a sidecar pad file supplied via
 \prog{--p7nodepad-file}. \textbf{Optional}; assumed to be no if not
