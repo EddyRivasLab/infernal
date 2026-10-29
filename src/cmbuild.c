@@ -142,11 +142,12 @@ static ESL_OPTIONS options[] = {
   { "--ElL",     eslARG_INT,     NULL, NULL, "n>0",   NULL,  NULL, "--Elcmult", "length of seqs to search for local stats is <n>",             107 },
   { "--EgL",     eslARG_INT,     NULL, NULL, "n>0",   NULL,  NULL, "--Egcmult", "length of seqs to search for glocal stats is <n>",            107 },
   { "--Eseed",   eslARG_INT,     "42", NULL, "n>=0",  NULL,  NULL, NULL,        "set RNG seed for p7 calibration to <n> (0=arbitrary)",         107 },
-  { "--no-p7pad",   eslARG_NONE,    FALSE, NULL, NULL,    NULL,  NULL, NULL,    "skip p7 per-node band pad computation",                               107 },
-  { "--p7pad-N",    eslARG_INT,    "1000", NULL, "n>0",   NULL,  NULL, "--no-p7pad", "number of parsetree samples for p7 pad simulation",            107 },
-  { "--p7pad-q",    eslARG_REAL,   "0.99", NULL, "0<x<=1",NULL,  NULL, "--no-p7pad", "quantile for p7 pad per-node deficit distribution",             107 },
-  { "--p7pad-seed", eslARG_INT,      "42", NULL, "n>=0",  NULL,  NULL, "--no-p7pad", "set RNG seed for p7 pad simulation (0=arbitrary)",              107 },
-  { "--p7pad-cpu",  eslARG_INT,    CMNCPU, NULL, "n>=0",  NULL,  NULL, "--no-p7pad", "number of parallel CPUs for p7 pad simulation (0=serial)",    107 },
+  { "--p7pad",      eslARG_NONE,    FALSE, NULL, NULL,    NULL,  NULL, "--no-p7pad", "compute p7 per-node band pads (O(M^2) memory)",               107 },
+  { "--no-p7pad",   eslARG_NONE,    FALSE, NULL, NULL,    NULL,  NULL, "--p7pad",    "don't compute p7 per-node band pads (the default)",           107 },
+  { "--p7pad-N",    eslARG_INT,    "1000", NULL, "n>0",   NULL,  "--p7pad", NULL,   "number of parsetree samples for p7 pad simulation",            107 },
+  { "--p7pad-q",    eslARG_REAL,   "0.99", NULL, "0<x<=1",NULL,  "--p7pad", NULL,   "quantile for p7 pad per-node deficit distribution",             107 },
+  { "--p7pad-seed", eslARG_INT,      "42", NULL, "n>=0",  NULL,  "--p7pad", NULL,   "set RNG seed for p7 pad simulation (0=arbitrary)",              107 },
+  { "--p7pad-cpu",  eslARG_INT,    CMNCPU, NULL, "n>=0",  NULL,  "--p7pad", NULL,   "number of parallel CPUs for p7 pad simulation (0=serial)",    107 },
   { "--no-fil-pcut",  eslARG_NONE,    FALSE, NULL, NULL,    NULL,  NULL,         NULL,         "skip per-CM F1/F2/F3 P-value cutoff calibration",            107 },
   { "--fil-pcut-N",   eslARG_INT,    "1000", NULL, "n>0",   NULL,  NULL, "--no-fil-pcut", "number of CM emissions for F1/F2/F3 cutoff calibration",      107 },
   { "--fil-pcut-seed",eslARG_INT,      "42", NULL, "n>=0",  NULL,  NULL, "--no-fil-pcut", "set RNG seed for F1/F2/F3 cutoff calibration (0=arbitrary)",  107 },
@@ -1457,10 +1458,15 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *alifile)
 
    if ((status = cm_Validate(cm, 0.0001, errbuf)) != eslOK) return status;
 
-   /* Compute per-HMM-node p7 band pads and embed in CM file, unless --no-p7pad. */
+   /* Compute per-HMM-node p7 band pads and embed in CM file, only with --p7pad.
+    * Pads are opt-in: they cost O(M^2) memory (~44 GB at CLEN 30K), and the
+    * only default reader is cmalign's kmerchain banding above CLEN 4000, which
+    * uses a uniform --p7padplus pad without them (briefs 26_0821-155/26_0821-156).
+    * --no-p7pad is still accepted, as a no-op, for existing scripts.
+    */
    float avgpad = -1.0;
    int   max_pad = 0;
-   if (! esl_opt_GetBoolean(go, "--no-p7pad")) {
+   if (esl_opt_GetBoolean(go, "--p7pad")) {
      ESL_STOPWATCH *w_pad = NULL;
      if (cfg->be_verbose) {
        w_pad = esl_stopwatch_Create();

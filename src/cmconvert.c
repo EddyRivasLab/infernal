@@ -38,11 +38,12 @@ static ESL_OPTIONS options[] = {
   { "--outfmt",  eslARG_STRING, NULL,  NULL, NULL,      NULL,       NULL,"-1,--mlhmm,--fhmm,--cp9ascm", "output format: 1/a, 1/b, or 1/d (default: 1/d)",            1 },
   { "--dropknots",eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,       NULL, "allow dropping pseudoknots the output format can't store", 1 },
   /* options for controlling p7 per-node band pad computation */
-  { "--no-p7pad",   eslARG_NONE,    FALSE, NULL, NULL,    NULL,  NULL,              NULL, "skip p7 per-node band pad computation",          2 },
-  { "--p7pad-N",    eslARG_INT,    "1000", NULL, "n>0",   NULL,  NULL, "--no-p7pad", "number of samples for p7 pad simulation",        2 },
-  { "--p7pad-q",    eslARG_REAL,   "0.99", NULL, "0<x<=1",NULL,  NULL, "--no-p7pad", "quantile for p7 pad deficit distribution",        2 },
-  { "--p7pad-seed", eslARG_INT,      "42", NULL, "n>=0",  NULL,  NULL, "--no-p7pad", "RNG seed for p7 pad simulation (0=arbitrary)",    2 },
-  { "--p7pad-cpu",  eslARG_INT,    CMNCPU, NULL, "n>=0",  NULL,  NULL, "--no-p7pad", "number of CPUs for p7 pad simulation (0=serial)",        2 },
+  { "--p7pad",      eslARG_NONE,    FALSE, NULL, NULL,    NULL,  NULL,    "--no-p7pad", "compute p7 per-node band pads (O(M^2) memory)",   2 },
+  { "--no-p7pad",   eslARG_NONE,    FALSE, NULL, NULL,    NULL,  NULL,       "--p7pad", "don't compute p7 per-node band pads (default)",   2 },
+  { "--p7pad-N",    eslARG_INT,    "1000", NULL, "n>0",   NULL,  "--p7pad",       NULL, "number of samples for p7 pad simulation",        2 },
+  { "--p7pad-q",    eslARG_REAL,   "0.99", NULL, "0<x<=1",NULL,  "--p7pad",       NULL, "quantile for p7 pad deficit distribution",       2 },
+  { "--p7pad-seed", eslARG_INT,      "42", NULL, "n>=0",  NULL,  "--p7pad",       NULL, "RNG seed for p7 pad simulation (0=arbitrary)",   2 },
+  { "--p7pad-cpu",  eslARG_INT,    CMNCPU, NULL, "n>=0",  NULL,  "--p7pad",       NULL, "number of CPUs for p7 pad simulation (0=serial)", 2 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 static char usage[]  = "[-options] <cmfile>";
@@ -162,9 +163,15 @@ main(int argc, char **argv)
 	if ((status = configure_model(cm, errbuf)) != eslOK) cm_Fail(errbuf);
       }
 
-      /* Compute p7 per-node band pads and embed in CM, unless --no-p7pad or output
-       * format doesn't support them (-1, --mlhmm, --fhmm, --cp9ascm). */
-      if (! esl_opt_GetBoolean(go, "--no-p7pad")  &&
+      /* Compute p7 per-node band pads and embed in CM, only with --p7pad and
+       * only if the output format supports them (not -1, --mlhmm, --fhmm, --cp9ascm).
+       * Pads are opt-in: they cost O(M^2) memory, and the only default reader
+       * is cmalign's kmerchain banding above CLEN 4000, which uses a uniform
+       * --p7padplus pad without them (briefs 26_0821-155/26_0821-156). Without --p7pad, pads
+       * already in the input CM are kept as they are. --no-p7pad is still
+       * accepted, as a no-op, for existing scripts.
+       */
+      if (  esl_opt_GetBoolean(go, "--p7pad")     &&
           ! esl_opt_GetBoolean(go, "-1")           &&
           ! esl_opt_GetBoolean(go, "--mlhmm")      &&
           ! esl_opt_GetBoolean(go, "--fhmm")       &&
