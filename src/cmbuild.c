@@ -148,9 +148,10 @@ static ESL_OPTIONS options[] = {
   { "--p7pad-q",    eslARG_REAL,   "0.99", NULL, "0<x<=1",NULL,  "--p7pad", NULL,   "quantile for p7 pad per-node deficit distribution",             107 },
   { "--p7pad-seed", eslARG_INT,      "42", NULL, "n>=0",  NULL,  "--p7pad", NULL,   "set RNG seed for p7 pad simulation (0=arbitrary)",              107 },
   { "--p7pad-cpu",  eslARG_INT,    CMNCPU, NULL, "n>=0",  NULL,  "--p7pad", NULL,   "number of parallel CPUs for p7 pad simulation (0=serial)",    107 },
-  { "--no-fil-pcut",  eslARG_NONE,    FALSE, NULL, NULL,    NULL,  NULL,         NULL,         "skip per-CM F1/F2/F3 P-value cutoff calibration",            107 },
-  { "--fil-pcut-N",   eslARG_INT,    "1000", NULL, "n>0",   NULL,  NULL, "--no-fil-pcut", "number of CM emissions for F1/F2/F3 cutoff calibration",      107 },
-  { "--fil-pcut-seed",eslARG_INT,      "42", NULL, "n>=0",  NULL,  NULL, "--no-fil-pcut", "set RNG seed for F1/F2/F3 cutoff calibration (0=arbitrary)",  107 },
+  { "--fil-pcut",     eslARG_NONE,    FALSE, NULL, NULL,    NULL,  NULL,  "--no-fil-pcut", "calibrate per-CM F1/F2/F3 P-value cutoffs (for cmsearch --use-fil-pcut)", 107 },
+  { "--no-fil-pcut",  eslARG_NONE,    FALSE, NULL, NULL,    NULL,  NULL,  "--fil-pcut",    "don't calibrate per-CM F1/F2/F3 P-value cutoffs (the default)",  107 },
+  { "--fil-pcut-N",   eslARG_INT,    "1000", NULL, "n>0",   NULL,  "--fil-pcut", NULL,    "number of CM emissions for F1/F2/F3 cutoff calibration",      107 },
+  { "--fil-pcut-seed",eslARG_INT,      "42", NULL, "n>=0",  NULL,  "--fil-pcut", NULL,    "set RNG seed for F1/F2/F3 cutoff calibration (0=arbitrary)",  107 },
   /* LocalMu mini-simulation options */
   { "--localmu-N",        eslARG_INT,     NULL,  NULL, "n>0",     NULL, "--localmu", "--no-localmu",  "number of seqs for local-mu mini-sim (default auto by clen)",        107 },
   { "--localmu-seed",     eslARG_INT,     "42",  NULL, "n>=0",    NULL, "--localmu", "--no-localmu",  "RNG seed for local-mu mini-simulation (0=arbitrary)",                107 },
@@ -1513,10 +1514,15 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *alifile)
      if (w_pad != NULL) esl_stopwatch_Destroy(w_pad);
    }
 
-   /* Calibrate per-CM F1/F2/F3 P-value cutoffs and embed in CM file,
-    * unless --no-fil-pcut. Runs after p7nodepad so cm->fp7 + evparam are set.
+   /* Calibrate per-CM F1/F2/F3 P-value cutoffs and embed in CM file, only
+    * with --fil-pcut. Opt-in, like the p7 pads: the calibration is ~all of a
+    * default cmbuild's time at genome scale (~1 h at CLEN 30K, ~M^2), and the
+    * stored F1F2F3CUT is read only by cmsearch/cmscan --use-fil-pcut
+    * (briefs 26_0821-156/26_0821-160). --no-fil-pcut is still accepted, as a
+    * no-op, for existing scripts. Runs after p7nodepad so cm->fp7 + evparam
+    * are set.
     */
-   if (! esl_opt_GetBoolean(go, "--no-fil-pcut")) {
+   if (esl_opt_GetBoolean(go, "--fil-pcut")) {
      ESL_STOPWATCH *w_pcut = NULL;
      if (cfg->be_verbose) {
        w_pcut = esl_stopwatch_Create();
