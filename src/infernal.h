@@ -731,8 +731,8 @@ typedef struct cp9_mx_s {
   /* variables added for HMMER3 p7 HMM banding of CP9 HMM dp algorithms */
   int *kmin;            /* OPTIONAL (can be null) [0.1..i..rows] = k, minimum node for residue i is k */
   int *kmax;            /* OPTIONAL (can be null) [0.1..i..rows] = k, maximum node for residue i is k */
-  int  ncells_allocated; /* number of cells allocated in matrix */
-  int  ncells_valid;     /* number of cells currently valid in the matrix */
+  int64_t ncells_allocated; /* number of cells allocated in matrix */
+  int64_t ncells_valid;     /* number of cells currently valid in the matrix */
 
 } CP9_MX;
 

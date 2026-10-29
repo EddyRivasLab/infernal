@@ -50,6 +50,9 @@ CreateCP9Matrix(int N, int M)
   int status;
   CP9_MX *mx;
   int i;
+  /* A non-banded CP9 matrix has (N+1)*(M+1) cells, which overflows an
+   * int once N and M are genome-sized, so count cells in int64_t. */
+  int64_t ncells = (int64_t) (N+1) * (M+1);
 
   ESL_ALLOC(mx,      sizeof(CP9_MX));
   ESL_ALLOC(mx->mmx, sizeof(int *) * (N+1));
@@ -58,10 +61,10 @@ CreateCP9Matrix(int N, int M)
   ESL_ALLOC(mx->elmx,sizeof(int *) * (N+1)); 
   /* slightly wasteful, some nodes can't go to EL (for ex: right half of MATPs) */
   ESL_ALLOC(mx->erow,    sizeof(int) * (N+1));
-  ESL_ALLOC(mx->mmx_mem, sizeof(int) * ((N+1)*(M+1)));
-  ESL_ALLOC(mx->imx_mem, sizeof(int) * ((N+1)*(M+1)));
-  ESL_ALLOC(mx->dmx_mem, sizeof(int) * ((N+1)*(M+1)));
-  ESL_ALLOC(mx->elmx_mem,sizeof(int) * ((N+1)*(M+1)));
+  ESL_ALLOC(mx->mmx_mem, sizeof(int) * ncells);
+  ESL_ALLOC(mx->imx_mem, sizeof(int) * ncells);
+  ESL_ALLOC(mx->dmx_mem, sizeof(int) * ncells);
+  ESL_ALLOC(mx->elmx_mem,sizeof(int) * ncells);
 
   /* The indirect assignment below looks wasteful; it's actually
    * used for aligning data on 16-byte boundaries as a cache 
@@ -73,18 +76,18 @@ CreateCP9Matrix(int N, int M)
   mx->elmx[0]= (int *) mx->elmx_mem;
   for (i = 1; i <= N; i++)
     {
-      mx->mmx[i] = mx->mmx[0] + (i*(M+1));
-      mx->imx[i] = mx->imx[0] + (i*(M+1));
-      mx->dmx[i] = mx->dmx[0] + (i*(M+1));
-      mx->elmx[i]= mx->elmx[0]+ (i*(M+1));
+      mx->mmx[i] = mx->mmx[0] + ((int64_t) i*(M+1));
+      mx->imx[i] = mx->imx[0] + ((int64_t) i*(M+1));
+      mx->dmx[i] = mx->dmx[0] + ((int64_t) i*(M+1));
+      mx->elmx[i]= mx->elmx[0]+ ((int64_t) i*(M+1));
     }
 
   mx->M = M;
   mx->rows = N;
   mx->kmin = NULL;
   mx->kmax = NULL;
-  mx->ncells_allocated = (M+1) * (N+1);
-  mx->ncells_valid     = (M+1) * (N+1);
+  mx->ncells_allocated = ncells;
+  mx->ncells_valid     = ncells;
   mx->size_Mb =  (float) sizeof(CP9_MX);
   mx->size_Mb += (float) (sizeof(int *) * (mx->rows+1) * 4); /* mx->*mx ptrs */
   mx->size_Mb += (float) (sizeof(int)   * (mx->rows+1) * (M+1) * 4); /* mx->*mx_mem */
@@ -160,9 +163,9 @@ GrowCP9Matrix(CP9_MX *mx, char *errbuf, int N, int M, int *kmin, int *kmax, int 
   int status;
   void *p;
   int i;
-  int ncells_needed = 0;
+  int64_t ncells_needed = 0; /* int64_t: (N+1)*(M+1) overflows an int at genome scale */
   int do_banded;
-  int cur_ncells = 0;
+  int64_t cur_ncells = 0;
   int do_reallocate;
 
   if(mx->M != M) ESL_FAIL(eslEINCOMPAT, errbuf, "GrowCP9Matrix(), mx->M: %d != M passed in: %d\n", mx->M, M);
@@ -172,7 +175,7 @@ GrowCP9Matrix(CP9_MX *mx, char *errbuf, int N, int M, int *kmin, int *kmax, int 
   if(do_banded) { 
     for (i = 0; i <= N; i++) ncells_needed += (kmax[i] - kmin[i] + 1);
   }
-  else ncells_needed = (N+1) * (M+1);
+  else ncells_needed = (int64_t) (N+1) * (M+1);
   do_reallocate = (ncells_needed <= mx->ncells_allocated) ? FALSE : TRUE;
 
   if(do_reallocate) { 
@@ -214,10 +217,10 @@ GrowCP9Matrix(CP9_MX *mx, char *errbuf, int N, int M, int *kmin, int *kmax, int 
     }
     else { /* non-banded, we only get here if we didn't go to done, i.e. we reallocated */
       for (i = 1; i <= N; i++) {
-	mx->mmx[i] = mx->mmx[0] + (i*(M+1));
-	mx->imx[i] = mx->imx[0] + (i*(M+1));
-	mx->dmx[i] = mx->dmx[0] + (i*(M+1));
-	mx->elmx[i]= mx->elmx[0]+ (i*(M+1));
+	mx->mmx[i] = mx->mmx[0] + ((int64_t) i*(M+1));
+	mx->imx[i] = mx->imx[0] + ((int64_t) i*(M+1));
+	mx->dmx[i] = mx->dmx[0] + ((int64_t) i*(M+1));
+	mx->elmx[i]= mx->elmx[0]+ ((int64_t) i*(M+1));
       }
     }
   }
@@ -284,7 +287,7 @@ SizeNeededCP9Matrix(int N, int M, int *kmin, int *kmax)
   if(do_banded) { 
     for (i = 0; i <= N; i++) ncells_needed += (kmax[i] - kmin[i] + 1);
   }
-  else ncells_needed = (N+1) * (M+1);
+  else ncells_needed = (int64_t) (N+1) * (M+1);
 
   ret_mb  = (float) sizeof(CP9_MX);
   ret_mb += (float) (sizeof(int *) * (N+1) * 4);           /* mx->*mx ptrs */
