@@ -165,8 +165,9 @@ main(int argc, char **argv)
 
       /* Compute p7 per-node band pads and embed in CM, only with --p7pad and
        * only if the output format supports them (not -1, --mlhmm, --fhmm, --cp9ascm).
-       * Pads are opt-in: they cost O(M^2) memory and no default search path
-       * reads them (briefs 26_0821-155/26_0821-156). Without --p7pad, pads
+       * Pads are opt-in: they cost O(M^2) memory, and the only default reader
+       * is cmalign's kmerchain banding above CLEN 4000, which uses a uniform
+       * --p7padplus pad without them (briefs 26_0821-155/26_0821-156). Without --p7pad, pads
        * already in the input CM are kept as they are. --no-p7pad is still
        * accepted, as a no-op, for existing scripts.
        */

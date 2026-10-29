@@ -1453,8 +1453,9 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *alifile)
    if ((status = cm_Validate(cm, 0.0001, errbuf)) != eslOK) return status;
 
    /* Compute per-HMM-node p7 band pads and embed in CM file, only with --p7pad.
-    * Pads are opt-in: they cost O(M^2) memory (~44 GB at CLEN 30K) and no
-    * default search path reads them (briefs 26_0821-155/26_0821-156).
+    * Pads are opt-in: they cost O(M^2) memory (~44 GB at CLEN 30K), and the
+    * only default reader is cmalign's kmerchain banding above CLEN 4000, which
+    * uses a uniform --p7padplus pad without them (briefs 26_0821-155/26_0821-156).
     * --no-p7pad is still accepted, as a no-op, for existing scripts.
     */
    float avgpad = -1.0;
