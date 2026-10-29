@@ -11,7 +11,8 @@
 # Usage:    ./itest12-p7nodepad.pl <builddir> <srcdir> <tmpfile prefix>
 # Example:  ./itest12-p7nodepad.pl ..         ..       tmpfoo
 #
-# All cmbuild/cmconvert invocations use --p7pad-N 50 (not the default
+# Pads are computed only with --p7pad (off by default). All padded
+# cmbuild/cmconvert invocations use --p7pad-N 50 (not the default
 # 1000) so the Monte Carlo pad simulation stays fast.
 
 BEGIN {
@@ -35,23 +36,23 @@ my $ali    = "$srcdir/testsuite/tRNA.sto";
 my $v1a_in = "$srcdir/testsuite/tRNA.1p0.cm";
 
 # Clean up any leftover files from a previous run
-for my $suffix ("default.cm", "nopad.cm",
+for my $suffix ("default.cm", "nopad.cm", "nopad2.cm",
                 "seed17a.cm", "seed17b.cm",
                 "serial.cm", "threaded.cm",
                 "bin.cm", "back.cm",
-                "1p0-input.cm", "converted.cm", "converted.nopad.cm",
+                "1p0-input.cm", "converted.cm", "converted.nopad.cm", "converted.nopad2.cm",
                 "seed17a.filt", "seed17b.filt",
                 "cmbuild.log") {
     if (-e "$tmppfx.$suffix") { unlink "$tmppfx.$suffix"; }
 }
 
 ######################################################################
-# Subtest 1: Default cmbuild (with pad) produces INFERNAL1/d with pads.
+# Subtest 1: cmbuild --p7pad produces INFERNAL1/d with pads.
 # (Default cmbuild now stores a null3-OFF E-value set via the fastcal
 # store-both path, so the CM carries CMH_EXPTAIL_NONULL3_STATS and is
 # written as INFERNAL1/d, not 1/b -- see cm_file.c write-format gate.)
 ######################################################################
-`$builddir/src/cmbuild --wnone -F --p7pad-N 50 --p7pad-seed 42 $tmppfx.default.cm $ali > $tmppfx.cmbuild.log 2>&1`;
+`$builddir/src/cmbuild --wnone -F --p7pad --p7pad-N 50 --p7pad-seed 42 $tmppfx.default.cm $ali > $tmppfx.cmbuild.log 2>&1`;
 if ($? != 0) { die "FAIL: cmbuild (default) failed\n"; }
 
 my $first = first_line("$tmppfx.default.cm");
@@ -59,14 +60,18 @@ if ($first !~ /^INFERNAL1\/d\b/) { die "FAIL: subtest 1: default cmbuild first l
 if (! file_has_header("$tmppfx.default.cm", "P7NODEPAD", "yes")) { die "FAIL: subtest 1: default cmbuild output missing 'P7NODEPAD yes'\n"; }
 
 ######################################################################
-# Subtest 2: --no-p7pad suppresses pad computation.
+# Subtest 2: default cmbuild (no --p7pad) computes no pads; --no-p7pad
+# is accepted as a no-op and gives the same header.
 # First line is INFERNAL1/d (format tag is independent of whether pads
 # are populated; default cmbuild still stores the null3-OFF E-value set,
 # so the CM is 1/d), header says 'P7NODEPAD no', and the first MATL node
 # line trails with '- -' (both dashes) rather than '<int> -'.
 ######################################################################
-`$builddir/src/cmbuild --wnone -F --no-p7pad $tmppfx.nopad.cm $ali > $tmppfx.cmbuild.log 2>&1`;
+`$builddir/src/cmbuild --wnone -F $tmppfx.nopad.cm $ali > $tmppfx.cmbuild.log 2>&1`;
+if ($? != 0) { die "FAIL: cmbuild (default, no pads) failed\n"; }
+`$builddir/src/cmbuild --wnone -F --no-p7pad $tmppfx.nopad2.cm $ali > $tmppfx.cmbuild.log 2>&1`;
 if ($? != 0) { die "FAIL: cmbuild --no-p7pad failed\n"; }
+if (! file_has_header("$tmppfx.nopad2.cm", "P7NODEPAD", "no")) { die "FAIL: subtest 2: --no-p7pad output missing 'P7NODEPAD no'\n"; }
 
 $first = first_line("$tmppfx.nopad.cm");
 if ($first !~ /^INFERNAL1\/d\b/) { die "FAIL: subtest 2: --no-p7pad first line is '$first', expected to start with 'INFERNAL1/d'\n"; }
@@ -109,9 +114,9 @@ if ($f_pad[11] ne "-")     { die "FAIL: subtest 3: MATL 12th field (right pad) s
 # and --p7pad-cpu 0 (serial pad Monte Carlo). The threaded path is
 # exercised separately as subtest 5.
 ######################################################################
-`$builddir/src/cmbuild --wnone -F --cpu 1 --Eseed 42 --p7pad-N 50 --p7pad-seed 17 --p7pad-cpu 0 $tmppfx.seed17a.cm $ali > $tmppfx.cmbuild.log 2>&1`;
+`$builddir/src/cmbuild --wnone -F --cpu 1 --Eseed 42 --p7pad --p7pad-N 50 --p7pad-seed 17 --p7pad-cpu 0 $tmppfx.seed17a.cm $ali > $tmppfx.cmbuild.log 2>&1`;
 if ($? != 0) { die "FAIL: cmbuild (seed17 a) failed\n"; }
-`$builddir/src/cmbuild --wnone -F --cpu 1 --Eseed 42 --p7pad-N 50 --p7pad-seed 17 --p7pad-cpu 0 $tmppfx.seed17b.cm $ali > $tmppfx.cmbuild.log 2>&1`;
+`$builddir/src/cmbuild --wnone -F --cpu 1 --Eseed 42 --p7pad --p7pad-N 50 --p7pad-seed 17 --p7pad-cpu 0 $tmppfx.seed17b.cm $ali > $tmppfx.cmbuild.log 2>&1`;
 if ($? != 0) { die "FAIL: cmbuild (seed17 b) failed\n"; }
 
 strip_com_lines("$tmppfx.seed17a.cm", "$tmppfx.seed17a.filt");
@@ -132,9 +137,9 @@ if ($diff ne "") { die "FAIL: subtest 4: two builds with same seed differ after 
 # integers where required, and (c) the total number of pad rows
 # matches between serial and threaded outputs (same model topology).
 ######################################################################
-`$builddir/src/cmbuild --wnone -F --cpu 1 --Eseed 42 --p7pad-N 50 --p7pad-seed 17 --p7pad-cpu 0 $tmppfx.serial.cm   $ali > $tmppfx.cmbuild.log 2>&1`;
+`$builddir/src/cmbuild --wnone -F --cpu 1 --Eseed 42 --p7pad --p7pad-N 50 --p7pad-seed 17 --p7pad-cpu 0 $tmppfx.serial.cm   $ali > $tmppfx.cmbuild.log 2>&1`;
 if ($? != 0) { die "FAIL: cmbuild (serial) failed\n"; }
-`$builddir/src/cmbuild --wnone -F --cpu 1 --Eseed 42 --p7pad-N 50 --p7pad-seed 17 --p7pad-cpu 4 $tmppfx.threaded.cm $ali > $tmppfx.cmbuild.log 2>&1`;
+`$builddir/src/cmbuild --wnone -F --cpu 1 --Eseed 42 --p7pad --p7pad-N 50 --p7pad-seed 17 --p7pad-cpu 4 $tmppfx.threaded.cm $ali > $tmppfx.cmbuild.log 2>&1`;
 if ($? != 0) { die "FAIL: cmbuild (threaded) failed\n"; }
 
 my $pads_serial   = extract_pad_columns("$tmppfx.serial.cm");
@@ -180,7 +185,7 @@ if ($pads_orig ne $pads_back) {
 `cp $v1a_in $tmppfx.1p0-input.cm`;
 if ($? != 0) { die "FAIL: failed to copy legacy v1a input CM\n"; }
 
-`$builddir/src/cmconvert --p7pad-N 50 --p7pad-seed 42 $tmppfx.1p0-input.cm > $tmppfx.converted.cm 2>>$tmppfx.cmbuild.log`;
+`$builddir/src/cmconvert --p7pad --p7pad-N 50 --p7pad-seed 42 $tmppfx.1p0-input.cm > $tmppfx.converted.cm 2>>$tmppfx.cmbuild.log`;
 if ($? != 0) { die "FAIL: cmconvert v1a->v1b (with pads) failed\n"; }
 
 $first = first_line("$tmppfx.converted.cm");
@@ -188,10 +193,14 @@ if ($first !~ /^INFERNAL1\/b\b/) { die "FAIL: subtest 7: cmconvert output first 
 if (! file_has_header("$tmppfx.converted.cm", "P7NODEPAD", "yes")) { die "FAIL: subtest 7: cmconvert output missing 'P7NODEPAD yes'\n"; }
 
 ######################################################################
-# Subtest 8: cmconvert --no-p7pad produces v1b with pads disabled.
+# Subtest 8: cmconvert without --p7pad (and with the no-op --no-p7pad)
+# produces v1b with pads disabled.
 ######################################################################
-`$builddir/src/cmconvert --no-p7pad $tmppfx.1p0-input.cm > $tmppfx.converted.nopad.cm 2>>$tmppfx.cmbuild.log`;
+`$builddir/src/cmconvert $tmppfx.1p0-input.cm > $tmppfx.converted.nopad.cm 2>>$tmppfx.cmbuild.log`;
+if ($? != 0) { die "FAIL: cmconvert (default, no pads) failed\n"; }
+`$builddir/src/cmconvert --no-p7pad $tmppfx.1p0-input.cm > $tmppfx.converted.nopad2.cm 2>>$tmppfx.cmbuild.log`;
 if ($? != 0) { die "FAIL: cmconvert --no-p7pad failed\n"; }
+if (! file_has_header("$tmppfx.converted.nopad2.cm", "P7NODEPAD", "no")) { die "FAIL: subtest 8: cmconvert --no-p7pad output missing 'P7NODEPAD no'\n"; }
 
 $first = first_line("$tmppfx.converted.nopad.cm");
 if ($first !~ /^INFERNAL1\/b\b/) { die "FAIL: subtest 8: cmconvert --no-p7pad first line is '$first', expected to start with 'INFERNAL1/b'\n"; }
@@ -202,11 +211,11 @@ if (! file_has_header("$tmppfx.converted.nopad.cm", "P7NODEPAD", "no")) { die "F
 print "ok\n";
 
 # cleanup
-for my $suffix ("default.cm", "nopad.cm",
+for my $suffix ("default.cm", "nopad.cm", "nopad2.cm",
                 "seed17a.cm", "seed17b.cm",
                 "serial.cm", "threaded.cm",
                 "bin.cm", "back.cm",
-                "1p0-input.cm", "converted.cm", "converted.nopad.cm",
+                "1p0-input.cm", "converted.cm", "converted.nopad.cm", "converted.nopad2.cm",
                 "seed17a.filt", "seed17b.filt",
                 "cmbuild.log") {
     if (-e "$tmppfx.$suffix") { unlink "$tmppfx.$suffix"; }
