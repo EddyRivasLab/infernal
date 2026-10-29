@@ -4120,7 +4120,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	    if(kmin) { free(kmin); kmin = NULL; }
 	    if(kmax) { free(kmax); kmax = NULL; }
 	    p7_gmx_GrowTo(pli->gxf, Tgm->M, wlen);
-	    p7_GForward(seq->dsq, wlen, Tgm, pli->gxf, &fwdsc);
+	    cm_p7_GForwardDbl(seq->dsq, wlen, Tgm, pli->gxf, &fwdsc);
 	  } else {
 	    if(bnd) { p7_gbands_Destroy(bnd); bnd = NULL; }
 	    if((status = p7_kbands2gbands(i2k, kmin, kmax, (int)wlen, Tgm->M, &bnd)) != eslOK)
@@ -4146,7 +4146,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	    if(kmin) { free(kmin); kmin = NULL; }
 	    if(kmax) { free(kmax); kmax = NULL; }
 	    p7_gmx_GrowTo(pli->gxf, Tgm->M, wlen);
-	    p7_GForward(seq->dsq, wlen, Tgm, pli->gxf, &fwdsc);
+	    cm_p7_GForwardDbl(seq->dsq, wlen, Tgm, pli->gxf, &fwdsc);
 	  } else {
 	    if(bnd) { p7_gbands_Destroy(bnd); bnd = NULL; }
 	    if((status = p7_kbands2gbands(i2k, kmin, kmax, (int)wlen, Tgm->M, &bnd)) != eslOK)
@@ -4160,7 +4160,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  }
 	} else {
 	  p7_gmx_GrowTo(pli->gxf, Tgm->M, wlen);
-	  p7_GForward(seq->dsq, wlen, Tgm, pli->gxf, &fwdsc);
+	  cm_p7_GForwardDbl(seq->dsq, wlen, Tgm, pli->gxf, &fwdsc);
 	}
 	/*printf("Tfwdsc: %.4f\n", fwdsc);*/
 	/* We use local Fwd statistics to determine statistical
@@ -4199,7 +4199,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  if(status == eslEINCOMPAT || ncells == 0) {
 	    if(i2k) { free(i2k); i2k = NULL; } if(kmin) { free(kmin); kmin = NULL; } if(kmax) { free(kmax); kmax = NULL; }
 	    p7_gmx_GrowTo(pli->gxf, Rgm->M, wlen);
-	    p7_GForward(seq->dsq, wlen, Rgm, pli->gxf, &fwdsc);
+	    cm_p7_GForwardDbl(seq->dsq, wlen, Rgm, pli->gxf, &fwdsc);
 	  } else {
 	    if(bnd) { p7_gbands_Destroy(bnd); bnd = NULL; }
 	    if((status = p7_kbands2gbands(i2k, kmin, kmax, (int)wlen, Rgm->M, &bnd)) != eslOK)
@@ -4233,7 +4233,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  if(ncells == 0) {
 	    if(i2k) { free(i2k); i2k = NULL; } if(kmin) { free(kmin); kmin = NULL; } if(kmax) { free(kmax); kmax = NULL; }
 	    p7_gmx_GrowTo(pli->gxf, Rgm->M, wlen);
-	    p7_GForward(seq->dsq, wlen, Rgm, pli->gxf, &fwdsc);
+	    cm_p7_GForwardDbl(seq->dsq, wlen, Rgm, pli->gxf, &fwdsc);
 	  } else {
 	    if(bnd) { p7_gbands_Destroy(bnd); bnd = NULL; }
 	    if((status = p7_kbands2gbands(i2k, kmin, kmax, (int)wlen, Rgm->M, &bnd)) != eslOK)
@@ -4249,7 +4249,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  }
 	} else {
 	  p7_gmx_GrowTo(pli->gxf, Rgm->M, wlen);
-	  p7_GForward (seq->dsq, wlen, Rgm, pli->gxf, &fwdsc);
+	  cm_p7_GForwardDbl(seq->dsq, wlen, Rgm, pli->gxf, &fwdsc);
 	}
 	/*printf("Rfwdsc: %.4f\n", fwdsc);*/
 	Rgm_correction = 0.;
@@ -4285,7 +4285,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  if(status == eslEINCOMPAT || ncells == 0) {
 	    if(i2k) { free(i2k); i2k = NULL; } if(kmin) { free(kmin); kmin = NULL; } if(kmax) { free(kmax); kmax = NULL; }
 	    p7_gmx_GrowTo(pli->gxf, Lgm->M, wlen);
-	    p7_GForward(seq->dsq, wlen, Lgm, pli->gxf, &fwdsc);
+	    cm_p7_GForwardDbl(seq->dsq, wlen, Lgm, pli->gxf, &fwdsc);
 	  } else {
 	    if(bnd) { p7_gbands_Destroy(bnd); bnd = NULL; }
 	    if((status = p7_kbands2gbands(i2k, kmin, kmax, (int)wlen, Lgm->M, &bnd)) != eslOK)
@@ -4318,7 +4318,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  if(ncells == 0) {
 	    if(i2k) { free(i2k); i2k = NULL; } if(kmin) { free(kmin); kmin = NULL; } if(kmax) { free(kmax); kmax = NULL; }
 	    p7_gmx_GrowTo(pli->gxf, Lgm->M, wlen);
-	    p7_GForward(seq->dsq, wlen, Lgm, pli->gxf, &fwdsc);
+	    cm_p7_GForwardDbl(seq->dsq, wlen, Lgm, pli->gxf, &fwdsc);
 	  } else {
 	    if(bnd) { p7_gbands_Destroy(bnd); bnd = NULL; }
 	    if((status = p7_kbands2gbands(i2k, kmin, kmax, (int)wlen, Lgm->M, &bnd)) != eslOK)
@@ -4334,7 +4334,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  }
 	} else {
 	  p7_gmx_GrowTo(pli->gxf, Lgm->M, wlen);
-	  p7_GForward (seq->dsq, wlen, Lgm, pli->gxf, &fwdsc);
+	  cm_p7_GForwardDbl(seq->dsq, wlen, Lgm, pli->gxf, &fwdsc);
 	}
 	/*printf("Lfwdsc: %.4f\n", fwdsc);*/
 	Lgm_correction = log(1./Lgm->M);
@@ -4382,7 +4382,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	    if(kmax) { free(kmax); kmax = NULL; }
 	    esl_stopwatch_Start(stg_watch);
 	    p7_gmx_GrowTo(pli->gxf, gm->M, wlen);
-	    p7_GForward(seq->dsq, wlen, gm, pli->gxf, &fwdsc);
+	    cm_p7_GForwardDbl(seq->dsq, wlen, gm, pli->gxf, &fwdsc);
 	    esl_stopwatch_Stop(stg_watch);
 	    pli->stg_time_F4 += stg_watch->elapsed;
 	  } else {
@@ -4429,7 +4429,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	    if(kmax) { free(kmax); kmax = NULL; }
 	    esl_stopwatch_Start(stg_watch);
 	    p7_gmx_GrowTo(pli->gxf, gm->M, wlen);
-	    p7_GForward(seq->dsq, wlen, gm, pli->gxf, &fwdsc);
+	    cm_p7_GForwardDbl(seq->dsq, wlen, gm, pli->gxf, &fwdsc);
 	    esl_stopwatch_Stop(stg_watch);
 	    pli->stg_time_F4 += stg_watch->elapsed;
 	  } else {
@@ -4457,14 +4457,14 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	    if (pli->do_p7deltrigger) {
 	      float dbg_unbanded_fwdsc;
 	      p7_gmx_GrowTo(pli->gxf, gm->M, wlen);
-	      p7_GForward(seq->dsq, wlen, gm, pli->gxf, &dbg_unbanded_fwdsc);
+	      cm_p7_GForwardDbl(seq->dsq, wlen, gm, pli->gxf, &dbg_unbanded_fwdsc);
 	      pli->p7_fwdsc_unbanded = dbg_unbanded_fwdsc;
 	    }
 	  }
 	} else {
 	  esl_stopwatch_Start(stg_watch);
 	  p7_gmx_GrowTo(pli->gxf, gm->M, wlen);
-	  p7_GForward (seq->dsq, wlen, gm, pli->gxf, &fwdsc);
+	  cm_p7_GForwardDbl(seq->dsq, wlen, gm, pli->gxf, &fwdsc);
 	  esl_stopwatch_Stop(stg_watch);
 	  pli->stg_time_F4 += stg_watch->elapsed;
 	}
@@ -4519,7 +4519,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
       //if(pli->cur_pass_idx != PLI_PASS_5P_AND_3P_FORCE) continue;
       //if(1) continue;
 
-      /* this block needs to match up with if..else if...else if...else block calling p7_GForward above */
+      /* this block needs to match up with if..else if...else if...else block calling cm_p7_GForwardDbl above */
       /* glocal HMM only mode always computes the OA alignment, even with --noali; the alignment display
        * gives the model span used for the 'trunc' label, and is now always kept (like CM/local-hmmonly
        * hits, never gated on --show_alignments), so the label and the mdl-coord/gc tblout columns no
@@ -4547,7 +4547,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  }
 	} else {
 	  p7_gmx_GrowTo(pli->gxb, Tgm->M, wlen);
-	  p7_GBackward(seq->dsq, wlen, Tgm, pli->gxb, &bcksc);
+	  cm_p7_GBackwardDbl(seq->dsq, wlen, Tgm, pli->gxb, &bcksc);
 	  if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, Tgm, om, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, cur_do_null2, do_aln)) != eslOK)
 	    ESL_FAIL(status, pli->errbuf, "unexpected failure during glocal envelope defn");
 	}
@@ -4570,7 +4570,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  }
 	} else {
 	  p7_gmx_GrowTo(pli->gxb, Rgm->M, wlen);
-	  p7_GBackward(seq->dsq, wlen, Rgm, pli->gxb, &bcksc);
+	  cm_p7_GBackwardDbl(seq->dsq, wlen, Rgm, pli->gxb, &bcksc);
 	  if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, Rgm, om, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, cur_do_null2, do_aln)) != eslOK) ESL_FAIL(status, pli->errbuf, "unexpected failure during glocal envelope defn");
 	}
 	/*printf("Rbcksc: %.4f\n", bcksc);*/
@@ -4592,7 +4592,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  }
 	} else {
 	  p7_gmx_GrowTo(pli->gxb, Lgm->M, wlen);
-	  p7_GBackward(seq->dsq, wlen, Lgm, pli->gxb, &bcksc);
+	  cm_p7_GBackwardDbl(seq->dsq, wlen, Lgm, pli->gxb, &bcksc);
 	  if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, Lgm, om, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, cur_do_null2, do_aln)) != eslOK) ESL_FAIL(status, pli->errbuf, "unexpected failure during glocal envelope defn");
 	}
 	/*printf("Lbcksc: %.4f\n", bcksc);*/
@@ -4628,7 +4628,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
 	  }
 	} else {
 	  p7_gmx_GrowTo(pli->gxb, gm->M, wlen);
-	  p7_GBackward(seq->dsq, wlen, gm, pli->gxb, &bcksc);
+	  cm_p7_GBackwardDbl(seq->dsq, wlen, gm, pli->gxb, &bcksc);
 	  if((status = p7_domaindef_GlocalByPosteriorHeuristics(seq, gm, om, pli->gxf, pli->gxb, pli->gfwd, pli->gbck, pli->ddef, cur_do_null2, do_aln)) != eslOK) ESL_FAIL(status, pli->errbuf, "unexpected failure during glocal envelope defn");
 	}
 	/*printf(" bcksc: %.4f\n", bcksc);*/

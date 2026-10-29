@@ -182,7 +182,7 @@ cm_p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm,
 	       * works
 	       */
 	      p7_ReconfigMultihit(gm, saveL);
-	      p7_GForward(sq->dsq+i-1, j-i+1, gm, fwd, NULL);
+	      cm_p7_GForwardDbl(sq->dsq+i-1, j-i+1, gm, fwd, NULL);
 	      glocal_region_trace_ensemble(ddef, gm, sq->dsq, i, j, fwd, bck, do_null2, &nc);
 	      p7_ReconfigUnihit(gm, saveL);
 	      /* ddef->n2sc is now set on i..j by the traceback-dependent method */
@@ -533,11 +533,11 @@ glocal_rescore_isolated_domain(P7_DOMAINDEF *ddef, const P7_PROFILE *gm, P7_OPRO
   float          null2[p7_MAXCODE];
   int            status;
 
-  p7_GForward (sq->dsq + i-1, Ld, gm, gx1, &envsc);
+  cm_p7_GForwardDbl (sq->dsq + i-1, Ld, gm, gx1, &envsc);
 
   oasc = 0.;
   if(do_null2 || do_aln) { 
-    p7_GBackward(sq->dsq + i-1, Ld, gm, gx2, NULL);
+    cm_p7_GBackwardDbl(sq->dsq + i-1, Ld, gm, gx2, NULL);
   
     status = p7_GDecoding(gm, gx1, gx2, gx2);      /* <ox2> is now overwritten with post probabilities     */
     if (status == eslERANGE) return eslFAIL;      /* rare: numeric overflow; domain is assumed to be repetitive garbage [J3/119-212] */
@@ -883,7 +883,7 @@ cm_p7_domaindef_GlocalByPosteriorHeuristics_Banded_Multihit(const ESL_SQ *sq, P7
 	      p7_gmx_GrowTo(fwd, gm->M, j-i+1);
 	      p7_gmx_GrowTo(bck, gm->M, j-i+1);
 	      p7_ReconfigMultihit(gm, saveL);
-	      p7_GForward(sq->dsq+i-1, j-i+1, gm, fwd, NULL);
+	      cm_p7_GForwardDbl(sq->dsq+i-1, j-i+1, gm, fwd, NULL);
 	      glocal_region_trace_ensemble(ddef, gm, sq->dsq, i, j, fwd, bck, do_null2, &d);
 	      p7_ReconfigUnihit(gm, saveL);
 
