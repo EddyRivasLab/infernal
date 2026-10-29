@@ -13601,6 +13601,259 @@ cm_p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
 
 
 /*****************************************************************
+ * Unbanded generic Forward/Backward with a double recursion
+ * (brief 26_0821-161)
+ *
+ * HMMER's p7_GForward()/p7_GBackward() carry each cell and special as
+ * a float and add with p7_FLogsum(), whose table is truncated to the
+ * lower 0.001-nat entry and so always over-adds.  Per row that bias is
+ * tiny, but it accumulates along the sequence: the glocal Forward score
+ * drifts up by about 0.035 bits per kb of target (brief 26_0821-157:
+ * +0.1 bits on a 3 kb window, +2 bits on a 19 kb viral genome, +26
+ * bits on the 394 kb iid sequences cmbuild scores to calibrate a
+ * 197 kb model), and the Forward and Backward totals disagree.
+ *
+ * These are the same recursions, with the same log-sum call order, but
+ * every value the recursion reads is a double and the log-sum is
+ * p7b_dlogsum().  The DP matrix keeps HMMER's float P7_GMX: each
+ * finished cell is stored as a float, so a cell carries one rounding
+ * and the error no longer grows with the row.  The API is that of
+ * p7_GForward()/p7_GBackward(), so the matrices feed HMMER's
+ * p7_GDomainDecoding(), p7_GDecoding(), p7_GNull2_ByExpectation() and
+ * p7_GOptimalAccuracy() unchanged.  Used for cmsearch/cmscan glocal
+ * envelope definition (cm_pipeline.c pli_p7_env_def(),
+ * cm_p7_domaindef.c) and, through cm_p7_GForwardDblScore(), for
+ * cmbuild's glocal Forward calibration (cm_p7_modelmaker.c).
+ *****************************************************************/
+
+#define DROW(row,k,s) ((row)[(k) * p7G_NSCELLS + (s)])
+
+/* p7b_gforward_dbl(): the Forward recursion of p7_GForward()
+ * (hmmer/src/generic_fwdback.c) with double cells, specials and
+ * log-sum, on two double rows.  If <gx> is non-NULL (grown to M x L)
+ * a float copy of each finished row is stored in it.  Score in nats,
+ * in double, in <*opt_sc>. */
+static int
+p7b_gforward_dbl(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMX *gx, double *opt_sc)
+{
+  float const *tsc = gm->tsc;
+  int          M   = gm->M;
+  double       esc = p7_profile_IsLocal(gm) ? 0. : -eslINFINITY;
+  double      *prv = NULL, *cur = NULL, *tmp;
+  double       xN, xB, xE, xJ, xC, pB, pJ, pC, pN;
+  double       sc;
+  int          i, k, status;
+
+  ESL_ALLOC(prv, sizeof(double) * (M+1) * p7G_NSCELLS);
+  ESL_ALLOC(cur, sizeof(double) * (M+1) * p7G_NSCELLS);
+
+  for (k = 0; k <= M; k++) DROW(prv,k,p7G_M) = DROW(prv,k,p7G_I) = DROW(prv,k,p7G_D) = -eslINFINITY;
+  xN = 0.; xB = gm->xsc[p7P_N][p7P_MOVE]; xE = xC = xJ = -eslINFINITY;
+  if (gx) {
+    float *xmx = gx->xmx; float **dp = gx->dp;
+    XMX(0,p7G_N) = xN; XMX(0,p7G_B) = xB; XMX(0,p7G_E) = XMX(0,p7G_C) = XMX(0,p7G_J) = -eslINFINITY;
+    for (k = 0; k <= M; k++) MMX(0,k) = IMX(0,k) = DMX(0,k) = -eslINFINITY;
+  }
+
+  for (i = 1; i <= L; i++)
+    {
+      float const *rsc = gm->rsc[dsq[i]];
+      pB = xB; pJ = xJ; pC = xC; pN = xN;
+      DROW(cur,0,p7G_M) = DROW(cur,0,p7G_I) = DROW(cur,0,p7G_D) = -eslINFINITY;
+      xE = -eslINFINITY;
+      for (k = 1; k < M; k++)
+	{
+	  sc = p7b_dlogsum(p7b_dlogsum(DROW(prv,k-1,p7G_M) + TSC(p7P_MM,k-1),
+				       DROW(prv,k-1,p7G_I) + TSC(p7P_IM,k-1)),
+			   p7b_dlogsum(pB                  + TSC(p7P_BM,k-1),
+				       DROW(prv,k-1,p7G_D) + TSC(p7P_DM,k-1)));
+	  DROW(cur,k,p7G_M) = sc + MSC(k);
+	  sc = p7b_dlogsum(DROW(prv,k,p7G_M) + TSC(p7P_MI,k),
+			   DROW(prv,k,p7G_I) + TSC(p7P_II,k));
+	  DROW(cur,k,p7G_I) = sc + ISC(k);
+	  DROW(cur,k,p7G_D) = p7b_dlogsum(DROW(cur,k-1,p7G_M) + TSC(p7P_MD,k-1),
+					  DROW(cur,k-1,p7G_D) + TSC(p7P_DD,k-1));
+	  xE = p7b_dlogsum(p7b_dlogsum(DROW(cur,k,p7G_M) + esc, DROW(cur,k,p7G_D) + esc), xE);
+	}
+      sc = p7b_dlogsum(p7b_dlogsum(DROW(prv,M-1,p7G_M) + TSC(p7P_MM,M-1),
+				   DROW(prv,M-1,p7G_I) + TSC(p7P_IM,M-1)),
+		       p7b_dlogsum(pB                    + TSC(p7P_BM,M-1),
+				   DROW(prv,M-1,p7G_D) + TSC(p7P_DM,M-1)));
+      DROW(cur,M,p7G_M) = sc + MSC(M);
+      DROW(cur,M,p7G_I) = -eslINFINITY;
+      DROW(cur,M,p7G_D) = p7b_dlogsum(DROW(cur,M-1,p7G_M) + TSC(p7P_MD,M-1),
+				      DROW(cur,M-1,p7G_D) + TSC(p7P_DD,M-1));
+      xE = p7b_dlogsum(p7b_dlogsum(DROW(cur,M,p7G_M), DROW(cur,M,p7G_D)), xE);
+      xJ = p7b_dlogsum(pJ + gm->xsc[p7P_J][p7P_LOOP], xE + gm->xsc[p7P_E][p7P_LOOP]);
+      xC = p7b_dlogsum(pC + gm->xsc[p7P_C][p7P_LOOP], xE + gm->xsc[p7P_E][p7P_MOVE]);
+      xN = pN + gm->xsc[p7P_N][p7P_LOOP];
+      xB = p7b_dlogsum(xN + gm->xsc[p7P_N][p7P_MOVE], xJ + gm->xsc[p7P_J][p7P_MOVE]);
+
+      if (gx) {
+	float *xmx = gx->xmx; float **dp = gx->dp;
+	for (k = 0; k <= M; k++) { MMX(i,k) = DROW(cur,k,p7G_M); IMX(i,k) = DROW(cur,k,p7G_I); DMX(i,k) = DROW(cur,k,p7G_D); }
+	XMX(i,p7G_E) = xE; XMX(i,p7G_J) = xJ; XMX(i,p7G_C) = xC; XMX(i,p7G_N) = xN; XMX(i,p7G_B) = xB;
+      }
+      tmp = prv; prv = cur; cur = tmp;
+    }
+  if (opt_sc) *opt_sc = xC + gm->xsc[p7P_C][p7P_MOVE];
+  if (gx) { gx->M = M; gx->L = L; }
+  free(prv); free(cur);
+  return eslOK;
+
+ ERROR:
+  if (prv) free(prv);
+  if (cur) free(cur);
+  if (opt_sc) *opt_sc = 0.;
+  return status;
+}
+
+/* Function: cm_p7_GForwardDbl()
+ * Incept:   EPN, Thu Oct 29 2026 (w/Claude)
+ *
+ * Purpose:  The Forward algorithm of p7_GForward(), with a double
+ *           recursion (see the section comment above).  Same
+ *           arguments and same float output: <gx> (allocated for at
+ *           least M x L) gets the Forward matrix, <opt_sc> the score
+ *           in nats.
+ *
+ * Returns:  <eslOK> on success.
+ *
+ * Throws:   <eslEMEM> on allocation failure.
+ */
+int
+cm_p7_GForwardDbl(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMX *gx, float *opt_sc)
+{
+  double sc;
+  int    status;
+
+  status = p7b_gforward_dbl(dsq, L, gm, gx, &sc);
+  if (opt_sc) *opt_sc = (float) sc;
+  return status;
+}
+
+/* Function: cm_p7_GForwardDblScore()
+ * Incept:   EPN, Thu Oct 29 2026 (w/Claude)
+ *
+ * Purpose:  Forward score only, from the same double recursion as
+ *           cm_p7_GForwardDbl(), on two rows of DP memory and no
+ *           matrix.  The score is returned in double.  Replaces the
+ *           float two-row cm_p7_GForwardScoreOnly() for cmbuild's
+ *           glocal Forward calibration (cm_p7_Tau()).
+ *
+ *           Reads only the read-only p7b_dlogsum() table, so it is
+ *           safe to call from concurrent threads.
+ *
+ * Args:     dsq    - digital sequence, 1..L
+ *           L      - length of dsq
+ *           gm     - profile (configured for length L)
+ *           opt_sc - optRETURN: Forward lod score in nats
+ *
+ * Returns:  <eslOK> on success.
+ *
+ * Throws:   <eslEMEM> on allocation failure; <*opt_sc> is 0.
+ */
+int
+cm_p7_GForwardDblScore(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, double *opt_sc)
+{
+  return p7b_gforward_dbl(dsq, L, gm, NULL, opt_sc);
+}
+
+/* Function: cm_p7_GBackwardDbl()
+ * Incept:   EPN, Thu Oct 29 2026 (w/Claude)
+ *
+ * Purpose:  The Backward algorithm of p7_GBackward()
+ *           (hmmer/src/generic_fwdback.c), with a double recursion on
+ *           two double rows (see the section comment above).  Same
+ *           arguments and same float output: <gx> (allocated for at
+ *           least M x L) gets the Backward matrix, <opt_sc> the score
+ *           in nats.
+ *
+ * Returns:  <eslOK> on success.
+ *
+ * Throws:   <eslEMEM> on allocation failure.
+ */
+int
+cm_p7_GBackwardDbl(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMX *gx, float *opt_sc)
+{
+  float const *tsc = gm->tsc;
+  float const *rsc = NULL;
+  float       *xmx = gx->xmx;
+  float      **dp  = gx->dp;
+  int          M   = gm->M;
+  double       esc = p7_profile_IsLocal(gm) ? 0. : -eslINFINITY;
+  double      *nxt = NULL, *cur = NULL, *tmp;
+  double       xN, xB, xE, xJ, xC;
+  int          i, k, status;
+
+  ESL_ALLOC(nxt, sizeof(double) * (M+1) * p7G_NSCELLS);
+  ESL_ALLOC(cur, sizeof(double) * (M+1) * p7G_NSCELLS);
+
+  /* row L */
+  xJ = xB = xN = -eslINFINITY;
+  xC = gm->xsc[p7P_C][p7P_MOVE];
+  xE = xC + gm->xsc[p7P_E][p7P_MOVE];
+  DROW(cur,M,p7G_M) = DROW(cur,M,p7G_D) = xE;
+  DROW(cur,M,p7G_I) = -eslINFINITY;
+  for (k = M-1; k >= 1; k--) {
+    DROW(cur,k,p7G_M) = p7b_dlogsum(xE + esc, DROW(cur,k+1,p7G_D) + TSC(p7P_MD,k));
+    DROW(cur,k,p7G_D) = p7b_dlogsum(xE + esc, DROW(cur,k+1,p7G_D) + TSC(p7P_DD,k));
+    DROW(cur,k,p7G_I) = -eslINFINITY;
+  }
+  DROW(cur,0,p7G_M) = DROW(cur,0,p7G_I) = DROW(cur,0,p7G_D) = -eslINFINITY;
+  for (k = 0; k <= M; k++) { MMX(L,k) = DROW(cur,k,p7G_M); IMX(L,k) = DROW(cur,k,p7G_I); DMX(L,k) = DROW(cur,k,p7G_D); }
+  XMX(L,p7G_J) = xJ; XMX(L,p7G_B) = xB; XMX(L,p7G_N) = xN; XMX(L,p7G_C) = xC; XMX(L,p7G_E) = xE;
+  tmp = nxt; nxt = cur; cur = tmp;
+
+  for (i = L-1; i >= 1; i--)
+    {
+      rsc = gm->rsc[dsq[i+1]];
+      xB = DROW(nxt,1,p7G_M) + TSC(p7P_BM,0) + MSC(1);
+      for (k = 2; k <= M; k++) xB = p7b_dlogsum(xB, DROW(nxt,k,p7G_M) + TSC(p7P_BM,k-1) + MSC(k));
+      xJ = p7b_dlogsum(xJ + gm->xsc[p7P_J][p7P_LOOP], xB + gm->xsc[p7P_J][p7P_MOVE]);
+      xC = xC + gm->xsc[p7P_C][p7P_LOOP];
+      xE = p7b_dlogsum(xJ + gm->xsc[p7P_E][p7P_LOOP], xC + gm->xsc[p7P_E][p7P_MOVE]);
+      xN = p7b_dlogsum(xN + gm->xsc[p7P_N][p7P_LOOP], xB + gm->xsc[p7P_N][p7P_MOVE]);
+      DROW(cur,M,p7G_M) = DROW(cur,M,p7G_D) = xE;
+      DROW(cur,M,p7G_I) = -eslINFINITY;
+      for (k = M-1; k >= 1; k--)
+	{
+	  DROW(cur,k,p7G_M) = p7b_dlogsum(p7b_dlogsum(DROW(nxt,k+1,p7G_M) + TSC(p7P_MM,k) + MSC(k+1),
+						      DROW(nxt,k,  p7G_I) + TSC(p7P_MI,k) + ISC(k)),
+					  p7b_dlogsum(xE + esc,
+						      DROW(cur,k+1,p7G_D) + TSC(p7P_MD,k)));
+	  DROW(cur,k,p7G_I) = p7b_dlogsum(DROW(nxt,k+1,p7G_M) + TSC(p7P_IM,k) + MSC(k+1),
+					  DROW(nxt,k,  p7G_I) + TSC(p7P_II,k) + ISC(k));
+	  DROW(cur,k,p7G_D) = p7b_dlogsum(DROW(nxt,k+1,p7G_M) + TSC(p7P_DM,k) + MSC(k+1),
+					  p7b_dlogsum(DROW(cur,k+1,p7G_D) + TSC(p7P_DD,k), xE + esc));
+	}
+      DROW(cur,0,p7G_M) = DROW(cur,0,p7G_I) = DROW(cur,0,p7G_D) = -eslINFINITY;
+      for (k = 0; k <= M; k++) { MMX(i,k) = DROW(cur,k,p7G_M); IMX(i,k) = DROW(cur,k,p7G_I); DMX(i,k) = DROW(cur,k,p7G_D); }
+      XMX(i,p7G_B) = xB; XMX(i,p7G_J) = xJ; XMX(i,p7G_C) = xC; XMX(i,p7G_E) = xE; XMX(i,p7G_N) = xN;
+      tmp = nxt; nxt = cur; cur = tmp;
+    }
+
+  /* row 0: only N, B */
+  rsc = gm->rsc[dsq[1]];
+  xB = DROW(nxt,1,p7G_M) + TSC(p7P_BM,0) + MSC(1);
+  for (k = 2; k <= M; k++) xB = p7b_dlogsum(xB, DROW(nxt,k,p7G_M) + TSC(p7P_BM,k-1) + MSC(k));
+  xN = p7b_dlogsum(xN + gm->xsc[p7P_N][p7P_LOOP], xB + gm->xsc[p7P_N][p7P_MOVE]);
+  XMX(0,p7G_B) = xB; XMX(0,p7G_J) = XMX(0,p7G_C) = XMX(0,p7G_E) = -eslINFINITY; XMX(0,p7G_N) = xN;
+  for (k = M; k >= 0; k--) MMX(0,k) = IMX(0,k) = DMX(0,k) = -eslINFINITY;
+  if (opt_sc) *opt_sc = (float) xN;
+  gx->M = M; gx->L = L;
+  free(nxt); free(cur);
+  return eslOK;
+
+ ERROR:
+  if (nxt) free(nxt);
+  if (cur) free(cur);
+  return status;
+}
+#undef DROW
+
+
+/*****************************************************************
  * Unit tests (brief 26_0821-141)
  *   make cm_p7_band_utest; ./cm_p7_band_utest
  *****************************************************************/
@@ -13632,6 +13885,89 @@ utest_dlogsum(void)
   if (p7b_dlogsum(-eslINFINITY, 2.5) != 2.5)                    esl_fatal("utest_dlogsum: -inf + b != b");
   if (p7b_dlogsum(2.5, -eslINFINITY) != 2.5)                    esl_fatal("utest_dlogsum: a + -inf != a");
   if (p7b_dlogsum(-eslINFINITY, -eslINFINITY) != -eslINFINITY)  esl_fatal("utest_dlogsum: -inf + -inf != -inf");
+}
+
+/* utest_generic_dbl(): cm_p7_GForwardDbl()/cm_p7_GBackwardDbl()/
+ * cm_p7_GForwardDblScore() (brief 26_0821-161).
+ *  1. Short target, glocal/uniglocal/local: every cell and both totals
+ *     agree with HMMER's float p7_GForward()/p7_GBackward() to 0.05
+ *     nats, Forward and Backward totals agree, and the score-only
+ *     kernel returns the Forward score.
+ *  2. Long iid target under a glocal profile (the cmbuild calibration
+ *     regime, L = 4M): the double Forward and Backward totals agree to
+ *     1e-3 nats.  Control: the float Forward is off from the double one
+ *     by more than 0.1 nats (~0.19 at M = 1000, L = 4000; the drift
+ *     grows with both M and L), so the input reaches the regime the
+ *     test is for. */
+static void
+utest_generic_dbl(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, int be_verbose)
+{
+  int         modes[3] = { p7_GLOCAL, p7_UNIGLOCAL, p7_LOCAL };
+  int         M  = 60, L = 300, LL = 4000, MM = 1000;
+  P7_HMM     *hmm = NULL;
+  P7_BG      *bg  = p7_bg_Create(abc);
+  P7_PROFILE *gm  = NULL;
+  P7_GMX     *fx  = NULL, *bx = NULL, *ff = NULL, *fb = NULL;
+  ESL_DSQ    *dsq = NULL;
+  float       fF, fB, dF, dB, v1, v2;
+  double      dS, dmax;
+  int         m, i, k, s;
+
+  /* 1. short target, all cells */
+  if (p7_hmm_Sample(r, M, abc, &hmm) != eslOK) esl_fatal("utest_generic_dbl: p7_hmm_Sample failed");
+  gm  = p7_profile_Create(M, abc);
+  dsq = malloc(sizeof(ESL_DSQ) * (LL+2));
+  fx  = p7_gmx_Create(M, L); bx = p7_gmx_Create(M, L);
+  ff  = p7_gmx_Create(M, L); fb = p7_gmx_Create(M, L);
+  for (m = 0; m < 3; m++)
+    {
+      p7_ProfileConfig(hmm, bg, gm, L, modes[m]);
+      esl_rsq_xfIID(r, bg->f, abc->K, L, dsq);
+      p7_GForward (dsq, L, gm, ff, &fF);
+      p7_GBackward(dsq, L, gm, fb, &fB);
+      if (cm_p7_GForwardDbl (dsq, L, gm, fx, &dF) != eslOK) esl_fatal("utest_generic_dbl: cm_p7_GForwardDbl failed");
+      if (cm_p7_GBackwardDbl(dsq, L, gm, bx, &dB) != eslOK) esl_fatal("utest_generic_dbl: cm_p7_GBackwardDbl failed");
+      if (cm_p7_GForwardDblScore(dsq, L, gm, &dS) != eslOK) esl_fatal("utest_generic_dbl: cm_p7_GForwardDblScore failed");
+      if (fabs(fF - dF) > 0.05 || fabs(fB - dB) > 0.05) esl_fatal("utest_generic_dbl: mode %d: float/double totals F %.4f/%.4f B %.4f/%.4f", m, fF, dF, fB, dB);
+      if (fabs(dF - dB) > 1e-4)                           esl_fatal("utest_generic_dbl: mode %d: double F %.6f != B %.6f", m, dF, dB);
+      if ((float) dS != dF)                               esl_fatal("utest_generic_dbl: mode %d: score-only %.6f != Forward %.6f", m, dS, dF);
+      for (i = 0; i <= L; i++)
+	{
+	  for (k = 0; k <= M; k++)
+	    for (s = 0; s < p7G_NSCELLS; s++) {
+	      v1 = ff->dp[i][k*p7G_NSCELLS+s]; v2 = fx->dp[i][k*p7G_NSCELLS+s];
+	      if (! (v1 == v2 || fabs(v1 - v2) <= 0.05)) esl_fatal("utest_generic_dbl: mode %d: Forward cell %d,%d,%d %g vs %g", m, i, k, s, v1, v2);
+	      v1 = fb->dp[i][k*p7G_NSCELLS+s]; v2 = bx->dp[i][k*p7G_NSCELLS+s];
+	      if (! (v1 == v2 || fabs(v1 - v2) <= 0.05)) esl_fatal("utest_generic_dbl: mode %d: Backward cell %d,%d,%d %g vs %g", m, i, k, s, v1, v2);
+	    }
+	  for (s = 0; s < p7G_NXCELLS; s++) {
+	    v1 = ff->xmx[i*p7G_NXCELLS+s]; v2 = fx->xmx[i*p7G_NXCELLS+s];
+	    if (! (v1 == v2 || fabs(v1 - v2) <= 0.05)) esl_fatal("utest_generic_dbl: mode %d: Forward special %d,%d %g vs %g", m, i, s, v1, v2);
+	    v1 = fb->xmx[i*p7G_NXCELLS+s]; v2 = bx->xmx[i*p7G_NXCELLS+s];
+	    if (! (v1 == v2 || fabs(v1 - v2) <= 0.05)) esl_fatal("utest_generic_dbl: mode %d: Backward special %d,%d %g vs %g", m, i, s, v1, v2);
+	  }
+	}
+    }
+  p7_gmx_Destroy(fx); p7_gmx_Destroy(bx); p7_gmx_Destroy(ff); p7_gmx_Destroy(fb);
+  p7_profile_Destroy(gm); p7_hmm_Destroy(hmm);
+
+  /* 2. long iid target, glocal */
+  if (p7_hmm_Sample(r, MM, abc, &hmm) != eslOK) esl_fatal("utest_generic_dbl: p7_hmm_Sample failed");
+  gm = p7_profile_Create(MM, abc);
+  p7_ProfileConfig(hmm, bg, gm, LL, p7_GLOCAL);
+  esl_rsq_xfIID(r, bg->f, abc->K, LL, dsq);
+  fx = p7_gmx_Create(MM, LL);
+  if (cm_p7_GForwardDblScore(dsq, LL, gm, &dS) != eslOK) esl_fatal("utest_generic_dbl: cm_p7_GForwardDblScore failed");
+  if (cm_p7_GBackwardDbl(dsq, LL, gm, fx, &dB)  != eslOK) esl_fatal("utest_generic_dbl: cm_p7_GBackwardDbl failed");
+  p7_GForward(dsq, LL, gm, fx, &fF);
+  dmax = fabs(dS - dB);
+  if (be_verbose) printf("utest_generic_dbl: L=%d M=%d  double F %.4f B %.4f  float F %.4f\n", LL, MM, dS, dB, fF);
+  if (dmax > 1e-3)          esl_fatal("utest_generic_dbl: long target: double F %.4f and B %.4f differ by %g nats", dS, dB, dmax);
+  if (fabs(fF - dS) < 0.1)  esl_fatal("utest_generic_dbl: long target: float Forward %.4f within 0.1 nats of double %.4f; input does not reach the drift regime", fF, dS);
+
+  p7_gmx_Destroy(fx);
+  free(dsq);
+  p7_profile_Destroy(gm); p7_hmm_Destroy(hmm); p7_bg_Destroy(bg);
 }
 
 static int
@@ -13947,6 +14283,7 @@ main(int argc, char **argv)
 
   p7_FLogsumInit();
   utest_dlogsum();
+  utest_generic_dbl(r, abc, esl_opt_GetBoolean(go, "-v"));
   utest_genome_scale(r, abc, esl_opt_GetInteger(go, "-M"), esl_opt_GetInteger(go, "-W"), 0.85, TRUE,  esl_opt_GetBoolean(go, "-v"));
   /* brief 26_0821-151: fractional posteriors, so the OA sums need double */
   utest_genome_scale(r, abc, esl_opt_GetInteger(go, "-M"), esl_opt_GetInteger(go, "-W"), 0.70, FALSE, esl_opt_GetBoolean(go, "-v"));
