@@ -701,157 +701,6 @@ cm_p7_Calibrate(P7_HMM *hmm, char *errbuf,
   return status;
 }
 
-/* Function:  cm_p7_GForwardScoreOnly()
- * Synopsis:  Two-row generic Forward, returning score only.
- * Incept:    EPN*, Thu Mar 19 2026
- *
- * Purpose:   Compute the Forward score for digital sequence <dsq> of
- *            length <L> against profile <gm>, using only two rows of
- *            DP memory instead of the full L x M matrix used by
- *            p7_GForward(). Only the final Forward score is returned;
- *            no DP matrix is retained.
- *
- *            Adapted from p7_GForward() (hmmer/src/generic_fwdback.c)
- *            and forward_row() (hmmer/src/generic_fwdback_chk.c).
- *
- *            This is intended for use in calibration (cm_p7_Tau()),
- *            where we need Forward scores for many random sequences
- *            but never need the full DP matrix. For large models
- *            (M=35000, L=70000), this reduces memory from ~29 GB
- *            to ~840 KB.
- *
- * Args:      dsq    - digital sequence, 1..L
- *            L      - length of dsq
- *            gm     - profile (configured for length L)
- *            opt_sc - optRETURN: Forward lod score in nats
- *
- * Returns:   <eslOK> on success, <*opt_sc> is the Forward score in nats.
- *
- * Throws:    <eslEMEM> on allocation failure.
- */
-int
-cm_p7_GForwardScoreOnly(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, float *opt_sc)
-{
-  int          status;
-  float const *tsc  = gm->tsc;
-  int          M    = gm->M;
-  float        esc  = p7_profile_IsLocal(gm) ? 0 : -eslINFINITY;
-  int          rowsize = (M+1) * p7G_NSCELLS + p7G_NXCELLS;  /* MID states + specials per row */
-  float       *mem  = NULL;    /* allocated memory for two rows */
-  float       *prev = NULL;    /* pointer to previous row */
-  float       *cur  = NULL;    /* pointer to current row */
-  float       *tmp;
-  int          i, k;
-
-  /* Macros for accessing states in a flat row.
-   * MID states are at row[k * p7G_NSCELLS + state].
-   * Specials are at row[(M+1) * p7G_NSCELLS + special].
-   */
-#define ROWMX(row,k,s) ((row)[(k) * p7G_NSCELLS + (s)])
-#define ROWXM(row,s)   ((row)[(M+1) * p7G_NSCELLS + (s)])
-
-  /* NOTE (brief 26_0719-046): the p7_FLogsum() lookup table must already be
-   * initialized by the caller (cm_p7_Tau() does this once in the main thread).
-   * We do NOT call p7_FLogsumInit() here: it rewrites a global static table,
-   * and doing so per-call would race with concurrent p7_FLogsum() reads in the
-   * threaded (--cpu>0) calibration path, making scores (and thus GFMU)
-   * nondeterministic across thread counts and run-to-run.
-   */
-
-  ESL_ALLOC(mem, sizeof(float) * 2 * rowsize);
-  prev = mem;
-  cur  = mem + rowsize;
-
-  /* Initialization of row 0 */
-  for (k = 0; k <= M; k++)
-    ROWMX(prev, k, p7G_M) = ROWMX(prev, k, p7G_I) = ROWMX(prev, k, p7G_D) = -eslINFINITY;
-  ROWXM(prev, p7G_N) = 0;
-  ROWXM(prev, p7G_B) = gm->xsc[p7P_N][p7P_MOVE];
-  ROWXM(prev, p7G_E) = ROWXM(prev, p7G_C) = ROWXM(prev, p7G_J) = -eslINFINITY;
-
-  /* Recursion */
-  for (i = 1; i <= L; i++)
-    {
-      float const *rsc = gm->rsc[dsq[i]];
-      float sc;
-
-      ROWMX(cur, 0, p7G_M) = ROWMX(cur, 0, p7G_I) = ROWMX(cur, 0, p7G_D) = -eslINFINITY;
-      ROWXM(cur, p7G_E) = -eslINFINITY;
-
-      for (k = 1; k < M; k++)
-	{
-	  /* match state */
-	  sc = p7_FLogsum(p7_FLogsum(ROWMX(prev,k-1,p7G_M) + TSC(p7P_MM,k-1),
-				     ROWMX(prev,k-1,p7G_I) + TSC(p7P_IM,k-1)),
-			  p7_FLogsum(ROWMX(prev,k-1,p7G_D) + TSC(p7P_DM,k-1),
-				     ROWXM(prev,p7G_B)      + TSC(p7P_BM,k-1)));
-	  ROWMX(cur, k, p7G_M) = sc + MSC(k);
-
-	  /* insert state */
-	  sc = p7_FLogsum(ROWMX(prev,k,p7G_M) + TSC(p7P_MI,k),
-			  ROWMX(prev,k,p7G_I) + TSC(p7P_II,k));
-	  ROWMX(cur, k, p7G_I) = sc + ISC(k);
-
-	  /* delete state */
-	  ROWMX(cur, k, p7G_D) = p7_FLogsum(ROWMX(cur,k-1,p7G_M) + TSC(p7P_MD,k-1),
-					     ROWMX(cur,k-1,p7G_D) + TSC(p7P_DD,k-1));
-
-	  /* E state update */
-	  ROWXM(cur, p7G_E) = p7_FLogsum(p7_FLogsum(ROWMX(cur,k,p7G_M) + esc,
-						     ROWMX(cur,k,p7G_D) + esc),
-					  ROWXM(cur, p7G_E));
-	}
-
-      /* unrolled match state M_M */
-      sc = p7_FLogsum(p7_FLogsum(ROWMX(prev,M-1,p7G_M) + TSC(p7P_MM,M-1),
-				 ROWMX(prev,M-1,p7G_I) + TSC(p7P_IM,M-1)),
-		      p7_FLogsum(ROWMX(prev,M-1,p7G_D) + TSC(p7P_DM,M-1),
-				 ROWXM(prev,p7G_B)      + TSC(p7P_BM,M-1)));
-      ROWMX(cur, M, p7G_M) = sc + MSC(M);
-      ROWMX(cur, M, p7G_I) = -eslINFINITY;
-
-      /* unrolled delete state D_M */
-      ROWMX(cur, M, p7G_D) = p7_FLogsum(ROWMX(cur,M-1,p7G_M) + TSC(p7P_MD,M-1),
-					 ROWMX(cur,M-1,p7G_D) + TSC(p7P_DD,M-1));
-
-      /* unrolled E state update */
-      ROWXM(cur, p7G_E) = p7_FLogsum(p7_FLogsum(ROWMX(cur,M,p7G_M),
-						 ROWMX(cur,M,p7G_D)),
-				      ROWXM(cur, p7G_E));
-
-      /* J state */
-      ROWXM(cur, p7G_J) = p7_FLogsum(ROWXM(prev, p7G_J) + gm->xsc[p7P_J][p7P_LOOP],
-				      ROWXM(cur,  p7G_E) + gm->xsc[p7P_E][p7P_LOOP]);
-      /* C state */
-      ROWXM(cur, p7G_C) = p7_FLogsum(ROWXM(prev, p7G_C) + gm->xsc[p7P_C][p7P_LOOP],
-				      ROWXM(cur,  p7G_E) + gm->xsc[p7P_E][p7P_MOVE]);
-      /* N state */
-      ROWXM(cur, p7G_N) = ROWXM(prev, p7G_N) + gm->xsc[p7P_N][p7P_LOOP];
-
-      /* B state */
-      ROWXM(cur, p7G_B) = p7_FLogsum(ROWXM(cur, p7G_N) + gm->xsc[p7P_N][p7P_MOVE],
-				      ROWXM(cur, p7G_J) + gm->xsc[p7P_J][p7P_MOVE]);
-
-      /* swap rows */
-      tmp = prev; prev = cur; cur = tmp;
-    }
-
-  /* after the swap, prev holds the final row L */
-  if (opt_sc != NULL) *opt_sc = ROWXM(prev, p7G_C) + gm->xsc[p7P_C][p7P_MOVE];
-
-  free(mem);
-
-#undef ROWMX
-#undef ROWXM
-  return eslOK;
-
- ERROR:
-  if (mem != NULL) free(mem);
-  if (opt_sc != NULL) *opt_sc = 0.;
-  return status;
-}
-
-
 /* Structure for passing work units through the work queue
  * in the threaded glocal Forward calibration path.
  * A small pool of these structs cycles between reader and workers.
@@ -880,7 +729,7 @@ typedef struct {
 /* cm_p7_tau_thread_worker()
  * Worker function for threaded glocal Forward calibration.
  * Each worker pulls sequences from the queue, runs
- * cm_p7_GForwardScoreOnly(), and accumulates bit scores
+ * cm_p7_GForwardDblScore(), and accumulates bit scores
  * in its own local scA[] array.
  */
 static void
@@ -902,12 +751,13 @@ cm_p7_tau_thread_worker(void *arg)
 
   while (work->L > 0)   /* sentinel: L==0 means stop */
     {
-      float fsc, nullsc;
+      double fsc;
+      float  nullsc;
 
-      cm_p7_GForwardScoreOnly(work->dsq, work->L, winfo->gm, &fsc);
+      cm_p7_GForwardDblScore(work->dsq, work->L, winfo->gm, &fsc);
       p7_bg_NullOne(winfo->bg, work->dsq, work->L, &nullsc);
 
-      winfo->scA[winfo->nsc] = (double)((fsc - nullsc) / eslCONST_LOG2);
+      winfo->scA[winfo->nsc] = (fsc - (double) nullsc) / eslCONST_LOG2;
       winfo->nsc++;
 
       esl_workqueue_WorkerUpdate(winfo->queue, work, &newwork);
@@ -949,6 +799,7 @@ cm_p7_sample_scores(ESL_RANDOMNESS *r, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *b
 
   ESL_DSQ *dsq     = NULL;
   float    fsc, nullsc;
+  double   gfsc;      /* generic (glocal) Forward score, double (brief 26_0821-161) */
   int      status;
   int      i;
   int do_generic;
@@ -1097,16 +948,17 @@ cm_p7_sample_scores(ESL_RANDOMNESS *r, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *b
 	{
 	  if((status = esl_rsq_xfIID(r, bg->f, bg->abc->K, L, dsq)) != eslOK) goto ERROR;
 	  if(do_generic) {
-	    if ((status = cm_p7_GForwardScoreOnly(dsq, L, gm, &fsc))   != eslOK) goto ERROR;
+	    if ((status = cm_p7_GForwardDblScore(dsq, L, gm, &gfsc))   != eslOK) goto ERROR;
 	  }
 	  else {
 	    if ((status = p7_ForwardParser(dsq, L, om, ox, &fsc))      != eslOK) goto ERROR;
 	  }
 	  if((status = p7_bg_NullOne(bg, dsq, L, &nullsc))          != eslOK) goto ERROR;
-	  /* keep full double precision (match the threaded worker exactly, no
-	   * intermediate float rounding) so serial and threaded xv[] -- and thus
-	   * GFMU -- are bit-identical across --cpu (brief 26_0719-046). */
-	  xv[i] = (double)((fsc - nullsc) / eslCONST_LOG2);
+	  /* the generic score is the same expression as the threaded worker's,
+	   * so serial and threaded xv[] -- and thus GFMU -- are bit-identical
+	   * across --cpu (brief 26_0719-046). */
+	  if(do_generic) xv[i] = (gfsc - (double) nullsc) / eslCONST_LOG2;
+	  else           xv[i] = (double)((fsc - nullsc) / eslCONST_LOG2);
 	}
 
       free(dsq); dsq = NULL;
