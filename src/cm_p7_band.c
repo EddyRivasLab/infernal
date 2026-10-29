@@ -13852,6 +13852,80 @@ cm_p7_GBackwardDbl(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMX *gx, 
 }
 #undef DROW
 
+/* Function: cm_p7_GNull2_ByExpectationDbl()
+ * Incept:   EPN, Thu Oct 29 2026 (w/Claude)
+ *
+ * Purpose:  p7_GNull2_ByExpectation() (hmmer/src/generic_null2.c) with
+ *           the arithmetic in double: the expected state usage is summed
+ *           over the <Ld> rows of the posterior matrix <pp> in double,
+ *           and the per-residue null2 log odds are summed over the 2M
+ *           emitting states with p7b_dlogsum() instead of p7_FLogsum().
+ *
+ *           p7_FLogsum()'s truncated table over-adds on each of those
+ *           2M terms, so every residue's null2 log odds comes out too
+ *           high by the same small amount, and the envelope's null2
+ *           correction (their sum over the envelope) grows with its
+ *           length: 0.1 bits too high for a 130-nt Rfam envelope, 4 to
+ *           8 bits for a 7.7 to 10.8 kb genome (brief 26_0821-161).
+ *
+ *           <pp> is read only (HMMER's version uses its row 0 as
+ *           workspace). Output <null2> is as p7_GNull2_ByExpectation()'s.
+ *
+ * Returns:  <eslOK> on success.
+ *
+ * Throws:   <eslEMEM> on allocation failure.
+ */
+int
+cm_p7_GNull2_ByExpectationDbl(const P7_PROFILE *gm, const P7_GMX *pp, float *null2)
+{
+  int      M  = gm->M;
+  int      Ld = pp->L;
+  int      n  = (M+1) * p7G_NSCELLS;
+  double  *w  = NULL;
+  double   wx[p7G_NXCELLS];
+  double   xfactor, logLd, sc;
+  int      x, i, k, status;
+
+  ESL_ALLOC(w, sizeof(double) * n);
+  /* expected number of times each emitting state was used, as log frequencies */
+  for (k = 0; k < n;            k++) w[k]  = pp->dp[1][k];
+  for (k = 0; k < p7G_NXCELLS; k++) wx[k] = pp->xmx[p7G_NXCELLS + k];
+  for (i = 2; i <= Ld; i++) {
+    for (k = 0; k < n;            k++) w[k]  += pp->dp[i][k];
+    for (k = 0; k < p7G_NXCELLS; k++) wx[k] += pp->xmx[i*p7G_NXCELLS + k];
+  }
+  logLd = log((double) Ld);
+  for (k = 0; k < n;            k++) w[k]  = log(w[k])  - logLd;
+  for (k = 0; k < p7G_NXCELLS; k++) wx[k] = log(wx[k]) - logLd;
+
+  /* null2 log odds: posterior-weighted sum over the emission vectors */
+  xfactor = p7b_dlogsum(p7b_dlogsum(wx[p7G_N], wx[p7G_C]), wx[p7G_J]);
+  for (x = 0; x < gm->abc->K; x++)
+    {
+      sc = -eslINFINITY;
+      for (k = 1; k < M; k++)
+	{
+	  sc = p7b_dlogsum(sc, w[k*p7G_NSCELLS + p7G_M] + p7P_MSC(gm, k, x));
+	  sc = p7b_dlogsum(sc, w[k*p7G_NSCELLS + p7G_I] + p7P_ISC(gm, k, x));
+	}
+      sc = p7b_dlogsum(sc, w[M*p7G_NSCELLS + p7G_M] + p7P_MSC(gm, M, x));
+      sc = p7b_dlogsum(sc, xfactor);
+      null2[x] = (float) exp(sc);
+    }
+
+  /* valid scores for all degeneracies, by averaging the odds ratios */
+  esl_abc_FAvgScVec(gm->abc, null2); /* does not set gap, nonres, missing  */
+  null2[gm->abc->K]    = 1.0;        /* gap character    */
+  null2[gm->abc->Kp-2] = 1.0;        /* nonresidue "*"   */
+  null2[gm->abc->Kp-1] = 1.0;        /* missing data "~" */
+
+  free(w);
+  return eslOK;
+
+ ERROR:
+  return status;
+}
+
 
 /*****************************************************************
  * Unit tests (brief 26_0821-141)
@@ -13967,6 +14041,70 @@ utest_generic_dbl(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, int be_verbose)
 
   p7_gmx_Destroy(fx);
   free(dsq);
+  p7_profile_Destroy(gm); p7_hmm_Destroy(hmm); p7_bg_Destroy(bg);
+}
+
+/* utest_null2_dbl(): cm_p7_GNull2_ByExpectationDbl() (brief 26_0821-161)
+ * against an exact reference (double sums, exact log(e^a + e^b)) on the
+ * posterior of a glocal profile with M = 1000 over an L = 1000 target:
+ * every residue's null2 log odds must agree to 1e-5 nats.  Control:
+ * HMMER's p7_GNull2_ByExpectation() is off from the reference by more
+ * than 1e-5 nats for some residue, the error the double version
+ * removes, so the test can tell them apart. */
+static void
+utest_null2_dbl(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, int be_verbose)
+{
+  int         M = 1000, L = 1000, K = abc->K;
+  P7_HMM     *hmm = NULL;
+  P7_BG      *bg  = p7_bg_Create(abc);
+  P7_PROFILE *gm  = p7_profile_Create(M, abc);
+  P7_GMX     *fx  = p7_gmx_Create(M, L);
+  P7_GMX     *bx  = p7_gmx_Create(M, L);
+  ESL_DSQ    *dsq = malloc(sizeof(ESL_DSQ) * (L+2));
+  float       n2d[p7_MAXCODE], n2f[p7_MAXCODE];
+  double     *w   = calloc((M+1) * p7G_NSCELLS, sizeof(double));
+  double      wx[p7G_NXCELLS] = { 0. }, ref[p7_MAXCODE], xf, a, b, errd = 0., errf = 0.;
+  int         i, k, x;
+
+  if (p7_hmm_Sample(r, M, abc, &hmm) != eslOK) esl_fatal("utest_null2_dbl: p7_hmm_Sample failed");
+  p7_ProfileConfig(hmm, bg, gm, L, p7_GLOCAL);
+  esl_rsq_xfIID(r, bg->f, K, L, dsq);
+  cm_p7_GForwardDbl (dsq, L, gm, fx, NULL);
+  cm_p7_GBackwardDbl(dsq, L, gm, bx, NULL);
+  p7_GDecoding(gm, fx, bx, bx);   /* bx is now the posterior matrix */
+  if (cm_p7_GNull2_ByExpectationDbl(gm, bx, n2d) != eslOK) esl_fatal("utest_null2_dbl: cm_p7_GNull2_ByExpectationDbl failed");
+
+  /* exact reference */
+#define XLS(a,b) ( ((a) > (b)) ? ((b) == -eslINFINITY ? (a) : (a) + log1p(exp((b)-(a)))) : ((a) == -eslINFINITY ? (b) : (b) + log1p(exp((a)-(b)))) )
+  for (i = 1; i <= L; i++) {
+    for (k = 0; k < (M+1)*p7G_NSCELLS; k++) w[k]  += bx->dp[i][k];
+    for (k = 0; k < p7G_NXCELLS;       k++) wx[k] += bx->xmx[i*p7G_NXCELLS + k];
+  }
+  for (k = 0; k < (M+1)*p7G_NSCELLS; k++) w[k]  = log(w[k])  - log((double) L);
+  for (k = 0; k < p7G_NXCELLS;       k++) wx[k] = log(wx[k]) - log((double) L);
+  a  = XLS(wx[p7G_N], wx[p7G_C]);
+  xf = XLS(a, wx[p7G_J]);
+  for (x = 0; x < K; x++) {
+    ref[x] = -eslINFINITY;
+    for (k = 1; k < M; k++) {
+      b = w[k*p7G_NSCELLS + p7G_M] + p7P_MSC(gm, k, x); ref[x] = XLS(ref[x], b);
+      b = w[k*p7G_NSCELLS + p7G_I] + p7P_ISC(gm, k, x); ref[x] = XLS(ref[x], b);
+    }
+    b = w[M*p7G_NSCELLS + p7G_M] + p7P_MSC(gm, M, x); ref[x] = XLS(ref[x], b);
+    ref[x] = XLS(ref[x], xf);
+  }
+#undef XLS
+  p7_GNull2_ByExpectation(gm, bx, n2f);   /* last: it overwrites bx row 0 */
+  for (x = 0; x < K; x++) {
+    errd = ESL_MAX(errd, fabs(log(n2d[x]) - ref[x]));
+    errf = ESL_MAX(errf, fabs(log(n2f[x]) - ref[x]));
+  }
+  if (be_verbose) printf("utest_null2_dbl: M=%d L=%d  max |log null2 - exact|: double %.3g  float %.3g nats\n", M, L, errd, errf);
+  if (errd > 1e-5)  esl_fatal("utest_null2_dbl: double null2 off from exact by %g nats", errd);
+  if (errf <= 1e-5) esl_fatal("utest_null2_dbl: float null2 within %g nats of exact; the control does not separate the two", errf);
+
+  free(w); free(dsq);
+  p7_gmx_Destroy(fx); p7_gmx_Destroy(bx);
   p7_profile_Destroy(gm); p7_hmm_Destroy(hmm); p7_bg_Destroy(bg);
 }
 
@@ -14284,6 +14422,7 @@ main(int argc, char **argv)
   p7_FLogsumInit();
   utest_dlogsum();
   utest_generic_dbl(r, abc, esl_opt_GetBoolean(go, "-v"));
+  utest_null2_dbl(r, abc, esl_opt_GetBoolean(go, "-v"));
   utest_genome_scale(r, abc, esl_opt_GetInteger(go, "-M"), esl_opt_GetInteger(go, "-W"), 0.85, TRUE,  esl_opt_GetBoolean(go, "-v"));
   /* brief 26_0821-151: fractional posteriors, so the OA sums need double */
   utest_genome_scale(r, abc, esl_opt_GetInteger(go, "-M"), esl_opt_GetInteger(go, "-W"), 0.70, FALSE, esl_opt_GetBoolean(go, "-v"));

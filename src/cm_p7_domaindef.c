@@ -548,7 +548,7 @@ glocal_rescore_isolated_domain(P7_DOMAINDEF *ddef, const P7_PROFILE *gm, P7_OPRO
      * do it now, by the expectation (posterior decoding) method.
      */
     if ((! null2_is_done) && do_null2) { 
-      p7_GNull2_ByExpectation(gm, gx2, null2);
+      cm_p7_GNull2_ByExpectationDbl(gm, gx2, null2);   /* double sums (brief 26_0821-161) */
       for (pos = i; pos <= j; pos++) 
 	ddef->n2sc[pos]  = logf(null2[sq->dsq[pos]]);
     }

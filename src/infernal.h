@@ -3636,10 +3636,11 @@ extern int          cm_p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PR
 extern int          cm_p7_GDecodingBanded(const P7_PROFILE *gm, const P7_GMXB *fwd, P7_GMXB *bck, P7_GMXB *pp, float overall_sc);
 extern int          cm_p7_GOptimalAccuracyBanded(const P7_PROFILE *gm, const P7_GMXB *pp, CM_P7_GMXBD *gx, float *ret_e);
 extern int          cm_p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const CM_P7_GMXBD *gx, P7_TRACE *tr);
-/* unbanded generic F/B with a double recursion, float matrices (brief 26_0821-161) */
+/* unbanded generic F/B with a double recursion, float matrices; null2 in double (brief 26_0821-161) */
 extern int          cm_p7_GForwardDbl (const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMX *gx, float *opt_sc);
 extern int          cm_p7_GBackwardDbl(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMX *gx, float *opt_sc);
 extern int          cm_p7_GForwardDblScore(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, double *opt_sc);
+extern int          cm_p7_GNull2_ByExpectationDbl(const P7_PROFILE *gm, const P7_GMX *pp, float *null2);
 extern CM_P7_GMXBD *cm_p7_gmxbd_Create(P7_GBANDS *bnd);                                                                       /* brief 26_0821-151 */
 extern void         cm_p7_gmxbd_Destroy(CM_P7_GMXBD *gxd);                                                                     /* brief 26_0821-151 */
 extern int          cm_p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *pp, float *ret_fwdsc, CM_P7_DECSTATS *opt_st); /* brief 26_0526-016 */
