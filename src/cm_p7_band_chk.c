@@ -1295,6 +1295,7 @@ cp9_FB2HMMBandsP7BF_chk(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t *cp9b
    * posterior normalizer in cp9segF_PostRow() below. See cp9_chk_noparse_check(). */
   if((status = cp9_chk_noparse_check(errbuf, "cp9_FB2HMMBandsP7BF_chk", L, M,
                                      kmin, kmax, s->fsc, sc)) != eslOK) goto ERROR;
+  cp9b->hmm_sc = sc; /* for centering CM alignment DP scores (DispatchSqAlignment()) */
   /* brief 26_0430-154 diag: double checkpointed CP9 F/B totals (cf. 153 ref fwd/bwd≈7993.144,
    * gap≈+0.00003; float ckpt path gave gap≈-1.687 at norovirus, ≈-35/-45 at HSV/MPXV). */
   if(getenv("P154_FBDUMP") != NULL)
@@ -1529,6 +1530,7 @@ cp9_FB2HMMBandsP7BF_chk_multi(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t
    * posterior normalizer in cp9segF_PostRow() below. See cp9_chk_noparse_check(). */
   if((status = cp9_chk_noparse_check(errbuf, "cp9_FB2HMMBandsP7BF_chk_multi", L, M,
                                      kmin, kmax, s->fsc, sc)) != eslOK) goto ERROR;
+  cp9b->hmm_sc = sc; /* for centering CM alignment DP scores (DispatchSqAlignment()) */
   /* brief 26_0430-193: same F/B total dump as P154_FBDUMP (single-threshold path,
    * line ~2243), replicated here in the MULTI (tau-ratchet) band-extraction path so
    * genome-scale runs that take this path still report the F/B gap for the LUT-vs-exact
