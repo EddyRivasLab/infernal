@@ -9,8 +9,9 @@
 #
 # Checks that the CM weighting options build on their own, that the
 # removed options are rejected (writing no CM file), and the HP7
-# transform each build records: a2 with the default prior, a1 with
-# --rsearch (no default prior to back out), ml with --noss.
+# transform each build records: h3pri with the default prior, with
+# --rsearch (whose transitions use the default prior) and with --p56,
+# each with an HP7A line (brief 26_0821-165); ml with --noss.
 #
 $usage = "perl i-entropy-filter-choice.pl <cmbuild> <RIBOSUM matrix file>\n";
 if ($#ARGV != 1) { die "Wrong argument number.\n$usage"; }
@@ -45,13 +46,14 @@ close OUT;
 
 # [ options, alignment, expect success?, expected HP7 ]
 @cases = (
-    [ "--enone",                  "efc.1", 1, "a2" ],
-    [ "--ere 0.8",                "efc.1", 1, "a2" ],
-    [ "--eset 1",                 "efc.1", 1, "a2" ],
-    [ "--rsearch $matfile",       "efc.2", 1, "a1" ],
-    [ "",                         "efc.1", 1, "a2" ],
-    [ "--p7ml",                   "efc.1", 1, "a2" ],
-    [ "--eset 1 --p7ml",          "efc.1", 1, "a2" ],
+    [ "--enone",                  "efc.1", 1, "h3pri" ],
+    [ "--ere 0.8",                "efc.1", 1, "h3pri" ],
+    [ "--eset 1",                 "efc.1", 1, "h3pri" ],
+    [ "--rsearch $matfile",       "efc.2", 1, "h3pri" ],
+    [ "--p56",                    "efc.1", 1, "h3pri" ],
+    [ "",                         "efc.1", 1, "h3pri" ],
+    [ "--p7ml",                   "efc.1", 1, "h3pri" ],
+    [ "--eset 1 --p7ml",          "efc.1", 1, "h3pri" ],
     [ "--noss --eset 0",          "efc.1", 1, "ml" ],
     [ "--p7eent",                 "efc.1", 0, "" ],
     [ "--ere 0.8 --p7ere 0.45",   "efc.1", 0, "" ],
@@ -66,7 +68,8 @@ foreach $case (@cases) {
     if ($expect_ok) {
         if ($rc != 0)    { printf("FAIL: cmbuild $opts: expected success, got exit %d\n", $rc >> 8); $ok = 0; }
         if (! -s "efc.cm") { print "FAIL: cmbuild $opts: no CM file written\n"; $ok = 0; }
-        elsif (`grep '^HP7' efc.cm` !~ /^HP7\s+$hp7\s*$/) { print "FAIL: cmbuild $opts: HP7 is not $hp7\n"; $ok = 0; }
+        elsif (`grep '^HP7 ' efc.cm` !~ /^HP7\s+$hp7\s*$/) { print "FAIL: cmbuild $opts: HP7 is not $hp7\n"; $ok = 0; }
+        elsif ((`grep -c '^HP7A ' efc.cm` + 0) != ($hp7 eq "h3pri" ? 1 : 0)) { print "FAIL: cmbuild $opts: HP7A line should be present iff HP7 is h3pri\n"; $ok = 0; }
     }
     else {
         if ($rc == 0)    { print "FAIL: cmbuild $opts: expected failure, got success\n"; $ok = 0; }
