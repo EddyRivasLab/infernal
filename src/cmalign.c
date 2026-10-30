@@ -394,6 +394,54 @@ hmm_noparse_fallback(CM_t *cm, const ESL_SQ *sq, int do_trunc, int ibv_base_slab
   *ret_retried  = TRUE;
 }
 
+/* hmm_unbanded_oa()
+ * Unbanded optimal accuracy alignment of <dsq> (length <L>) to <gm>, for
+ * --hmmnoband. Forward and Backward use double recursions into float matrices
+ * <gxf> and <gxb> (grown here), the posteriors are decoded into <gxb>, and
+ * the OA alignment is computed in a double matrix whose first rows reuse
+ * <gxf>'s memory, dead once the posteriors exist. HMMER's float generic
+ * p7_GForward()/p7_GBackward()/p7_GOptimalAccuracy() accumulate log-space
+ * rounding error on long sequences, as they did in envelope definition
+ * (briefs 26_0821-161, 26_0821-163). Peak DP memory is HMM_UNBANDED_OA_NMAT
+ * float matrices: <gxf>, <gxb>, and the double rows that do not fit in
+ * <gxf>. The OA trace goes in <tr>, the Forward score (nats) in
+ * <*ret_fwdsc>. Returns the status of the OA traceback.
+ */
+#define HMM_UNBANDED_OA_NMAT 3
+static int
+hmm_unbanded_oa(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMX *gxf, P7_GMX *gxb, P7_TRACE *tr, float *ret_fwdsc)
+{
+  CM_P7_GMXD *oax = NULL;
+  float       oasc;
+  int         status;
+
+  p7_gmx_GrowTo(gxf, gm->M, L);
+  p7_gmx_GrowTo(gxb, gm->M, L);
+  cm_p7_GForwardDbl (dsq, L, gm, gxf, ret_fwdsc);
+  cm_p7_GBackwardDbl(dsq, L, gm, gxb, NULL);
+  p7_GDecoding(gm, gxf, gxb, gxb);
+  if ((oax = cm_p7_gmxd_CreateOver(gxf, gm->M, L)) == NULL)
+    cm_Fail("out of memory in HMM-only optimal accuracy alignment (M=%d, L=%d)", gm->M, L);
+  cm_p7_GOptimalAccuracyDbl(gm, gxb, oax, &oasc);
+  status = cm_p7_GOATraceDbl(gm, gxb, oax, tr);
+  cm_p7_gmxd_Destroy(oax);
+  return status;
+}
+
+/* hmm_unbanded_oa_mb()
+ * DP memory (Mb) of hmm_unbanded_oa() for an <M> x <L> problem: the
+ * float matrices' cells and specials, plus the double OA matrix's
+ * specials and row pointers.
+ */
+static double
+hmm_unbanded_oa_mb(int M, int L)
+{
+  double cells = (double) sizeof(float)  * (double)(M + 1) * (double)(L + 1) * (double) p7G_NSCELLS * (double) HMM_UNBANDED_OA_NMAT;
+  double xspec = (double) sizeof(float)  * (double)(L + 1) * (double) p7G_NXCELLS * 2.0
+               + (double) sizeof(double) * (double)(L + 1) * (double) (p7G_NXCELLS + 1);
+  return (cells + xspec) / (1024.0 * 1024.0);
+}
+
 static void serial_master(ESL_GETOPTS *go, struct cfg_s *cfg);
 static int  serial_loop  (WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block, ESL_RANDOMNESS *r);
 static void hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm);
@@ -1585,8 +1633,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	 * -- use a deriver at genome scale). */
 	if (do_hmmvit || do_hmmnoband || (do_bandedoa && ! do_p7ibv && ! cm->p7_use_kmerchain)) {
 	  double single_bytes = (double) sizeof(float) * (double)(hmm->M + 1) * (double)(sq->n + 1) * (double) p7G_NSCELLS;
-	  int    nmat         = do_hmmnoband ? 2 : 1;
-	  double needed_mb    = (single_bytes * (double) nmat) / (1024.0 * 1024.0);
+	  double needed_mb    = do_hmmnoband ? hmm_unbanded_oa_mb(hmm->M, sq->n) : single_bytes / (1024.0 * 1024.0); /* brief 26_0821-163: double OA */
 	  double mxsize_limit = esl_opt_GetReal(go, "--mxsize");
 	  hst_mb = needed_mb;
 	  if (needed_mb > mxsize_limit) {
@@ -1607,15 +1654,8 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	}
 	else if (do_hmmnoband) {
 	  /* --- Mode 2: Unbanded optimal accuracy --- */
-	  p7_gmx_GrowTo(gxf, hmm->M, sq->n);
-	  p7_gmx_GrowTo(gxb, hmm->M, sq->n);
-
-	  p7_GForward (sq->dsq, sq->n, gm, gxf, &fwdsc);
-	  p7_GBackward(sq->dsq, sq->n, gm, gxb, NULL);
-	  p7_GDecoding(gm, gxf, gxb, gxb);
-	  p7_GOptimalAccuracy(gm, gxb, gxf, &oasc);
 	  p7_trace_Reuse(tr[idx]);
-	  p7_GOATrace(gm, gxb, gxf, tr[idx]);
+	  hmm_unbanded_oa(sq->dsq, sq->n, gm, gxf, gxb, tr[idx], &fwdsc);
 	  hst_raw = fwdsc;
 	}
 	else {
@@ -1743,24 +1783,11 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	      p7_gmx_GrowTo(gx, hmm->M, sq->n);
 	      p7_GViterbi(sq->dsq, sq->n, gm, gx, &sc);
 	      p7_trace_Reuse(vtr);
-	      status = p7_GTrace(sq->dsq, sq->n, gm, gx, vtr);
-
-	      if (status != eslOK || vtr->N == 0) {
-		P7_GMX *fallback_gxf = p7_gmx_Create(hmm->M, sq->n);
-		P7_GMX *fallback_gxb = p7_gmx_Create(hmm->M, sq->n);
-		p7_GForward (sq->dsq, sq->n, gm, fallback_gxf, &fwdsc);
-		p7_GBackward(sq->dsq, sq->n, gm, fallback_gxb, NULL);
-		p7_GDecoding(gm, fallback_gxf, fallback_gxb, fallback_gxb);
-		p7_GOptimalAccuracy(gm, fallback_gxb, fallback_gxf, &oasc);
-		p7_trace_Reuse(tr[idx]);
-		p7_GOATrace(gm, fallback_gxb, fallback_gxf, tr[idx]);
-		p7_gmx_Destroy(fallback_gxf);
-		p7_gmx_Destroy(fallback_gxb);
-		p7_trace_Destroy(vtr);
-		hmm_set_stats(hstA + (size_t) idx * HMMST_N, hmm_score_bits(fwdsc, do_trunc, bg, sq->dsq, sq->n),
-			      hst_t0, hst_t0, hmm_now(), hst_mb);
-		continue;
-	      }
+	      /* p7_GTrace() never returns an empty trace; its failures are
+	       * exceptions. The unbanded-OA fallback that used to follow
+	       * could not run and was removed (brief 26_0821-163). */
+	      if ((status = p7_GTrace(sq->dsq, sq->n, gm, gx, vtr)) != eslOK)
+		cm_Fail("p7_GTrace() failed for sequence %s", sq->name);
 
 	      {
 		int tpos;
@@ -2460,8 +2487,7 @@ hmm_pipeline_thread(void *arg)
      * full O(M*L) p7_GViterbi; --p7ibv/--p7kmerchain skip it (post-band preflight). */
     if (info->do_hmmvit || info->do_hmmnoband || (! info->do_hmmvit && ! info->do_hmmnoband && ! info->do_p7ibv && ! (info->cm != NULL && info->cm->p7_use_kmerchain))) {
       double single_bytes = (double) sizeof(float) * (double)(info->hmm->M + 1) * (double)(sq->n + 1) * (double) p7G_NSCELLS;
-      int    nmat         = info->do_hmmnoband ? 2 : 1;
-      double needed_mb    = (single_bytes * (double) nmat) / (1024.0 * 1024.0);
+      double needed_mb    = info->do_hmmnoband ? hmm_unbanded_oa_mb(info->hmm->M, sq->n) : single_bytes / (1024.0 * 1024.0); /* brief 26_0821-163: double OA */
       hst_mb = needed_mb;
       if (needed_mb > (double) info->mxsize) {
 	int recommended_mxsize = (int)(ceil(needed_mb / 1024.0) * 1024.0);
@@ -2481,15 +2507,8 @@ hmm_pipeline_thread(void *arg)
     }
     else if (info->do_hmmnoband) {
       /* --- Unbanded optimal accuracy --- */
-      p7_gmx_GrowTo(info->gxf, info->hmm->M, sq->n);
-      p7_gmx_GrowTo(info->gxb, info->hmm->M, sq->n);
-
-      p7_GForward (sq->dsq, sq->n, info->gm, info->gxf, &fwdsc);
-      p7_GBackward(sq->dsq, sq->n, info->gm, info->gxb, NULL);
-      p7_GDecoding(info->gm, info->gxf, info->gxb, info->gxb);
-      p7_GOptimalAccuracy(info->gm, info->gxb, info->gxf, &oasc);
       p7_trace_Reuse(info->hmm_tr[idx]);
-      p7_GOATrace(info->gm, info->gxb, info->gxf, info->hmm_tr[idx]);
+      hmm_unbanded_oa(sq->dsq, sq->n, info->gm, info->gxf, info->gxb, info->hmm_tr[idx], &fwdsc);
       hst_raw = fwdsc;
     }
     else {
@@ -2573,24 +2592,9 @@ hmm_pipeline_thread(void *arg)
 	  p7_gmx_GrowTo(info->gx, info->hmm->M, sq->n);
 	  p7_GViterbi(sq->dsq, sq->n, info->gm, info->gx, &sc);
 	  p7_trace_Reuse(vtr);
-	  status = p7_GTrace(sq->dsq, sq->n, info->gm, info->gx, vtr);
-
-	  if (status != eslOK || vtr->N == 0) {
-	    /* Viterbi failed; fall back to unbanded OA */
-	    P7_GMX *fallback_gxf = p7_gmx_Create(info->hmm->M, sq->n);
-	    P7_GMX *fallback_gxb = p7_gmx_Create(info->hmm->M, sq->n);
-	    p7_GForward (sq->dsq, sq->n, info->gm, fallback_gxf, &fwdsc);
-	    p7_GBackward(sq->dsq, sq->n, info->gm, fallback_gxb, NULL);
-	    p7_GDecoding(info->gm, fallback_gxf, fallback_gxb, fallback_gxb);
-	    p7_GOptimalAccuracy(info->gm, fallback_gxb, fallback_gxf, &oasc);
-	    p7_trace_Reuse(info->hmm_tr[idx]);
-	    p7_GOATrace(info->gm, fallback_gxb, fallback_gxf, info->hmm_tr[idx]);
-	    p7_gmx_Destroy(fallback_gxf);
-	    p7_gmx_Destroy(fallback_gxb);
-	    p7_trace_Destroy(vtr);
-	    hst_raw = fwdsc;
-	    goto HMM_NEXT_SQ;
-	  }
+	  /* no empty-trace fallback; see hmm_alignment() (brief 26_0821-163) */
+	  if ((status = p7_GTrace(sq->dsq, sq->n, info->gm, info->gx, vtr)) != eslOK)
+	    cm_Fail("p7_GTrace() failed for sequence %s", sq->name);
 
 	  {
 	    int tpos;
@@ -2724,7 +2728,6 @@ hmm_pipeline_thread(void *arg)
       p7_gmxb_Destroy(bxb);
     }
 
-  HMM_NEXT_SQ:
     hmm_set_stats(info->hmm_st + (size_t) idx * HMMST_N, hmm_score_bits(hst_raw, info->do_trunc, info->bg, sq->dsq, sq->n),
 		  hst_t0, hst_aln0, hmm_now(), hst_mb);
     status = esl_workqueue_WorkerUpdate(info->queue, sq, &new_sq);
@@ -3386,8 +3389,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
        * a full O(M*L) p7_GViterbi (this MPI worker has no --p7ibv support). */
       if (do_hmmvit_w || do_hmmnoband_w || (do_bandedoa_w && ! cm->p7_use_kmerchain)) {
 	double single_bytes = (double) sizeof(float) * (double)(hmm_w->M + 1) * (double)(L + 1) * (double) p7G_NSCELLS;
-	int    nmat         = do_hmmnoband_w ? 2 : 1;
-	double needed_mb    = (single_bytes * (double) nmat) / (1024.0 * 1024.0);
+	double needed_mb    = do_hmmnoband_w ? hmm_unbanded_oa_mb(hmm_w->M, L) : single_bytes / (1024.0 * 1024.0); /* brief 26_0821-163: double OA */
 	hst_mb = needed_mb;
 	double mxsize_limit = esl_opt_GetReal(go, "--mxsize");
 	if (needed_mb > mxsize_limit) {
@@ -3404,13 +3406,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	p7_GTrace(dsq, L, gm_w, gx_w, wtr);
       }
       else if (do_hmmnoband_w) {
-	p7_gmx_GrowTo(gxf_w, hmm_w->M, L);
-	p7_gmx_GrowTo(gxb_w, hmm_w->M, L);
-	p7_GForward (dsq, L, gm_w, gxf_w, &fwdsc_w);
-	p7_GBackward(dsq, L, gm_w, gxb_w, NULL);
-	p7_GDecoding(gm_w, gxf_w, gxb_w, gxb_w);
-	p7_GOptimalAccuracy(gm_w, gxb_w, gxf_w, &oasc_w);
-	p7_GOATrace(gm_w, gxb_w, gxf_w, wtr);
+	hmm_unbanded_oa(dsq, L, gm_w, gxf_w, gxb_w, wtr, &fwdsc_w);
 	hst_raw = fwdsc_w;
       }
       else {
@@ -3473,23 +3469,8 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  vtr_w = p7_trace_Create();
 	  p7_gmx_GrowTo(gx_w, hmm_w->M, L);
 	  p7_GViterbi(dsq, L, gm_w, gx_w, &sc_w);
+	  /* no empty-trace fallback; see hmm_alignment() (brief 26_0821-163) */
 	  p7_GTrace(dsq, L, gm_w, gx_w, vtr_w);
-
-	  if (vtr_w->N == 0) {
-	    /* fallback to unbanded */
-	    P7_GMX *fb_gxf = p7_gmx_Create(hmm_w->M, L);
-	    P7_GMX *fb_gxb = p7_gmx_Create(hmm_w->M, L);
-	    p7_GForward (dsq, L, gm_w, fb_gxf, &fwdsc_w);
-	    p7_GBackward(dsq, L, gm_w, fb_gxb, NULL);
-	    p7_GDecoding(gm_w, fb_gxf, fb_gxb, fb_gxb);
-	    p7_GOptimalAccuracy(gm_w, fb_gxb, fb_gxf, &oasc_w);
-	    p7_GOATrace(gm_w, fb_gxb, fb_gxf, wtr);
-	    p7_gmx_Destroy(fb_gxf);
-	    p7_gmx_Destroy(fb_gxb);
-	    p7_trace_Destroy(vtr_w);
-	    hst_raw = fwdsc_w;
-	    goto HMM_MPI_SEND;
-	  }
 
 	  ESL_ALLOC(i2k_w, sizeof(int) * (L + 1));
 	  esl_vec_ISet(i2k_w, (L + 1), -1);
@@ -3587,7 +3568,6 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	p7_gmxb_Destroy(bxb_w);
       }
 
-    HMM_MPI_SEND:
       /* Send trace and score-table values back to master */
       hmm_set_stats(hst_st, hmm_score_bits(hst_raw, do_trunc_w, bg_w, dsq, L), hst_t0, hst_aln0, hmm_now(), hst_mb);
       hmm_trace_MPISend(wtr, idx, hst_st, 0, INFERNAL_ALNDATA_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size);
