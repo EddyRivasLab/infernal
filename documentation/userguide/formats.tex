@@ -9,7 +9,7 @@ CM save file. An abridged version is shown here, where (\ldots) mark
 deletions made for clarity and space:
 
 \begin{tinysreoutput}
-INFERNAL1/b [1.2 | January 2026]
+INFERNAL1/e [1.2 | January 2026]
 NAME     Cobalamin
 ACC      RF00174
 DESC     Cobalamin riboswitch
@@ -40,7 +40,11 @@ NULL     0.000  0.000  0.000  0.000
 GA       39.00
 TC       39.00
 NC       38.79
-EFP7GF   -9.3826 0.71319
+HP7      a2
+EFP7L    -10.0802 0.71104 -11.6110 0.71104 -4.4258 0.71104
+EFP7GF   -26.1339 0.39236
+EHP7L    -10.0802 0.71104 -11.8905 0.71104 -4.2317 0.71104
+EHP7GF   -18.7063 0.39236
 ECMLC    0.69050    -9.55632    -0.82028     1600000      499982  0.002400
 ECMGC    0.33713   -30.56949   -21.45119     1600000        8652  0.046232
 ECMLI    0.68481    -7.98572     0.30786     1600000      351369  0.003415
@@ -62,53 +66,27 @@ CM
                                              [ END    99 ]      -      - - - - -    -    -
      E   591   590 3    -1     0     0     0     0     0
 //
-HMMER3/f [i1.1 | June 2012]
-NAME  Cobalamin
-ACC   RF00174
-DESC  Cobalamin riboswitch
-LENG  191
-MAXL  565
-ALPH  RNA
-RF    no
-MM    no
-CONS  yes
-CS    yes
-MAP   yes
-DATE  Wed Jun 13 05:40:08 2012
-COM   [1] ./cmbuild Cobalamin.cm ../tutorial/Cobalamin.sto
-NSEQ  431
-EFFN  4.955421
-CKSUM 2307274568
-STATS LOCAL MSV      -10.2356  0.71319
-STATS LOCAL VITERBI  -12.2484  0.71319
-STATS LOCAL FORWARD   -3.9056  0.71319
-HMM          A        C        G        U   
-            m->m     m->i     m->d     i->m     i->i     d->m     d->d
-  COMPO   1.37169  1.39466  1.27962  1.51293
-          1.38629  1.38629  1.38629  1.38629
-          0.02747  4.30141  4.30141  1.46634  0.26236  0.00000        *
-      1   1.24903  1.60847  1.61442  1.15831      1 u - - :
-          1.38629  1.38629  1.38629  1.38629
-          0.02747  4.30141  4.30141  1.46634  0.26236  1.09861  0.40547
-(...)
-    191   1.51542  1.17791  1.56046  1.33817    441 c - - :
-          1.38629  1.38629  1.38629  1.38629
-          0.01381  4.28939        *  1.46634  0.26236  0.00000        *
-//
 \end{tinysreoutput}
 
-A CM file consists of one or more CMs and associated filter
-HMMs. Each CM is immediately followed by its filter HMM, this is
-mandatory. Each CM starts with a format version identifier (here,
-\prog{INFERNAL1/a}) and ends with \prog{//} on a line by itself. Each
-HMM also starts with a format version identifier (here,
-\prog{HMMER3/f}) and ends with \prog{//} on a line by itself.  The
-format version identifier allows backward compatibility as the
-Infernal software evolves: it tells the parser this file is from
-Infernal's save file format version a. The closing \prog{//} allows
-Infernal to determine when a CM ends and its profile HMM begins, and
-allows multiple CM/filter HMM pairs to be concatenated together into a
-single file.
+A CM file consists of one or more CMs. Each CM starts with a format
+version identifier (here, \prog{INFERNAL1/e}) and ends with \prog{//}
+on a line by itself. The format version identifier allows backward
+compatibility as the Infernal software evolves: it tells the parser
+which version of Infernal's save file format the CM is in. The closing
+\prog{//} allows multiple CMs to be concatenated together into a single
+file.
+
+In format \prog{INFERNAL1/e} (the format this version writes), the profile HMMs that
+Infernal uses as filters, and for HMM-only searches, are not stored:
+every program that reads a CM derives them from the CM (see the
+\prog{HP7} line below), and the file stores only their E-value
+parameters. In the older formats (\prog{INFERNAL1/a}, \prog{/b} and
+\prog{/d}), each CM is immediately followed by a separately built
+filter HMM, in HMMER3 format: it starts with its own format version
+identifier (\prog{HMMER3/f}) and also ends with \prog{//} on a line by
+itself. Infernal 1.2 reads these older files and uses their stored
+filter HMM, as before; a single file must not mix CMs in different
+formats.
 
 The CM format is divided into two regions. The first region contains
 textual information and miscalleneous parameters in a roughly
@@ -128,8 +106,8 @@ Spacing is arranged for human readability, but the parser only cares
 that fields are separated by at least one space character.
 
 The CM format is described in more detail below, followed by a
-description of the HMMER3 HMM format for the CM's mandatory filter HMM
-filter.
+description of the HMMER3 HMM format of the filter HMM that CM files
+in the older formats store.
 
 \subsubsection{CM header section}
 
@@ -382,13 +360,42 @@ scoring believed true positive that is above all known false positives
 found by searches during preparation of the Rfam database.
 \textbf{Optional.}
 
+\item [\emprog{HP7 <s>}] How the HMM-only search HMM is derived from
+  the CM (\prog{INFERNAL1/e} format and later). Two profile HMMs are
+  derived from the CM when it is read. The \emph{filter HMM} is always
+  the CM's maximum likelihood profile HMM. The \emph{HMM-only search
+  HMM}, used by \prog{cmsearch} and \prog{cmscan} with
+  \prog{--hmmonly}, is the filter HMM with its transition probabilities
+  re-estimated under HMMER's DNA transition prior: \prog{<s>} is
+  \prog{a2} if the CM's own (default) transition prior is backed out
+  of them first, \prog{a1} if it is not (for CMs built with a
+  non-default prior), or \prog{ml} if the HMM-only search HMM is the
+  filter HMM itself (for CMs with zero basepairs).
+  \textbf{Mandatory} in \prog{INFERNAL1/e}.
+
+\item [\emprog{EFP7L <f1> <f2> <f3> <f4> <f5> <f6>}] Statistical
+  parameters for filter HMM E-value calculations in local mode
+  (\prog{INFERNAL1/e} format and later): $\mu$ and $\lambda$ for the
+  MSV filter scores, $\mu$ and $\lambda$ for the Viterbi filter
+  scores, and $\tau$ and $\lambda$ for the Forward scores, as on the
+  three \prog{STATS LOCAL} lines of a HMMER3 file. \textbf{Optional},
+  but must be present together with \prog{EFP7GF}; searches require
+  both.
+
 \item [\emprog{EFP7GF <f1> <f2>}] Statistical parameters for filter HMM
   E-value calculations in glocal mode for the Forward algorithm. 
   \prog{<f1>} and \prog{<f2>} are $\tau$ and $\lambda$ for exponential
-  tails for glocal Forward filter HMM scores. This line is necessary
-  in the CM file section rather than the filter HMM file because
-  glocal HMM searches are not normally performed in HMMER3, but are
-  part of the HMM filter pipeline in Infernal. \textbf{Mandatory.}
+  tails for glocal Forward filter HMM scores. In the older formats,
+  this line is necessary in the CM file section rather than the
+  filter HMM file because glocal HMM searches are not normally
+  performed in HMMER3, but are part of the HMM filter pipeline in
+  Infernal. \textbf{Mandatory} in the older formats; in
+  \prog{INFERNAL1/e}, as \prog{EFP7L}.
+
+\item [\emprog{EHP7L <f1> <f2> <f3> <f4> <f5> <f6>}, \emprog{EHP7GF <f1> <f2>}]
+  As \prog{EFP7L} and \prog{EFP7GF}, for the HMM-only search HMM
+  (\prog{INFERNAL1/e} format and later). Present if and only if the
+  \prog{EFP7} lines are present and \prog{HP7} is not \prog{ml}.
 
 \item [\emprog{ECMLC <f1> <f2> <f3> <d1> <d2> <f4>}] Statistical
   parameters needed for E-value calculations for the CM CYK algorithm
@@ -462,7 +469,10 @@ found by searches during preparation of the Rfam database.
   number and remain readable by older versions. (An intermediate
   \prog{v1c} binary magic was used only transiently in development and
   is not a supported format; a current Infernal rejects it and asks
-  for the CM to be rebuilt as \prog{INFERNAL1/d}.)
+  for the CM to be rebuilt as \prog{INFERNAL1/d}.) The binary form of
+  \prog{INFERNAL1/e} (\prog{v1e}, written by \prog{cmpress}) does
+  store the derived filter and HMM-only search HMMs, so that
+  \prog{cmscan} need not derive them.
 
 \item [\emprog{NONULL3\_GC <f1> <f2> <f3> <d1> <d2> <f4>}] Null3-off
   parameters analogous to \prog{NONULL3\_LC}, for CM CYK scores in

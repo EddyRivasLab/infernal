@@ -378,33 +378,8 @@ two parameters are settable with
 and 
 .I --esigma.
 
-These options set the effective sequence number of the CM only. Each
-model's filter p7 HMM is entropy weighted separately, to its own target
-(see
-.B --p7eent
-and
-.B --p7ere
-below). Because of this,
-.B --enone,
-.B --ere
-and
-.B --eset
-(and
-.B --rsearch,
-which implies
-.B --enone
-for the CM) must be accompanied by an explicit choice of the filter
-HMM's weighting:
-.B --p7eent,
-.B --p7ere,
-or
-.B --p7ml.
-Otherwise
-.B cmbuild
-exits with an error before building any model. Builds with
-.B --noss
-are exempt, because their filter HMM is the CM's own maximum
-likelihood HMM, which already follows the CM's weighting.
+The model's filter p7 HMM and HMM-only search HMM are derived from the
+CM (see below), so these options set their weighting too.
 
 .TP
 .B --eent
@@ -469,10 +444,8 @@ almost no effect. A NOTE line in the per-model output reports a raised
 effective sequence number. If even the ceiling cannot reach the target
 (the observed counts alone are not informative enough), the model is
 built at the ceiling, a WARNING gives the target and the relative
-entropy achieved, and, if the filter HMM is the CM's maximum
-likelihood HMM (zero-basepair models, or
-.BR --p7ml ),
-its glocal Forward statistics are simulated as with
+entropy achieved, and the glocal Forward statistics of the model's
+filter and HMM-only HMMs are simulated as with
 .B --Esim
 because they cannot be predicted reliably there. Even simulated
 statistics can be several-fold too permissive for some such models, so
@@ -502,50 +475,47 @@ basepair emission probabilities.
 Set the effective sequence number for entropy weighting as 
 .I <x>.
 
-.SH OPTIONS CONTROLLING FILTER P7 HMM CONSTRUCTION
+.SH FILTER P7 HMMS
 
-For each CM that 
-.B cmbuild
-constructs, an accompanying filter p7 HMM is built from the input
-alignment as well. These options control filter HMM construction:
-
-.TP 
-.B --p7eent
-Use entropy weighting to set the filter p7 HMM's effective sequence
-number, to its own target mean match state relative entropy (0.38
-bits by default, settable with
-.B --p7ere).
-This is the default, independent of the CM's
-.B --eent,
-.B --enone,
-.B --ere
+Two profile HMMs are derived from each CM, and the CM file stores only
+their E-value parameters; every program that reads the CM derives the
+same two HMMs from it. The
+.I filter HMM,
+used by the HMM filter stages of
+.B cmsearch
 and
-.B --eset
-options. Use it to state that choice explicitly when one of those
-options is used. Incompatible with
-.B --p7ml.
-
-.TP 
-.BI --p7ere " <x>"
-Set the target mean match state relative entropy for the filter p7 HMM
-as 
-.I <x>.
-By default the target relative entropy per match position is 0.38 bits.
-
-.TP 
-.BI --p7ml 
-Use a maximum likelihood p7 HMM built from the CM as the filter
-HMM. This HMM will be as similar as possible to the CM (while
-necessarily ignorant of secondary structure).
-
-.PP 
-Use 
-.B --devhelp 
-to see additional, otherwise undocumented, filter HMM construction options.
+.B cmscan
+and by
+.BR cmalign 's
+HMM banding of long models, is the CM's maximum likelihood p7 HMM,
+which is as similar as possible to the CM (while necessarily ignorant
+of secondary structure). The
+.I HMM-only search HMM,
+used by
+.B cmsearch
+and
+.B cmscan
+in HMM-only mode
+.RB ( --hmmonly ),
+is the same HMM with its transition probabilities re-estimated under
+HMMER's DNA transition prior, after the CM's own transition prior is
+backed out of them. For a model built with a non-default prior
+.RB ( --prior ,
+.BR --p56 ,
+.BR --v1p0 ,
+or
+.BR --rsearch )
+the CM's prior is not backed out, because that step assumes the
+default prior. A model with zero basepairs searches in HMM-only mode
+with its filter HMM itself. (Before Infernal 1.2, a separate filter HMM
+was built from the alignment and stored in the CM file. The
+.B --p7ml
+option, which made the filter HMM the maximum likelihood HMM, is still
+accepted and has no effect.)
 
 .SH OPTIONS CONTROLLING FILTER P7 HMM CALIBRATION 
 
-After building each filter HMM,
+After deriving each model's filter and HMM-only HMMs,
 .B cmbuild
 determines appropriate E-value parameters to use during filtering in 
 .B cmsearch 
@@ -589,9 +559,7 @@ output header, when
 .B --prior
 is used, and when
 .B --eset 0
-is used and the filter HMM is the CM's maximum likelihood HMM (with
-.BR --p7ml ,
-or for a model with zero basepairs).
+is used.
 
 .PP
 Use 

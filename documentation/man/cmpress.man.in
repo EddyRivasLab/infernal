@@ -34,12 +34,14 @@ for
 to work.
 
 .PP
-Four files are created:
+Six files are created:
 .I <cmfile>.i1m,
 .I <cmfile>.i1i,
 .I <cmfile>.i1f,
+.I <cmfile>.i1p,
+.I <cmfile>.i1hf,
 and
-.I <cmfile>.i1p.
+.I <cmfile>.i1hp.
 The 
 .I <cmfile>.i1m
 file contains the covariance models, associated filter p7 profile HMMs and their annotation in a binary
@@ -59,6 +61,14 @@ The
 .I <cmfile>.i1p
 file contains precomputed data structures
 for the rest of each profile filter p7 HMM.
+The
+.I <cmfile>.i1hf
+and
+.I <cmfile>.i1hp
+files contain the same data structures for each model's HMM-only search
+HMM, which
+.B cmscan --hmmonly
+uses instead of its filter HMM.
 
 .PP
 .I <cmfile>
