@@ -40,7 +40,8 @@ NULL     0.000  0.000  0.000  0.000
 GA       39.00
 TC       39.00
 NC       38.79
-HP7      a2
+HP7      h3pri
+HP7A     1.809433 0.015186 0.038601 1.032015 0.601223 0.127366 0.277087
 EFP7L    -10.0802 0.71104 -11.6110 0.71104 -4.4258 0.71104
 EFP7GF   -26.1339 0.39236
 EHP7L    -10.0802 0.71104 -11.8905 0.71104 -4.2317 0.71104
@@ -85,7 +86,8 @@ parameters. In the older formats (\prog{INFERNAL1/a}, \prog{/b} and
 filter HMM, in HMMER3 format: it starts with its own format version
 identifier (\prog{HMMER3/f}) and also ends with \prog{//} on a line by
 itself. Infernal 1.2 reads these older files and uses their stored
-filter HMM, as before; a single file must not mix CMs in different
+filter HMM, as before; \prog{cmconvert --upgrade} converts them to
+the current format. A single file must not mix CMs in different
 formats.
 
 The CM format is divided into two regions. The first region contains
@@ -365,13 +367,33 @@ found by searches during preparation of the Rfam database.
   derived from the CM when it is read. The \emph{filter HMM} is always
   the CM's maximum likelihood profile HMM. The \emph{HMM-only search
   HMM}, used by \prog{cmsearch} and \prog{cmscan} with
-  \prog{--hmmonly}, is the filter HMM with its transition probabilities
-  re-estimated under HMMER's DNA transition prior: \prog{<s>} is
-  \prog{a2} if the CM's own (default) transition prior is backed out
-  of them first, \prog{a1} if it is not (for CMs built with a
-  non-default prior), or \prog{ml} if the HMM-only search HMM is the
-  filter HMM itself (for CMs with zero basepairs).
-  \textbf{Mandatory} in \prog{INFERNAL1/e}.
+  \prog{--hmmonly}, is one of two things. \prog{<s>} is \prog{h3pri}
+  if it is the filter HMM with the CM's own transition prior backed
+  out of its transition probabilities (see \prog{HP7A}), which are
+  then re-estimated under HMMER3's DNA transition prior. \prog{<s>} is
+  \prog{ml} if the HMM-only search HMM is the filter HMM itself: for
+  CMs with zero basepairs built with \prog{cmbuild}'s default prior
+  for them, and for CMs built with a \prog{--prior} file whose
+  transition priors out of \prog{MATL} states into \prog{MATL} nodes
+  are mixtures, which can't be backed out. (Files written by
+  development versions of 1.2 may say \prog{a2}, which means
+  \prog{h3pri}.) \textbf{Mandatory} in \prog{INFERNAL1/e}.
+
+\item [\emprog{HP7A <f1> <f2> <f3> <f4> <f5> <f6> <f7>}] The CM
+  transition prior that the \prog{h3pri} transform backs out: the
+  Dirichlet parameters of the prior the CM was built with for
+  transitions out of \prog{MATL} states into \prog{MATL} nodes,
+  mapped to the seven transitions of a profile HMM node, in the order
+  match-match (from \prog{ML}$\rightarrow$\prog{ML}), match-insert
+  (\prog{ML}$\rightarrow$\prog{IL}), match-delete
+  (\prog{ML}$\rightarrow$\prog{D}), insert-match
+  (\prog{IL}$\rightarrow$\prog{ML} plus \prog{IL}$\rightarrow$\prog{D}),
+  insert-insert (\prog{IL}$\rightarrow$\prog{IL}), delete-match
+  (\prog{D}$\rightarrow$\prog{ML}) and delete-delete
+  (\prog{D}$\rightarrow$\prog{D}). Present if and only if
+  \prog{HP7} is \prog{h3pri} (\prog{INFERNAL1/e} format and later);
+  if absent, the values of the default prior shown in the example
+  above are used.
 
 \item [\emprog{EFP7L <f1> <f2> <f3> <f4> <f5> <f6>}] Statistical
   parameters for filter HMM E-value calculations in local mode

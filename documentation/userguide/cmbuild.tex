@@ -573,13 +573,18 @@ as a profile HMM can be (while ignoring the secondary structure). The
 \emph{HMM-only search HMM}, used with \prog{--hmmonly}, is the same
 HMM with its transition probabilities re-estimated under HMMER's DNA
 transition prior, after the CM's own transition prior is backed out
-of them. (For a model built with a non-default prior, the CM's prior
-is not backed out, and a model with zero basepairs uses its filter HMM
-for HMM-only search too.) \prog{cmbuild} calibrates both. Before
-version 1.2, \prog{cmbuild} built a separate filter HMM from the
-alignment and stored it in the CM file, which made the file about
-50\% larger. CM files in those older formats keep working: their
-stored filter HMM is used, as before, for both purposes.
+of them; the CM file records that prior's relevant parameters, so this
+is exact for any prior. (A model with zero basepairs uses its filter
+HMM for HMM-only search too, as does a model built with a
+\prog{--prior} file whose transition priors between \prog{MATL}
+nodes are mixture Dirichlets, which can't be backed out.)
+\prog{cmbuild} calibrates both. Before version 1.2, \prog{cmbuild}
+built a separate filter HMM from the alignment and stored it in the
+CM file, which made the file about 50\% larger. CM files in those
+older formats keep working: their stored filter HMM is used, as
+before, for both purposes. \prog{cmconvert --upgrade} converts them
+to the current format, deriving and calibrating the two HMMs, without
+the alignment.
 
 \subsubsection{Automatic E-value calibration}
 \label{section:cmbuild-autocal}
