@@ -533,7 +533,7 @@
 1  exercise  build:se/rf         @src/cmbuild@ --hand -F %SE.CM% !testsuite/se.rf.sto! 
 1  exercise  build:se/null       @src/cmbuild@ -F --null !testsuite/at4.null! %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/pri        @src/cmbuild@ -F --prior !testsuite/plus1.prior! %SE.CM% !testsuite/se.sto! 
-1  exercise  build:se/rsearch    @src/cmbuild@ --rsearch !testsuite/RIBOSUM85-60.mat! --p7eent -F %SE.CM% !testsuite/se.1.sto!
+1  exercise  build:se/rsearch    @src/cmbuild@ --rsearch !testsuite/RIBOSUM85-60.mat! -F %SE.CM% !testsuite/se.1.sto!
 1  exercise  build:se/noss       @src/cmbuild@ --noss -F %SE.CM% !testsuite/se.sto!
 
 1  exercise  build:se/betaW      @src/cmbuild@ --betaW 1E-12 -F %SE.CM% !testsuite/se.sto! 
@@ -575,9 +575,9 @@
 
 # eweighting
 1  exercise  build:se/eent       @src/cmbuild@ --eent -F %SE.CM% !testsuite/se.sto! 
-1  exercise  build:vault/enon    @src/cmbuild@ --enone --p7eent -F %V.CM% !testsuite/Vault.sto! 
-1  exercise  build:vault/ere     @src/cmbuild@ --ere 0.8 --p7eent -F %V.CM% !testsuite/Vault.sto! 
-1  exercise  build:vault/eset    @src/cmbuild@ --eset 10.0 --p7eent -F %V.CM% !testsuite/Vault.sto! 
+1  exercise  build:vault/enon    @src/cmbuild@ --enone -F %V.CM% !testsuite/Vault.sto! 
+1  exercise  build:vault/ere     @src/cmbuild@ --ere 0.8 -F %V.CM% !testsuite/Vault.sto! 
+1  exercise  build:vault/eset    @src/cmbuild@ --eset 10.0 -F %V.CM% !testsuite/Vault.sto! 
 1  exercise  build:vault/ems     @src/cmbuild@ --eminseq 8.0 -F %V.CM% !testsuite/Vault.sto! 
 1  exercise  build:trna/esig     @src/cmbuild@ --esigma 3.0 -F %TRNA.CM% !testsuite/tRNA.sto! 
 1  exercise  build:pkhav/emx1    @src/cmbuild@ --emaxseq 5.0 -F %PKHAV.CM% !testsuite/PK-HAV.sto! 
@@ -587,7 +587,7 @@
 1  exercise  build:pkhav/efrcun  @src/cmbuild@ --ere 3.0 --p7ml --eforce -F %PKHAV.CM% !testsuite/PK-HAV.sto! 
 1  fail      build:pkhav/efnoere @src/cmbuild@ --p7ml --eforce -F %PKHAV.CM% !testsuite/PK-HAV.sto! 
 1  fail      build:pkhav/efemx   @src/cmbuild@ --ere 1.5 --p7ml --eforce --emaxseq 5.0 -F %PKHAV.CM% !testsuite/PK-HAV.sto! 
-1  fail      build:pkhav/v1ere   @src/cmbuild@ --v1p0 --ere 1.5 --p7eent -F %PKHAV.CM% !testsuite/PK-HAV.sto!
+1  fail      build:pkhav/v1ere   @src/cmbuild@ --v1p0 --ere 1.5 -F %PKHAV.CM% !testsuite/PK-HAV.sto!
 
 # --refine
 1  exercise  build:se/rfn        @src/cmbuild@ -F --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
@@ -633,10 +633,6 @@
 
 # filter p7 HMM construction
 1  exercise  build:se/p7ml         @src/cmbuild@ -F --p7ml %SE.CM% !testsuite/se.sto!
-1  exercise  build:vault/p7ere     @src/cmbuild@ -F --p7ere 0.45 %V.CM% !testsuite/Vault.sto!
-1  exercise  build:se/p7pri        @src/cmbuild@ -F --p7prior !testsuite/test.hprior! %SE.CM% !testsuite/se.sto!
-1  exercise  build:se/p7hpri       @src/cmbuild@ -F --p7hprior %SE.CM% !testsuite/se.sto!
-1  exercise  build:se/p7hemt       @src/cmbuild@ -F --p7hemit %SE.CM% !testsuite/se.sto!
 
 # filter p7 HMM calibration
 1  exercise  build:se/EmN          @src/cmbuild@ -F --EmN 100 %SE.CM% !testsuite/se.sto!

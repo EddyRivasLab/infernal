@@ -43,12 +43,13 @@ sub cleanup { for my $s (@tmpsuffixes) { unlink "$tmppfx.$s" if -e "$tmppfx.$s";
 cleanup();
 
 ######################################################################
-# Subtest 1: direct build of a pknot seed yields INFERNAL1/d, PKNOT yes.
+# Subtest 1: direct build of a pknot seed yields INFERNAL1/e (1/d before
+# brief 26_0821-162), PKNOT yes.
 ######################################################################
 run("$builddir/src/cmbuild --wnone -F $tmppfx.direct.cm $pkhav > $tmppfx.log 2>&1",
     "subtest 1: cmbuild (direct) failed");
 my $first = first_line("$tmppfx.direct.cm");
-if ($first !~ /^INFERNAL1\/d\b/) { die "FAIL: subtest 1: direct build first line is '$first', expected INFERNAL1/d\n"; }
+if ($first !~ /^INFERNAL1\/e\b/) { die "FAIL: subtest 1: direct build first line is '$first', expected INFERNAL1/e\n"; }
 if (! file_has_header("$tmppfx.direct.cm", "PKNOT", "yes")) { die "FAIL: subtest 1: direct build missing 'PKNOT yes'\n"; }
 my $pk_direct = pknot_columns("$tmppfx.direct.cm");
 if ($pk_direct eq "") { die "FAIL: subtest 1: no pknot columns extracted from direct build\n"; }

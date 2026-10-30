@@ -2,6 +2,10 @@
 
 # bug i47 - cmbuild --p7ml option does nothing
 #
+# Since the filter HMM became the CM's ML HMM for every model (brief
+# 26_0821-162), --p7ml is accepted as a no-op: this test now checks that
+# the --p7ml and default models are identical apart from COM and DATE.
+#
 # EPN, Sat Mar  4 09:38:03 2017
 #
 
@@ -43,7 +47,7 @@ if ($ok) {
   }
   # remove COM lines
   if($ok) { 
-    `grep -v ^COM i47.1.cm > i47.3.cm`;
+    `grep -v -e ^COM -e ^DATE i47.1.cm > i47.3.cm`;
     if ($? != 0) { $ok = 0; }
   }
 }
@@ -57,17 +61,17 @@ if ($ok) {
   }
   # remove COM lines
   if($ok) { 
-    `grep -v ^COM i47.2.cm > i47.4.cm`; 
+    `grep -v -e ^COM -e ^DATE i47.2.cm > i47.4.cm`; 
     if ($? != 0) { $ok = 0; }
   }
 }
 
 if($ok) { 
-  # if bug exists both fileswill be equal and diff will return nothing
+  # --p7ml is a no-op: both files must be equal and diff will return nothing
   $ndifflines = `diff i47.3.cm i47.4.cm | wc -l`;
   if ($? != 0) { $ok = 0; }
   if($ok) { 
-    $ok = ($ndifflines > 0) ? 1 : 0;
+    $ok = ($ndifflines == 0) ? 1 : 0;
   }
 }
 

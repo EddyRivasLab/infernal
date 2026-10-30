@@ -47,7 +47,8 @@ for my $suffix ("default.cm", "nopad.cm", "nopad2.cm",
 }
 
 ######################################################################
-# Subtest 1: cmbuild --p7pad produces INFERNAL1/d with pads.
+# Subtest 1: cmbuild --p7pad produces INFERNAL1/e with pads (1/d before
+# the filter HMM was derived from the CM, brief 26_0821-162).
 # (Default cmbuild now stores a null3-OFF E-value set via the fastcal
 # store-both path, so the CM carries CMH_EXPTAIL_NONULL3_STATS and is
 # written as INFERNAL1/d, not 1/b -- see cm_file.c write-format gate.)
@@ -56,7 +57,7 @@ for my $suffix ("default.cm", "nopad.cm", "nopad2.cm",
 if ($? != 0) { die "FAIL: cmbuild (default) failed\n"; }
 
 my $first = first_line("$tmppfx.default.cm");
-if ($first !~ /^INFERNAL1\/d\b/) { die "FAIL: subtest 1: default cmbuild first line is '$first', expected to start with 'INFERNAL1/d'\n"; }
+if ($first !~ /^INFERNAL1\/e\b/) { die "FAIL: subtest 1: default cmbuild first line is '$first', expected to start with 'INFERNAL1/e'\n"; }
 if (! file_has_header("$tmppfx.default.cm", "P7NODEPAD", "yes")) { die "FAIL: subtest 1: default cmbuild output missing 'P7NODEPAD yes'\n"; }
 
 ######################################################################
@@ -74,7 +75,7 @@ if ($? != 0) { die "FAIL: cmbuild --no-p7pad failed\n"; }
 if (! file_has_header("$tmppfx.nopad2.cm", "P7NODEPAD", "no")) { die "FAIL: subtest 2: --no-p7pad output missing 'P7NODEPAD no'\n"; }
 
 $first = first_line("$tmppfx.nopad.cm");
-if ($first !~ /^INFERNAL1\/d\b/) { die "FAIL: subtest 2: --no-p7pad first line is '$first', expected to start with 'INFERNAL1/d'\n"; }
+if ($first !~ /^INFERNAL1\/e\b/) { die "FAIL: subtest 2: --no-p7pad first line is '$first', expected to start with 'INFERNAL1/e'\n"; }
 if (! file_has_header("$tmppfx.nopad.cm", "P7NODEPAD", "no")) { die "FAIL: subtest 2: --no-p7pad output missing 'P7NODEPAD no'\n"; }
 
 # Inspect the first MATL node line: last two whitespace fields must be '- -'.

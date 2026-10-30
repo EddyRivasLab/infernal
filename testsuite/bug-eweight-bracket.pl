@@ -32,7 +32,7 @@ $alifile = shift;
 $ok      = 1;
 $cmfile  = "bug-eweight-bracket.cm";
 
-$output = `$cmbuild --ere 0.565 --p7eent -F $cmfile $alifile 2>&1`;
+$output = `$cmbuild --ere 0.565 -F $cmfile $alifile 2>&1`;
 if ($? != 0)                  { $ok = 0; }
 if ($output !~ /\n\# CPU/)    { $ok = 0; }
 
