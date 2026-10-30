@@ -61,6 +61,7 @@ static char banner[] = "convert CM file to a different Infernal format";
 static int  configure_model(CM_t *cm, char *errbuf, int set_filter);
 static int  upgrade_model(const ESL_GETOPTS *go, CM_t *cm, int format, const Prior_t *user_pri, char *errbuf);
 static int  comlog_cmbuild_option(const char *comlog, const char *opt, char **opt_arg);
+static int  comlog_cmbuild_number(const char *comlog, const char *opt, double *ret_x);
 
 int
 main(int argc, char **argv)
@@ -373,8 +374,14 @@ configure_model(CM_t *cm, char *errbuf, int set_filter)
  *              cmbuild COM line, nor cmconvert --prior: HP7 ml.
  *            - The filter HMMs' glocal Forward E-value parameters are
  *              simulated, not predicted, where cmbuild would simulate
- *              them: a --prior build, --eset 0, or an EFFN at
+ *              them: --Esim, a --prior build, --eset 0, or an EFFN at
  *              EFORCE_MAX_NEFF (a missed --eforce target).
+ *            - The calibration settings are cmbuild's defaults,
+ *              changed by any of cmbuild's calibration options on its
+ *              COM line (--ElL, --EgL, --Elcmult, --Egcmult, --EmN,
+ *              --EvN, --ElfN, --EgfN, --Elftp, --Egftp, --Efitlam,
+ *              --Eseed), as cmbuild applies them. (Model libraries of
+ *              long CMs are often built with small --EmN etc.)
  *            The CM's own E-value parameters (ECM lines, from
  *            cmcalibrate) belong to the CM and are kept. The per-CM
  *            filter P-value cutoffs (cmbuild --fil-pcut) belong to the
@@ -395,6 +402,7 @@ upgrade_model(const ESL_GETOPTS *go, CM_t *cm, int format, const Prior_t *user_p
   int            pretend_cm_is_hmm;
   int            do_sim;
   int            ncpus     = 0;
+  double         x;
   CM_P7_CALOPTS  co;
 
   pretend_cm_is_hmm = (CMCountNodetype(cm, MATP_nd) == 0 && user_pri == NULL && ! com_prior && ! is_v1p0 &&
@@ -415,14 +423,31 @@ upgrade_model(const ESL_GETOPTS *go, CM_t *cm, int format, const Prior_t *user_p
   }
   if (cm->hp7_xform == CM_HP7_ML) cm_p7_DefaultHMMOnlyAlpha(cm->hp7_alpha); /* unused; keep the in-memory default */
 
-  do_sim = (user_pri != NULL || com_prior || cm->eff_nseq >= EFORCE_MAX_NEFF) ? TRUE : FALSE;
+  do_sim = (user_pri != NULL || com_prior || cm->eff_nseq >= EFORCE_MAX_NEFF || comlog_cmbuild_option(cm->comlog, "--Esim", NULL)) ? TRUE : FALSE;
   if (comlog_cmbuild_option(cm->comlog, "--eset", &eset_arg) && eset_arg != NULL && atof(eset_arg) == 0.) do_sim = TRUE;
   if (eset_arg != NULL) free(eset_arg);
 
   /* the per-CM filter P-value cutoffs were calibrated for the old filter HMM */
   cm->flags &= ~CMH_FILTER_PVAL_CUTOFFS;
 
+  /* calibration settings: cmbuild's, as in its build_and_calibrate_p7_filter() */
   cm_p7_CalOptsSetDefaults(&co, cm->clen, do_sim);
+  if      (comlog_cmbuild_number(cm->comlog, "--ElL",     &x)) co.lmsvL = co.lvitL = co.lfwdL = (int) x;
+  else if (comlog_cmbuild_number(cm->comlog, "--Elcmult", &x)) co.lmsvL = co.lvitL = co.lfwdL = x * cm->clen;
+  if      (comlog_cmbuild_number(cm->comlog, "--EgL",     &x)) co.gfwdL = (int) x;
+  else if (comlog_cmbuild_number(cm->comlog, "--Egcmult", &x)) co.gfwdL = x * cm->clen;
+  if (comlog_cmbuild_option(cm->comlog, "--Efitlam", NULL)) {
+    co.lmsvN = co.lvitN = co.lfwdN = 10000;
+    co.lftailp = 0.01;
+    if (! do_sim) { co.gfwdN = 10000; co.gftailp = 0.01; }
+  }
+  if (comlog_cmbuild_number(cm->comlog, "--EmN",   &x)) co.lmsvN   = (int) x;
+  if (comlog_cmbuild_number(cm->comlog, "--EvN",   &x)) co.lvitN   = (int) x;
+  if (comlog_cmbuild_number(cm->comlog, "--ElfN",  &x)) co.lfwdN   = (int) x;
+  if (comlog_cmbuild_number(cm->comlog, "--EgfN",  &x)) co.gfwdN   = (int) x;
+  if (comlog_cmbuild_number(cm->comlog, "--Elftp", &x)) co.lftailp = x;
+  if (comlog_cmbuild_number(cm->comlog, "--Egftp", &x)) co.gftailp = x;
+  if (comlog_cmbuild_number(cm->comlog, "--Eseed", &x)) co.seed    = (int) x;
 #ifdef HMMER_THREADS
   ncpus = ESL_MIN(esl_opt_GetInteger(go, "--cpu"), esl_threads_GetCPUCount());
 #endif
@@ -481,5 +506,27 @@ comlog_cmbuild_option(const char *comlog, const char *opt, char **opt_arg)
     }
   }
   free(lines);
+  return found;
+}
+
+/* comlog_cmbuild_number()
+ * Incept:    EPN, Fri Oct 30 2026 (w/Claude)
+ *
+ * Purpose:   As comlog_cmbuild_option(), for an option with a numeric
+ *            argument: return TRUE and the argument in <*ret_x> if
+ *            the CM's first cmbuild command has option <opt> with a
+ *            number after it.
+ */
+static int
+comlog_cmbuild_number(const char *comlog, const char *opt, double *ret_x)
+{
+  char *arg   = NULL;
+  int   found = FALSE;
+
+  if (comlog_cmbuild_option(comlog, opt, &arg) && arg != NULL && esl_str_IsReal(arg)) {
+    *ret_x = atof(arg);
+    found  = TRUE;
+  }
+  if (arg != NULL) free(arg);
   return found;
 }
