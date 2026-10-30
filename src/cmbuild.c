@@ -651,6 +651,11 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
             if ((status = refine_msa(go, cfg, errbuf, cm, msa, tr, &new_cm, &new_msa, &new_mtr, &new_tr, &niter)) != eslOK) cm_Fail(errbuf);
             if(cm != new_cm) FreeCM(cm); 
             cm = new_cm; 
+            /* with -l, the CM was local during refinement, so its filter and
+             * HMM-only HMMs weren't derived yet; now it is global again */
+            if (! (cm->flags & CMH_FP7)) {
+              if ((status = build_and_calibrate_p7_filter(go, cfg, errbuf, cm, determine_hp7_xform(go, determine_pretend_cm_is_hmm(go, cm)))) != eslOK) cm_Fail(errbuf);
+            }
             if (niter > 1) { /* if niter == 1, we didn't make a new mtr, or tr, so we don't free them */
               for(i = 0; i < msa->nseq; i++) FreeParsetree(tr[i]);
               free(tr);
@@ -1110,8 +1115,13 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *alifile)
    if ((status =  parameterize                 (go, cfg, errbuf, TRUE, cm, pri2use, msa->nseq))        != eslOK) goto ERROR;
    if ((status =  configure_model              (go, cfg, errbuf, cm, 1))                               != eslOK) goto ERROR;
    if ((status =  set_consensus                (go, cfg, errbuf, cm))                                  != eslOK) goto ERROR;
-   /* derive and calibrate the filter HMM and the HMM-only HMM (brief 26_0821-162) */
-   if ((status =  build_and_calibrate_p7_filter(go, cfg, errbuf, cm, determine_hp7_xform(go, pretend_cm_is_hmm))) != eslOK) goto ERROR;
+   /* derive and calibrate the filter HMM and the HMM-only HMM (brief 26_0821-162).
+    * They are derived from the CM as written, which must be in global
+    * mode; a CM configured locally for --refine -l is globalized only
+    * after refinement, and master() derives them then. */
+   if (! (cm->flags & (CMH_LOCAL_BEGIN | CMH_LOCAL_END))) {
+     if ((status =  build_and_calibrate_p7_filter(go, cfg, errbuf, cm, determine_hp7_xform(go, pretend_cm_is_hmm))) != eslOK) goto ERROR;
+   }
 
    *ret_cm = cm;
 
