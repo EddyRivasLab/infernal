@@ -852,6 +852,10 @@ typedef struct cp9bands_s {
   int64_t hd_alloced;         /* number of hd arrays currently alloc'ed (int64, see hd_needed) */
 
   double   tau;               /* tau used to calculate current bands */
+  double   hmm_sc;            /* CP9 Forward score (bits) of the sequence these bands were last
+                               * calculated for, if Forward/Backward ran in alignment (not scan)
+                               * mode; -eslINFINITY if not. DispatchSqAlignment() uses it to
+                               * center CM alignment DP scores. */
 
   /* --mxsize fallback for the end-band hull, cp9_EndHullRetryBands() (brief 26_0821-103) */
   int      im_widened;        /* TRUE if the !trunc dead-node widening gave the last node's insert (ROOT_IR's source) a band with no posterior evidence */

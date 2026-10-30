@@ -81,6 +81,7 @@ AllocCP9Bands(int cm_M, int hmm_M)
   cp9bands->thresh2          = DEFAULT_CP9BANDS_THRESH2;    /* 0.98 */
   cp9bands->Rmarg_imin = cp9bands->Lmarg_jmin = -1;
   cp9bands->Rmarg_imax = cp9bands->Lmarg_jmax = -2;
+  cp9bands->hmm_sc     = -eslINFINITY;
   cp9bands->im_widened    = FALSE;
   cp9bands->endhull_retry = FALSE;
 
@@ -384,6 +385,10 @@ cp9_FBMatrices2Bands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_MX *fmx, CP9_MX *bm
   int status;
   int use_sums      = ((cm->align_opts & CM_ALIGN_SUMS)      || (cm->search_opts & CM_SEARCH_SUMS))      ? TRUE : FALSE;
   int do_old_hmm2ij = ((cm->align_opts & CM_ALIGN_HMM2IJOLD) || (cm->search_opts & CM_SEARCH_HMM2IJOLD)) ? TRUE : FALSE;
+
+  /* the summed score of all parses (bmx->mmx[0][0] in alignment mode), for
+   * centering CM alignment DP scores (DispatchSqAlignment()) */
+  cp9b->hmm_sc = (do_fwd_scan || do_bck_scan) ? -eslINFINITY : (double) bmx->mmx[0][0] / INTSCALE;
 
   /* Step: F/B -> HMM bands (tau-dependent via 1-cm->tau). */
   if(use_sums) {
@@ -947,6 +952,7 @@ ckpt_bands2cmbands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_CKPTBANDS *cb, CP9Ban
 
   if(t == -1)    ESL_FAIL(eslEINCONCEIVABLE, errbuf, "checkpointed CP9 bands not calculated for tau %g", cm->tau);
   if(cb->M != M) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "checkpointed CP9 bands for M %d, cp9b for M %d", cb->M, M);
+  cp9b->hmm_sc = (double) cb->sc / INTSCALE; /* alignment mode only; see cp9_FBMatrices2Bands() */
 
   for(k = 0; k <= M; k++) {
     x = (int64_t) t * (M+1) + k;
@@ -5373,6 +5379,7 @@ cp9_CloneBands(CP9Bands_t *src_cp9b, char *errbuf)
 
   dest_cp9b->thresh1 = src_cp9b->thresh1;
   dest_cp9b->thresh2 = src_cp9b->thresh2;
+  dest_cp9b->hmm_sc  = src_cp9b->hmm_sc;
 
   dest_cp9b->Rmarg_imin = src_cp9b->Rmarg_imin;
   dest_cp9b->Rmarg_imax = src_cp9b->Rmarg_imax;
