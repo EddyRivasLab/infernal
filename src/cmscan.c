@@ -269,9 +269,11 @@ static ESL_OPTIONS options[] = {
   /* per-CM F1/F2/F3 cutoff caps (CMH_FILTER_PVAL_CUTOFFS pcut). Search-time
    * caps on the CLEN-scaled tightening factor; effective_factor = min(logistic, cap).
    * Whole feature is opt-in via --use-fil-pcut; without that flag, F1F2F3CUT in
-   * the CM file is ignored. With --use-fil-pcut, default cap is 10 per stage
+   * the CM file is ignored. cmbuild writes F1F2F3CUT only with --fil-pcut
+   * (brief 26_0821-160); a CM without it searches with the default
+   * thresholds. With --use-fil-pcut, default cap is 10 per stage
    * (validated as the strict-improvement Pareto point on rmark4). */
-  { "--use-fil-pcut", eslARG_NONE, FALSE, NULL, NULL,    NULL, NULL, "--max,--nohmm", "enable per-CM F1/F2/F3 P-value override (reads F1F2F3CUT from CM file)", 106 },
+  { "--use-fil-pcut", eslARG_NONE, FALSE, NULL, NULL,    NULL, NULL, "--max,--nohmm", "use per-CM F1/F2/F3 P-value cutoffs (F1F2F3CUT, from cmbuild --fil-pcut)", 106 },
   { "--pcut-F1cap", eslARG_REAL, "10.0", NULL, "x>=1.0", NULL, "--use-fil-pcut", NULL, "with --use-fil-pcut: max F1 tightening factor",                          106 },
   { "--pcut-F2cap", eslARG_REAL, "10.0", NULL, "x>=1.0", NULL, "--use-fil-pcut", NULL, "with --use-fil-pcut: max F2 tightening factor",                          106 },
   { "--pcut-F3cap", eslARG_REAL, "10.0", NULL, "x>=1.0", NULL, "--use-fil-pcut", NULL, "with --use-fil-pcut: max F3 tightening factor",                          106 },

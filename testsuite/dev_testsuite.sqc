@@ -137,6 +137,15 @@
 1  prep       build/t.pad.serial      @src/cmbuild@ --wnone --p7pad --p7pad-N 50 --p7pad-cpu 0 -F %T.SERIAL.CM%     !testsuite/tRNA.sto!
 1  prep       build/t.pad.cpu1        @src/cmbuild@ --wnone --p7pad --p7pad-N 50 --p7pad-cpu 1 -F %T.CPU1.CM%       !testsuite/tRNA.sto!
 
+# F1/F2/F3 P-value cutoff options smoke tests (cmbuild computes them only
+# with --fil-pcut; cmsearch reads them only with --use-fil-pcut, and falls
+# back to the default thresholds when the CM has none)
+1  prep       build/t.pcut.on         @src/cmbuild@ --wnone --fil-pcut --fil-pcut-N 50 -F %T.PCUT.CM%       !testsuite/tRNA.sto!
+1  prep       build/t.pcut.seed17     @src/cmbuild@ --wnone --fil-pcut --fil-pcut-N 50 --fil-pcut-seed 17 -F %T.PCUT17.CM% !testsuite/tRNA.sto!
+1  prep       build/t.pcut.no         @src/cmbuild@ --wnone --no-fil-pcut              -F %T.NOPCUT.CM%     !testsuite/tRNA.sto!
+2  exercise   search/t.pcut.use       @src/cmsearch@ --use-fil-pcut %T.PCUT.CM%   !testsuite/1k-tRNA.fa!
+2  exercise   search/t.pcut.absent    @src/cmsearch@ --use-fil-pcut %T.NOPCUT.CM% !testsuite/1k-tRNA.fa!
+
 # cmsearch exercises (CM must be calibrated)
 1  prep        copy/tC        cp !testsuite/tRNA.c.cm! %TRNA.C.CM%
 1  prep        copy/vC        cp !testsuite/Vault.c.cm! %VAULT.C.CM%
