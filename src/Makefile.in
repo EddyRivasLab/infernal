@@ -259,6 +259,8 @@ cm_fast_calibrate.o: cm_fast_calibrate_models.h
 
 ${OBJS}:     ${HDRS} config.h
 ${PROGOBJS}: ${HDRS} config.h
+# the itest/regtest objects need rebuilding when a struct changes too
+$(ITESTS:%=%.o) $(REGTESTS:%=%.o): ${HDRS} config.h
 
 ${PROGS}: % : %.o libinfernal.a ../${HMMERDIR}/src/libhmmer.a ../${ESLDIR}/libeasel.a  
 	${QUIET_GEN}${CC} ${CFLAGS} ${PTHREAD_CFLAGS} ${PIC_CFLAGS} ${NEON_CFLAGS} ${SSE_CFLAGS} ${VMX_CFLAGS} ${DEFS} ${LDFLAGS} ${MYLIBDIRS} -o $@ $@.o ${LIBS}
