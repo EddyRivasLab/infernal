@@ -193,9 +193,9 @@ static ESL_OPTIONS options[] = {
   /* Options for precise control of each stage of the HMM-only filter pipeline */
   /* name          type         default  env  range  toggles   reqs  incomp            help                                                         docgroup*/
   { "--hmmmax",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL, /* see ** above */ "in HMM-only mode, turn off all filters",  102 },
-  { "--hmmF1",      eslARG_REAL,  "0.02", NULL, "x>0",   NULL,  NULL, "--nohmmonly",    "HMM-only: stage 1 (SSV) P threshold",                          102 },
-  { "--hmmF2",      eslARG_REAL,  "1e-3", NULL, "x>0",   NULL,  NULL, "--nohmmonly",    "HMM-only: stage 2 (Vit) P threshold",                          102 },
-  { "--hmmF3",      eslARG_REAL,  "1e-5", NULL, "x>0",   NULL,  NULL, "--nohmmonly",    "HMM-only: stage 3 (Fwd) P threshold",                          102 },
+  { "--hmmF1",      eslARG_REAL,  "0.05", NULL, "x>0",   NULL,  NULL, "--nohmmonly",    "HMM-only: stage 1 (SSV) P threshold",                          102 },
+  { "--hmmF2",      eslARG_REAL,  "3e-3", NULL, "x>0",   NULL,  NULL, "--nohmmonly",    "HMM-only: stage 2 (Vit) P threshold",                          102 },
+  { "--hmmF3",      eslARG_REAL,  "1e-4", NULL, "x>0",   NULL,  NULL, "--nohmmonly",    "HMM-only: stage 3 (Fwd) P threshold",                          102 },
   { "--hmmnobias",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nohmmonly",    "HMM-only: turn off bias composition filter",                   102 },
   { "--hmmnonull2", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nohmmonly",    "HMM-only: turn off null2 score correction",                    102 },
   { "--nohmmonly",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--hmmmax",       "never run HMM-only mode (even for models w/o basepairs)",      102 },
