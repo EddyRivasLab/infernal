@@ -123,6 +123,7 @@
 
 /* P7 HMM E-value parameters, borrowed from HMMER, but with 2 new additions: CM_p7_GMU and CM_p7_GLAMBDA */
 #define CM_p7_NEVPARAM 8  /* number of statistical parameters stored in cm->p7_evparam */
+#define CM_HP7_NALPHA 7 /* HMM-only transform's CM prior alphas: MM MI MD IM II DM DD (brief 26_0821-165) */
 enum cm_p7_evparams_e {CM_p7_LMMU  = 0, CM_p7_LMLAMBDA = 1, CM_p7_LVMU = 2,  CM_p7_LVLAMBDA = 3, CM_p7_LFTAU = 4, CM_p7_LFLAMBDA = 5, CM_p7_GFMU = 6, CM_p7_GFLAMBDA = 7 };
 #define CM_p7_EVPARAM_UNSET -99999.0f  /* if p7_evparam[0] is unset, then all unset */
 
@@ -2080,7 +2081,13 @@ typedef struct cm_s {
    * cm_p7_DeriveFilterHMMs(). (brief 26_0821-162) */
   P7_HMM       *hp7;
   float         hp7_evparam[CM_p7_NEVPARAM]; /* E-value params for hp7 */
-  int           hp7_xform;    /* CM_HP7_ML, CM_HP7_A1 or CM_HP7_A2 */
+  int           hp7_xform;    /* CM_HP7_ML or CM_HP7_H3PRI */
+  /* For CM_HP7_H3PRI: the CM transition prior's MATL->MATL Dirichlet
+   * alphas, mapped to the 7 HMM transitions (CM_HP7_NALPHA; order MM MI
+   * MD IM II DM DD), which the transform backs out of mlp7 (HP7A line;
+   * default prior if absent). See Prior_HMMOnlyAlpha(). (brief
+   * 26_0821-165) */
+  double        hp7_alpha[CM_HP7_NALPHA];
   int           hp7_is_active; /* TRUE once cm_p7_UseHMMOnlyFilter() has swapped hp7 into fp7 */
 
   /* p7 per-HMM-node band pads (CMH_P7NODEPAD). Computed by cm_ComputeP7CMNodePad()
@@ -2144,11 +2151,24 @@ typedef struct cm_s {
 #define CMH_EXPTAIL_NONULL3_STATS (1<<27) /* null3-off exp tail stats (cm->expA_nonull3) are valid */
 #define CMH_FP7_DERIVED         (1<<28) /* cm->fp7 (and cm->hp7) were derived from the CM, not read from a stored filter HMM block */
 
+/* Settings for calibrating a CM's derived filter and HMM-only HMMs
+ * with cm_p7_Calibrate(): see cm_p7_CalOptsSetDefaults() and
+ * cm_p7_CalibrateDerivedFilterHMMs(). (brief 26_0821-165) */
+typedef struct cm_p7_calopts_s {
+  int    lmsvL, lvitL, lfwdL, gfwdL; /* sequence lengths: local MSV, Viterbi, Forward; glocal Forward */
+  int    lmsvN, lvitN, lfwdN, gfwdN; /* numbers of sequences, same order */
+  float  lftailp;                    /* tail fraction fit for local Forward (float, as cmbuild's) */
+  double gftailp;                    /* tail fraction fit for glocal Forward */
+  int    seed;                       /* RNG seed (0: arbitrary) */
+  int    do_sim;                     /* TRUE to simulate glocal Forward parameters, not predict them */
+} CM_P7_CALOPTS;
+
 /* transforms of the CM's ML p7 HMM (mlp7) that give the HMM-only
  * search HMM, cm->hp7_xform (see cm_p7_HMMOnlyTransform()) */
-#define CM_HP7_ML 0  /* none: HMM-only search uses the filter HMM (mlp7) itself */
-#define CM_HP7_A1 1  /* mlp7 transitions re-estimated under HMMER's DNA transition prior */
-#define CM_HP7_A2 2  /* as A1, with the default CM transition prior backed out first */
+#define CM_HP7_ML    0  /* none: HMM-only search uses the filter HMM (mlp7) itself */
+#define CM_HP7_H3PRI 2  /* mlp7 transitions, CM prior (cm->hp7_alpha) backed out, re-estimated under HMMER's DNA transition prior */
+/* (code 1 was brief 26_0821-143's arm a1, no prior back-out; no longer
+ * written or read. H3PRI was that brief's a2.) */
 
 /* model configuration options, cm->config_opts */
 #define CM_CONFIG_LOCAL         (1<<0)  /* configure the model for local alignment */
@@ -3839,9 +3859,13 @@ extern int          cm_p7_GlocalFwdSimFit(ESL_RANDOMNESS *r, char *errbuf, P7_PR
 extern int          cm_p7_FitExpTail(const double *xv, int N, double tailp, double *ret_mu, double *ret_lambda);
 extern int          cm_SetFilterHMM(CM_t *cm, P7_HMM *hmm, double gfmu, double gflambda);
 extern int          cm_SetHMMOnlyHMM(CM_t *cm, P7_HMM *hmm, double gfmu, double gflambda);
-extern int          cm_p7_HMMOnlyTransform(const P7_HMM *mlp7, int xform, P7_HMM **ret_hmm, char *errbuf);
+extern int          cm_p7_HMMOnlyTransform(const P7_HMM *mlp7, int xform, const double *alpha, P7_HMM **ret_hmm, char *errbuf);
+extern void         cm_p7_DefaultHMMOnlyAlpha(double *alpha);
 extern int          cm_p7_DeriveFilterHMMs(CM_t *cm, int xform, P7_HMM **ret_fp7, P7_HMM **ret_hp7, char *errbuf);
 extern int          cm_p7_AttachDerivedFilterHMMs(CM_t *cm, char *errbuf);
+extern void         cm_p7_CalOptsSetDefaults(CM_P7_CALOPTS *co, int clen, int do_sim);
+extern int          cm_p7_DeriveFilterHMMsAsWritten(CM_t *cm, P7_HMM **ret_fp7, P7_HMM **ret_hp7, char *errbuf);
+extern int          cm_p7_CalibrateDerivedFilterHMMs(CM_t *cm, const CM_P7_CALOPTS *co, int ncpus, char *errbuf);
 extern int          cm_p7_UseHMMOnlyFilter(CM_t *cm);
 extern const char  *cm_p7_HMMOnlyXformString(int xform);
 extern int          cm_p7_HMMOnlyXformCode(const char *s);
@@ -4088,6 +4112,7 @@ extern void     Prior_Destroy(Prior_t *pri);
 extern Prior_t *Prior_Read(FILE *fp);
 extern void     PriorifyCM(CM_t *cm, const Prior_t *pri);
 extern Prior_t *Prior_Default(int mimic_h3);
+extern int      Prior_HMMOnlyAlpha(const Prior_t *pri, double *alpha);
 extern Prior_t *Prior_Default_v0p56_through_v1p02(void);
 
 /* from rnamat.c */

@@ -49,7 +49,8 @@ static uint32_t  v1a_magic  = 0xe3edb0b2; /* v1.1 binary: "cm02" + 0x80808080 */
 static uint32_t  v1b_magic  = 0xe3edb0b3; /* v1.2 binary: "cm03" + 0x80808080 (adds optional P7NODEPAD) */
 static uint32_t  v1c_magic  = 0xe3edb0b4; /* RETIRED 1/c binary: "cm04" + 0x80808080; ambiguous dev-only format (two branches collided on it), rejected on read */
 static uint32_t  v1d_magic  = 0xe3edb0b5; /* 1/d binary: "cm05" + 0x80808080 (adds optional null3-OFF E-value block AND consensus pseudoknots) */
-static uint32_t  v1e_magic  = 0xe3edb0b6; /* PROVISIONAL 1/e binary: "cm06" + 0x80808080 (derived filter HMMs; adds HMM-only HMM block) (brief 26_0821-162) */
+static uint32_t  v1e_magic  = 0xe3edb0b7; /* PROVISIONAL 1/e binary: "cm07" + 0x80808080 (derived filter HMMs; adds HMM-only HMM block; brief 26_0821-162) and HMM-only prior alphas (brief 26_0821-165) */
+static uint32_t  v1e0_magic = 0xe3edb0b6; /* RETIRED first 1/e binary, "cm06" (brief 26_0821-162), without the alphas: rejected, rerun cmpress */
 static uint32_t  v1a_fmagic = 0xb1e1e6f3; /* 1/a binary MSV/SSV file: "1afs" = 0x 31 61 66 73  + 0x80808080 */
 /* Note: 's' at end of 1afs is arbitrary. It is consistent with H3's
  * trailing 's' iforSSE binary files, but in Infernal this is used
@@ -474,6 +475,7 @@ open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, in
   else if (magic.n == v1d_magic) { cmfp->format = CM_FILE_1d; cmfp->parser = read_bin_1p1_cm; cmfp->is_binary = TRUE; }
   else if (magic.n == v1e_magic) { cmfp->format = CM_FILE_1e; cmfp->parser = read_bin_1p1_cm; cmfp->is_binary = TRUE; }
   else if (magic.n == v1c_magic) ESL_XFAIL(eslEFORMAT, errbuf, "INFERNAL1/c is a retired ambiguous dev format; rebuild as INFERNAL1/d");
+  else if (magic.n == v1e0_magic) ESL_XFAIL(eslEFORMAT, errbuf, "%s is a binary CM file written by an earlier development version of Infernal 1.2;\nrerun cmpress (or cmconvert -b) on the ASCII CM file", cmfp->fname);
   else if (cmfp->is_pressed) ESL_XFAIL(eslEFORMAT, errbuf, "Binary format tag in %s unrecognized\nCurrent Infernal format is INFERNAL1/e. Previous binary formats are not supported.", cmfp->fname);
 
   /* 8. Checks for ASCII file format */
@@ -750,6 +752,12 @@ cm_file_WriteASCII(FILE *fp, int format, CM_t *cm)
      * (<HP7> transform of mlp7) are derived from the CM when it is read;
      * only their E-value parameters are stored (brief 26_0821-162). */
     fprintf(fp, "HP7      %s\n", cm_p7_HMMOnlyXformString(cm->hp7_xform));
+    /* the CM prior alphas the HMM-only transform backs out; %.6f
+     * reproduces the default prior's constants exactly (brief 26_0821-165) */
+    if (cm->hp7_xform == CM_HP7_H3PRI)
+      fprintf(fp, "HP7A     %.6f %.6f %.6f %.6f %.6f %.6f %.6f\n",
+              cm->hp7_alpha[0], cm->hp7_alpha[1], cm->hp7_alpha[2], cm->hp7_alpha[3],
+              cm->hp7_alpha[4], cm->hp7_alpha[5], cm->hp7_alpha[6]);
     if (cm->fp7_evparam[CM_p7_LMMU] != CM_p7_EVPARAM_UNSET) {
       fprintf(fp, "EFP7L    %.4f %.5f %.4f %.5f %.4f %.5f\n",
               cm->fp7_evparam[CM_p7_LMMU], cm->fp7_evparam[CM_p7_LMLAMBDA], cm->fp7_evparam[CM_p7_LVMU],
@@ -1109,6 +1117,7 @@ cm_file_WriteBinary(FILE *fp, int format, CM_t *cm, off_t *opt_fp7_offset, off_t
   /* HMM-only HMM transform and glocal E-value parameters (1/e and later) */
   if (format >= CM_FILE_1e) {
     if (fwrite((char *) &(cm->hp7_xform), sizeof(int), 1, fp) != 1) return eslFAIL;
+    if (cm->hp7_xform == CM_HP7_H3PRI && fwrite((char *) cm->hp7_alpha, sizeof(double), CM_HP7_NALPHA, fp) != CM_HP7_NALPHA) return eslFAIL;
     if ((cm->flags & CMH_FP7) && cm->hp7 != NULL) {
       if (fwrite((char *) &(cm->hp7_evparam[CM_p7_GFMU]),     sizeof(float), 1, fp) != 1) return eslFAIL;
       if (fwrite((char *) &(cm->hp7_evparam[CM_p7_GFLAMBDA]), sizeof(float), 1, fp) != 1) return eslFAIL;
@@ -1821,6 +1830,7 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
   int           read_hp7_stats  = FALSE; /* 1/e: EHP7GF line read */
   int           read_hp7_lstats = FALSE; /* 1/e: EHP7L line read */
   int           read_hp7_xform  = FALSE; /* 1/e: HP7 line read */
+  int           read_hp7_alpha  = FALSE; /* 1/e: HP7A line read */
   uint32_t      cm_statstracker = 0; /* for making sure we have all CM E-value stats, if we have any */
   uint32_t      cm_nonull3_statstracker = 0; /* same, for the optional null3-off E-value stats */
   int           exp_mode;
@@ -2087,8 +2097,18 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
        * the derived filter and HMM-only HMMs (brief 26_0821-162) */
       else if (cmfp->format >= CM_FILE_1e && strcmp(tag, "HP7") == 0) {
 	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Too few fields on HP7 line");
-	if ((cm->hp7_xform = cm_p7_HMMOnlyXformCode(tok1)) < 0)                         ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "HP7 line: unknown HMM-only transform %s", tok1);
+	if ((cm->hp7_xform = cm_p7_HMMOnlyXformCode(tok1)) < 0) {
+	  if (strcmp(tok1, "a1") == 0)                                                   ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "HP7 line: transform a1 was written by an earlier development version of Infernal 1.2; rebuild the CM");
+	  else                                                                           ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "HP7 line: unknown HMM-only transform %s", tok1);
+	}
 	read_hp7_xform = TRUE;
+      }
+      else if (cmfp->format >= CM_FILE_1e && strcmp(tag, "HP7A") == 0) {
+	for (x = 0; x < CM_HP7_NALPHA; x++) {
+	  if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok1, NULL)) != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Too few fields on HP7A line");
+	  if ((cm->hp7_alpha[x] = atof(tok1)) < 0.)                                       ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "HP7A line: negative alpha %s", tok1);
+	}
+	read_hp7_alpha = TRUE;
       }
       else if (cmfp->format >= CM_FILE_1e && (strcmp(tag, "EFP7L") == 0 || strcmp(tag, "EHP7L") == 0)) {
 	float *ev = (tag[1] == 'F') ? cm->fp7_evparam : cm->hp7_evparam;
@@ -2182,6 +2202,7 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
     if (read_fp7_stats != read_fp7_lstats)   ESL_XFAIL(status, cmfp->errbuf, "Read only one of the EFP7L and EFP7GF lines in header section");
     if (read_hp7_stats != read_hp7_lstats)   ESL_XFAIL(status, cmfp->errbuf, "Read only one of the EHP7L and EHP7GF lines in header section");
     if (read_hp7_stats && cm->hp7_xform == CM_HP7_ML) ESL_XFAIL(status, cmfp->errbuf, "Read EHP7L/EHP7GF lines, but HP7 is ml");
+    if (read_hp7_alpha && cm->hp7_xform == CM_HP7_ML) ESL_XFAIL(status, cmfp->errbuf, "Read HP7A line, but HP7 is ml");
     if (read_fp7_stats && cm->hp7_xform != CM_HP7_ML && ! read_hp7_stats) ESL_XFAIL(status, cmfp->errbuf, "Read EFP7 lines, but no EHP7L/EHP7GF lines for HP7 %s", cm_p7_HMMOnlyXformString(cm->hp7_xform));
     if (read_fp7_stats) { 
       cm->fp7_evparam[CM_p7_GFMU]     = tmp_fp7_gfmu;
@@ -2807,7 +2828,8 @@ read_bin_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
   /* HMM-only HMM transform and glocal E-value parameters (1/e and later) */
   if (cmfp->format >= CM_FILE_1e) {
     if (! fread((char *) &(cm->hp7_xform), sizeof(int), 1, cmfp->f))                         ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read HMM-only transform");
-    if (cm->hp7_xform != CM_HP7_ML && cm->hp7_xform != CM_HP7_A1 && cm->hp7_xform != CM_HP7_A2) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "bad HMM-only transform code %d", cm->hp7_xform);
+    if (cm->hp7_xform != CM_HP7_ML && cm->hp7_xform != CM_HP7_H3PRI)                          ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "bad HMM-only transform code %d", cm->hp7_xform);
+    if (cm->hp7_xform == CM_HP7_H3PRI && fread((char *) cm->hp7_alpha, sizeof(double), CM_HP7_NALPHA, cmfp->f) != CM_HP7_NALPHA) ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read HMM-only prior alphas");
     if ((cm->flags & CMH_FP7) && cm->hp7_xform != CM_HP7_ML) {
       if (! fread((char *) &tmp_hp7_gfmu,     sizeof(float), 1, cmfp->f))                     ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read HMM-only P7 E-value stats");
       if (! fread((char *) &tmp_hp7_gflambda, sizeof(float), 1, cmfp->f))                     ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "failed to read HMM-only P7 E-value stats");

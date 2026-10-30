@@ -312,8 +312,7 @@ static int    parameterize(const ESL_GETOPTS *go, const struct cfg_s *cfg, char 
 static int    configure_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int iter);
 static int    set_consensus(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int    build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int hp7_xform);
-static int    determine_hp7_xform(const ESL_GETOPTS *go, int pretend_cm_is_hmm);
-static int    derive_filters_as_written(CM_t *cm, P7_HMM **ret_fp7, P7_HMM **ret_hp7, char *errbuf);
+static int    determine_hp7_xform(const struct cfg_s *cfg, int pretend_cm_is_hmm, double *alpha);
 static char  *esim_forced_by(const ESL_GETOPTS *go, int filter_is_mlp7);
 static int    set_msa_name(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
 static double set_target_relent(const ESL_GETOPTS *go, const ESL_ALPHABET *abc, int clen, int nbps);
@@ -655,7 +654,7 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
             /* with -l, the CM was local during refinement, so its filter and
              * HMM-only HMMs weren't derived yet; now it is global again */
             if (! (cm->flags & CMH_FP7)) {
-              if ((status = build_and_calibrate_p7_filter(go, cfg, errbuf, cm, determine_hp7_xform(go, determine_pretend_cm_is_hmm(go, cm)))) != eslOK) cm_Fail(errbuf);
+              if ((status = build_and_calibrate_p7_filter(go, cfg, errbuf, cm, determine_hp7_xform(cfg, determine_pretend_cm_is_hmm(go, cm), cm->hp7_alpha))) != eslOK) cm_Fail(errbuf);
             }
             if (niter > 1) { /* if niter == 1, we didn't make a new mtr, or tr, so we don't free them */
               for(i = 0; i < msa->nseq; i++) FreeParsetree(tr[i]);
@@ -1121,7 +1120,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *alifile)
     * mode; a CM configured locally for --refine -l is globalized only
     * after refinement, and master() derives them then. */
    if (! (cm->flags & (CMH_LOCAL_BEGIN | CMH_LOCAL_END))) {
-     if ((status =  build_and_calibrate_p7_filter(go, cfg, errbuf, cm, determine_hp7_xform(go, pretend_cm_is_hmm))) != eslOK) goto ERROR;
+     if ((status =  build_and_calibrate_p7_filter(go, cfg, errbuf, cm, determine_hp7_xform(cfg, pretend_cm_is_hmm, cm->hp7_alpha))) != eslOK) goto ERROR;
    }
 
    *ret_cm = cm;
@@ -2689,20 +2688,16 @@ set_consensus(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
  * it will be written to the output file, calibrate both, and attach
  * them to <cm> (brief 26_0821-162, decision R0b). No separate filter
  * HMM is built: the CM file stores only their E-value parameters,
- * and every reader derives the same two HMMs from the CM.
+ * and every reader derives the same two HMMs from the CM. The caller
+ * has set cm->hp7_alpha (determine_hp7_xform()). The work is done by
+ * cm_p7_CalibrateDerivedFilterHMMs(), which cmconvert --upgrade
+ * shares (brief 26_0821-165).
  */
 static int
 build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int hp7_xform)
 {
   int status; 
-  P7_HMM *fhmm = NULL;
-  P7_HMM *hhmm = NULL;
-  int lmsvL, lvitL, lfwdL, gfwdL;
-  int lmsvN, lvitN, lfwdN, gfwdN;
-  double agfmu, agflambda;
-  double hgfmu, hgflambda;
-  float lftailp;
-  double gftailp;
+  CM_P7_CALOPTS co;
   int do_sim;
   int ncpus = 0;
   ESL_STOPWATCH *w = NULL;
@@ -2712,42 +2707,6 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
     esl_stopwatch_Start(w);
     fprintf(cfg->ofp, "%-40s ... ", "Calibrating p7 HMM filter"); 
     fflush(cfg->ofp);
-  }
-
-  /* Define relevant parameters: */
-  /* first, set all to default */
-  lmsvL = lvitL = 200;
-  lfwdL = 100;
-  gfwdL = ESL_MAX(100, 2.*cm->clen);
-  lmsvN = esl_opt_GetInteger(go, "--EmN");
-  lvitN = esl_opt_GetInteger(go, "--EvN");
-  lfwdN = esl_opt_GetInteger(go, "--ElfN");
-  gfwdN = esl_opt_GetInteger(go, "--EgfN");
-  lftailp = esl_opt_GetReal(go, "--Elftp");
-  gftailp = esl_opt_GetReal(go, "--Egftp");
-
-  /* now, modify if nec based on command-line options */
-  if(esl_opt_IsUsed(go, "--ElL")) { 
-    lmsvL = lvitL = lfwdL = esl_opt_GetInteger(go, "--ElL");
-  }
-  else if(esl_opt_IsUsed(go, "--Elcmult")) { 
-    lmsvL = lvitL = lfwdL = esl_opt_GetReal(go, "--Elcmult") * cm->clen;
-  }
-
-  if(esl_opt_IsUsed(go, "--EgL")) { 
-    gfwdL = esl_opt_GetInteger(go, "--EgL");
-  }
-  else if(esl_opt_IsUsed(go, "--Egcmult")) { 
-    gfwdL = esl_opt_GetReal(go, "--Egcmult") * cm->clen;
-  }
-
-  if(esl_opt_GetBoolean(go, "--Efitlam")) { 
-    lmsvN = esl_opt_IsUsed(go, "--EmN") ? esl_opt_GetInteger(go, "--EmN") : 10000;
-    lvitN = esl_opt_IsUsed(go, "--EvN") ? esl_opt_GetInteger(go, "--EvN") : 10000;
-    lfwdN = esl_opt_IsUsed(go, "--ElfN") ? esl_opt_GetInteger(go, "--ElfN") : 10000;
-    gfwdN = esl_opt_IsUsed(go, "--EgfN") ? esl_opt_GetInteger(go, "--EgfN") : 10000;
-    lftailp = esl_opt_IsUsed(go, "--Elftp") ? esl_opt_GetReal(go, "--Elftp") : 0.01;
-    gftailp = esl_opt_IsUsed(go, "--Egftp") ? esl_opt_GetReal(go, "--Egftp") : 0.01;
   }
 
   /* --Esim: simulate glocal Fwd stats instead of predicting them, either
@@ -2768,51 +2727,49 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
     g_ere.esim_forced = TRUE;
     do_sim = TRUE;
   }
-  if(do_sim) {
-    gfwdN   = esl_opt_IsUsed(go, "--EgfN")  ? esl_opt_GetInteger(go, "--EgfN") : 5000;
-    gftailp = esl_opt_IsUsed(go, "--Egftp") ? esl_opt_GetReal(go, "--Egftp")    : 0.05;
+
+  /* Define relevant parameters: first, set all to default (the option
+   * table's defaults, and the --Esim sample size and tail above) */
+  cm_p7_CalOptsSetDefaults(&co, cm->clen, do_sim);
+
+  /* now, modify if nec based on command-line options */
+  if(esl_opt_IsUsed(go, "--ElL")) { 
+    co.lmsvL = co.lvitL = co.lfwdL = esl_opt_GetInteger(go, "--ElL");
+  }
+  else if(esl_opt_IsUsed(go, "--Elcmult")) { 
+    co.lmsvL = co.lvitL = co.lfwdL = esl_opt_GetReal(go, "--Elcmult") * cm->clen;
   }
 
-  /* Derive the HMMs from the CM as written, i.e. with its parameters
-   * rounded as in the output file, so their E-value parameters are
-   * those of the HMMs every reader will derive (brief 26_0821-162). */
-  cm->hp7_xform = hp7_xform;
-  if ((status = derive_filters_as_written(cm, &fhmm, &hhmm, errbuf)) != eslOK) return status;
+  if(esl_opt_IsUsed(go, "--EgL")) { 
+    co.gfwdL = esl_opt_GetInteger(go, "--EgL");
+  }
+  else if(esl_opt_IsUsed(go, "--Egcmult")) { 
+    co.gfwdL = esl_opt_GetReal(go, "--Egcmult") * cm->clen;
+  }
+
+  if(esl_opt_GetBoolean(go, "--Efitlam")) { 
+    co.lmsvN   = 10000;
+    co.lvitN   = 10000;
+    co.lfwdN   = 10000;
+    co.lftailp = 0.01;
+    if(! do_sim) { 
+      co.gfwdN   = 10000;
+      co.gftailp = 0.01;
+    }
+  }
+  if(esl_opt_IsUsed(go, "--EmN"))   co.lmsvN   = esl_opt_GetInteger(go, "--EmN");
+  if(esl_opt_IsUsed(go, "--EvN"))   co.lvitN   = esl_opt_GetInteger(go, "--EvN");
+  if(esl_opt_IsUsed(go, "--ElfN"))  co.lfwdN   = esl_opt_GetInteger(go, "--ElfN");
+  if(esl_opt_IsUsed(go, "--EgfN"))  co.gfwdN   = esl_opt_GetInteger(go, "--EgfN");
+  if(esl_opt_IsUsed(go, "--Elftp")) co.lftailp = esl_opt_GetReal(go, "--Elftp");
+  if(esl_opt_IsUsed(go, "--Egftp")) co.gftailp = esl_opt_GetReal(go, "--Egftp");
+  co.seed = esl_opt_GetInteger(go, "--Eseed");
 
 #ifdef HMMER_THREADS
   ncpus = ESL_MIN(esl_opt_GetInteger(go, "--cpu"), esl_threads_GetCPUCount());
 #endif
-  /* calibrate the filter HMM */
-  if((status = cm_p7_Calibrate(fhmm, errbuf,
-			       lmsvL, lvitL, lfwdL, gfwdL,                 /* length of sequences to search for local (lL) and glocal (gL) modes */
-			       lmsvN, lvitN, lfwdN, gfwdN,                 /* number of seqs to search for each alg */
-			       lftailp,                                    /* fraction of tail mass to fit for local Fwd */
-			       gftailp,                                    /* fraction of tail mass to fit for glocal Fwd */
-			       esl_opt_GetInteger(go, "--Eseed"),           /* RNG seed for calibration */
-			       ncpus,
-			       cm_p7_UseP7mlPredictor(cm, TRUE),            /* the filter is the ML HMM: --p7ml lambda/tau coefficients (brief 26_0824-085) */
-			       do_sim,                                      /* simulate, don't predict, glocal Fwd stats? (brief 26_0824-087) */
-			       &agfmu, &agflambda))
-     != eslOK) ESL_FAIL(status, errbuf, "Error calibrating the filter p7 HMM");
-  /* and the HMM-only HMM, the same way (as the prototype measured in brief 26_0821-143) */
-  if(hhmm != NULL) { 
-    if((status = cm_p7_Calibrate(hhmm, errbuf,
-				 lmsvL, lvitL, lfwdL, gfwdL,
-				 lmsvN, lvitN, lfwdN, gfwdN,
-				 lftailp, gftailp,
-				 esl_opt_GetInteger(go, "--Eseed"),
-				 ncpus,
-				 cm_p7_UseP7mlPredictor(cm, TRUE),
-				 do_sim,
-				 &hgfmu, &hgflambda))
-       != eslOK) ESL_FAIL(status, errbuf, "Error calibrating the HMM-only p7 HMM");
-  }
-
-  if((status = cm_SetFilterHMM(cm, fhmm, agfmu, agflambda)) != eslOK) ESL_FAIL(status, errbuf, "Unable to set the HMM filter for the CM");
-  cm->flags |= CMH_FP7_DERIVED;
-  if(hhmm != NULL) { 
-    if((status = cm_SetHMMOnlyHMM(cm, hhmm, hgfmu, hgflambda)) != eslOK) ESL_FAIL(status, errbuf, "Unable to set the HMM-only HMM for the CM");
-  }
+  cm->hp7_xform = hp7_xform;
+  if ((status = cm_p7_CalibrateDerivedFilterHMMs(cm, &co, ncpus, errbuf)) != eslOK) return status;
 
   if (cfg->be_verbose) { 
     fprintf(cfg->ofp, "done.  ");
@@ -2831,70 +2788,22 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
  *            the HMM-only search HMM (brief 26_0821-162):
  *            CM_HP7_ML for a zero-basepair model parameterized as an
  *            HMM (<pretend_cm_is_hmm>; its ML HMM is already the HMM
- *            it searches with, as before); CM_HP7_A2 for a model built
- *            with the default CM prior; CM_HP7_A1 otherwise, because
- *            A2 backs the default prior out of the ML HMM, which is
- *            wrong for any other prior (--prior, --p56, --v1p0) or
- *            for none (--rsearch). A1 is worse than A2 on default
- *            builds (brief 26_0821-143: +30 vs +7 famMER) but valid
- *            for any prior.
+ *            it searches with, as before). Otherwise CM_HP7_H3PRI,
+ *            backing out the alphas of the transition prior the CM was
+ *            built with (cfg->pri), which are returned in <alpha>
+ *            and stored in the CM file (brief 26_0821-165); or
+ *            CM_HP7_ML if that prior's MATL->MATL transition priors
+ *            are mixtures (possible only with --prior), which can't
+ *            be backed out. The default, --p56/--v1p0 and --rsearch
+ *            (which uses the default transition prior) priors are all
+ *            single Dirichlets there.
  */
 static int
-determine_hp7_xform(const ESL_GETOPTS *go, int pretend_cm_is_hmm)
+determine_hp7_xform(const struct cfg_s *cfg, int pretend_cm_is_hmm, double *alpha)
 {
   if (pretend_cm_is_hmm) return CM_HP7_ML;
-  if (esl_opt_IsUsed(go, "--prior") || esl_opt_GetBoolean(go, "--p56") || esl_opt_GetBoolean(go, "--v1p0") || esl_opt_IsOn(go, "--rsearch")) return CM_HP7_A1;
-  return CM_HP7_A2;
+  return Prior_HMMOnlyAlpha(cfg->pri, alpha) ? CM_HP7_H3PRI : CM_HP7_ML;
 }
-
-/* derive_filters_as_written()
- * Incept:    EPN, Fri Oct 30 2026 (w/Claude)
- *
- * Purpose:   Write <cm> as it will appear in the output file (format
- *            1/e, without E-value parameters for its HMMs) to a memory
- *            buffer, read it back, and derive its filter HMM and (for
- *            cm->hp7_xform other than CM_HP7_ML) HMM-only HMM from
- *            the copy read back, with cm_p7_DeriveFilterHMMs(). A CM
- *            file stores probabilities to 3-5 digits, so HMMs derived
- *            from <cm> itself would differ from those a reader derives
- *            by up to ~1e-3 in ln p (5e-3 for A2; brief 26_0821-143
- *            §8); these don't.
- */
-static int
-derive_filters_as_written(CM_t *cm, P7_HMM **ret_fp7, P7_HMM **ret_hp7, char *errbuf)
-{
-  int           status;
-  char         *buf  = NULL;
-  size_t        size = 0;
-  FILE         *mfp  = NULL;
-  CM_FILE      *cmfp = NULL;
-  CM_t         *rcm  = NULL;
-  ESL_ALPHABET *abc  = NULL;
-
-  if ((mfp = open_memstream(&buf, &size)) == NULL) ESL_XFAIL(eslESYS, errbuf, "derive_filters_as_written(): open_memstream() failed");
-  if ((status = cm_file_WriteASCII(mfp, CM_FILE_1e, cm)) != eslOK) ESL_XFAIL(status, errbuf, "derive_filters_as_written(): failed to write CM %s", cm->name);
-  if (fclose(mfp) != 0) { mfp = NULL; ESL_XFAIL(eslESYS, errbuf, "derive_filters_as_written(): fclose() failed"); }
-  mfp = NULL;
-
-  abc = (ESL_ALPHABET *) cm->abc; /* the derived HMMs point to <cm>'s alphabet */
-  if ((status = cm_file_OpenBuffer(buf, (int) size, FALSE, &cmfp)) != eslOK) ESL_XFAIL(status, errbuf, "derive_filters_as_written(): failed to open CM buffer");
-  if ((status = cm_file_Read(cmfp, FALSE, &abc, &rcm)) != eslOK)              ESL_XFAIL(status, errbuf, "derive_filters_as_written(): failed to read CM %s back:\n%s", cm->name, cmfp->errbuf);
-  if ((status = cm_p7_DeriveFilterHMMs(rcm, cm->hp7_xform, ret_fp7, ret_hp7, errbuf)) != eslOK) goto ERROR;
-
-  FreeCM(rcm);
-  cm_file_Close(cmfp);
-  free(buf);
-  return eslOK;
-
- ERROR:
-  if (mfp  != NULL) fclose(mfp);
-  if (rcm  != NULL) FreeCM(rcm);
-  if (cmfp != NULL) cm_file_Close(cmfp);
-  if (buf  != NULL) free(buf);
-  return status;
-}
-
-
 
 /* output_ere_outcome()
  * Incept:    EPN, Mon Oct  5 2026 (w/Claude)

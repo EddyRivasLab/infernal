@@ -275,6 +275,45 @@ PriorifyCM(CM_t *cm, const Prior_t *pri)
 }
 
 
+/* Function:  Prior_HMMOnlyAlpha()
+ * Incept:    EPN, Fri Oct 30 2026 (w/Claude)
+ *
+ * Purpose:   Get the alphas of prior <pri>'s MATL->MATL transition
+ *            priors, mapped to the 7 transitions of a profile HMM node,
+ *            for the HMM-only search HMM transform CM_HP7_H3PRI (see
+ *            cm_p7_HMMOnlyTransform()), into <alpha>[0..CM_HP7_NALPHA-1]
+ *            in the order MM MI MD IM II DM DD:
+ *              MM, MI, MD <- ML->ML, ML->IL, ML->D;
+ *              IM         <- IL->ML + IL->D;
+ *              II         <- IL->IL;
+ *              DM, DD     <- D->ML, D->D.
+ *            The back-out of the CM prior that the transform does is
+ *            only defined for a single Dirichlet, so this is possible
+ *            only if each of those three transition priors has one
+ *            component. (brief 26_0821-165)
+ *
+ * Returns:   TRUE and <alpha> set if <pri>'s MATL->MATL transition
+ *            priors are single Dirichlets; FALSE (<alpha> unchanged)
+ *            if any of them is a mixture.
+ */
+int
+Prior_HMMOnlyAlpha(const Prior_t *pri, double *alpha)
+{
+  const ESL_MIXDCHLET *ml = pri->t[pri->tsetmap[MATL_ML][MATL_nd]]; /* ML->IL, ML->ML, ML->D */
+  const ESL_MIXDCHLET *il = pri->t[pri->tsetmap[MATL_IL][MATL_nd]]; /* IL->IL, IL->ML, IL->D */
+  const ESL_MIXDCHLET *d  = pri->t[pri->tsetmap[MATL_D][MATL_nd]];  /* D->IL,  D->ML,  D->D  */
+
+  if (ml->Q != 1 || il->Q != 1 || d->Q != 1) return FALSE;
+  alpha[0] = ml->alpha[0][1];                  /* MM */
+  alpha[1] = ml->alpha[0][0];                  /* MI */
+  alpha[2] = ml->alpha[0][2];                  /* MD */
+  alpha[3] = il->alpha[0][1] + il->alpha[0][2]; /* IM */
+  alpha[4] = il->alpha[0][0];                  /* II */
+  alpha[5] = d->alpha[0][1];                   /* DM */
+  alpha[6] = d->alpha[0][2];                   /* DD */
+  return TRUE;
+}
+
 /* Function:  Prior_Default()
  * Incept:    EPN, Thu Sep 16 11:27:09 2010
  *

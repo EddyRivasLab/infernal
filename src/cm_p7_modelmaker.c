@@ -1252,10 +1252,12 @@ cm_SetHMMOnlyHMM(CM_t *cm, P7_HMM *hmm, double gfmu, double gflambda)
 
 /* HMM-only search HMM transforms (cm_p7_HMMOnlyTransform()).
  *
- * Ported from the brief 26_0821-143 prototype (its search modes a1 and
- * a2), unchanged in arithmetic, so that the
+ * Ported from the brief 26_0821-143 prototype (its search mode a2,
+ * here CM_HP7_H3PRI), unchanged in arithmetic, so that the
  * landed HMMs are the ones the R0b decision was measured on (briefs
- * 26_0821-143/26_0821-146/26_0821-158).
+ * 26_0821-143/26_0821-146/26_0821-158). The prototype's a1 (no CM
+ * prior back-out) was used for non-default priors until brief
+ * 26_0821-165 stored the build prior's alphas in the CM file.
  *
  * HMMER/Infernal p7 DNA transition prior (single Dirichlets), as in
  * cmbuild's cm_p7_prior_CreateNucleic() and HMMER's
@@ -1265,18 +1267,36 @@ static const double hp7_atm[3] = { 2.0,  0.1, 0.1 }; /* MM MI MD */
 static const double hp7_ati[2] = { 0.06, 0.2 };      /* IM II    */
 static const double hp7_atd[2] = { 0.1,  0.2 };      /* DM DD    */
 /* Default CM transition prior (Prior_Default()), MATL->MATL sets mapped
- * to HMM transitions, for A2: MM,MI,MD <- ML->ML,IL,D; IM,II <-
- * IL->ML+IL->D, IL->IL; DM,DD <- D->ML, D->D (brief 26_0821-139). */
-static const double hp7_cm_atm[3] = { 1.809433, 0.015186, 0.038601 };
-static const double hp7_cm_ati[2] = { 1.032015, 0.601223 };
-static const double hp7_cm_atd[2] = { 0.127366, 0.277087 };
+ * to HMM transitions (CM_HP7_NALPHA, order MM MI MD IM II DM DD):
+ * MM,MI,MD <- ML->ML,IL,D; IM,II <- IL->ML+IL->D, IL->IL; DM,DD <-
+ * D->ML, D->D (brief 26_0821-139), rounded to 6 decimals as on a CM
+ * file's HP7A line. The alphas a CM file's transform uses are in
+ * cm->hp7_alpha: these, unless an HP7A line says otherwise (brief
+ * 26_0821-165; see Prior_HMMOnlyAlpha()). */
+static const double hp7_cm_alpha_default[CM_HP7_NALPHA] = { 1.809433, 0.015186, 0.038601, 1.032015, 0.601223, 0.127366, 0.277087 };
+
+/* Function: cm_p7_DefaultHMMOnlyAlpha()
+ * Incept:   EPN, Fri Oct 30 2026 (w/Claude)
+ *
+ * Purpose:  Set <alpha>[0..CM_HP7_NALPHA-1] to the default CM
+ *           prior's MATL->MATL transition alphas mapped to HMM
+ *           transitions, as cm_p7_HMMOnlyTransform() uses them: the
+ *           value of cm->hp7_alpha for a CM file without an HP7A
+ *           line.
+ */
+void
+cm_p7_DefaultHMMOnlyAlpha(double *alpha)
+{
+  esl_vec_DCopy(hp7_cm_alpha_default, CM_HP7_NALPHA, alpha);
+}
 
 /* hp7_deprior(): on entry c[] = n_k * p[]; replace it with the counts
  * that the Dirichlet <a> would have turned into p[] (the CM prior backed
  * out), rescaled to keep the total at n_k. The inversion is exact only
- * for MATL-derived nodes built with the default prior (elsewhere an
- * mlp7 set mixes several CM states), and with n_k ~ 0 it would
- * otherwise leave phantom counts of order sum(a). */
+ * for MATL-derived nodes, given the alphas of the prior the CM was
+ * built with (elsewhere an mlp7 set mixes several CM states), and
+ * with n_k ~ 0 it would otherwise leave phantom counts of order
+ * sum(a). */
 static void
 hp7_deprior(double *c, const float *p, const double *a, int n)
 {
@@ -1307,19 +1327,22 @@ hp7_postmean(double *c, const double *a, int n, float *t)
  *           It is a copy of <mlp7> with transitions replaced, using
  *           only <mlp7> and constants:
  *
- *           CM_HP7_ML: none (an unchanged copy).
- *           CM_HP7_A1: Dirichlet posterior mean under the HMMER DNA
- *                      transition prior, with counts
+ *           CM_HP7_ML:    none (an unchanged copy).
+ *           CM_HP7_H3PRI: start from counts
  *                      c[k][x] = neff * occ(s_k) * t_ml[k][x], where occ
  *                      is mlp7's glocal expected state occupancy
  *                      (M: mocc; I: expected insert residues; D:
- *                      1-mocc; B (k=0): 1) and neff = mlp7->eff_nseq.
- *           CM_HP7_A2: as A1, but first back the default CM transition
- *                      prior out of mlp7's probabilities, so that the
- *                      HMMER prior isn't applied on top of the CM
- *                      prior's own shrinkage (brief 26_0821-143 §3).
- *                      Valid only for models built with the default CM
- *                      prior.
+ *                      1-mocc; B (k=0): 1) and neff = mlp7->eff_nseq;
+ *                      back the CM transition prior <alpha> (the CM's
+ *                      MATL->MATL Dirichlet alphas, CM_HP7_NALPHA of
+ *                      them, order MM MI MD IM II DM DD; NULL for the
+ *                      default prior's) out of them, so that the HMMER
+ *                      prior isn't applied on top of the CM prior's own
+ *                      shrinkage (brief 26_0821-143 §3, its arm a2);
+ *                      then take the Dirichlet posterior mean under the
+ *                      HMMER DNA transition prior. Exact only if
+ *                      <alpha> are those of the prior the CM was built
+ *                      with (cm->hp7_alpha; brief 26_0821-165).
  *
  *           Every transform ends with HMMER's edge conventions.
  *           Emissions, eff_nseq and annotation are mlp7's.
@@ -1329,7 +1352,7 @@ hp7_postmean(double *c, const double *a, int n, float *t)
  *           eslEMEM on allocation failure.
  */
 int
-cm_p7_HMMOnlyTransform(const P7_HMM *mlp7, int xform, P7_HMM **ret_hmm, char *errbuf)
+cm_p7_HMMOnlyTransform(const P7_HMM *mlp7, int xform, const double *alpha, P7_HMM **ret_hmm, char *errbuf)
 {
   int      status;
   P7_HMM  *h    = NULL;
@@ -1340,7 +1363,8 @@ cm_p7_HMMOnlyTransform(const P7_HMM *mlp7, int xform, P7_HMM **ret_hmm, char *er
   int      M    = mlp7->M;
   int      k, x;
 
-  if(xform != CM_HP7_ML && xform != CM_HP7_A1 && xform != CM_HP7_A2) ESL_XFAIL(eslEINVAL, errbuf, "cm_p7_HMMOnlyTransform(): unknown transform code %d", xform);
+  if(xform != CM_HP7_ML && xform != CM_HP7_H3PRI) ESL_XFAIL(eslEINVAL, errbuf, "cm_p7_HMMOnlyTransform(): unknown transform code %d", xform);
+  if(alpha == NULL) alpha = hp7_cm_alpha_default;
   if((h = p7_hmm_Clone(mlp7)) == NULL) ESL_XFAIL(eslEMEM, errbuf, "out of memory");
   if(xform == CM_HP7_ML) { *ret_hmm = h; return eslOK; }
 
@@ -1362,12 +1386,10 @@ cm_p7_HMMOnlyTransform(const P7_HMM *mlp7, int xform, P7_HMM **ret_hmm, char *er
     for(x = p7H_DM; x <= p7H_DD; x++) C[k][x] = od      * mlp7->t[k][x];
     esl_vec_DScale(C[k], p7H_NTRANSITIONS, neff);
   }
-  if(xform == CM_HP7_A2) {
-    for(k = 0; k <= M; k++) {
-      hp7_deprior(C[k]+p7H_MM, mlp7->t[k]+p7H_MM, hp7_cm_atm, 3);
-      hp7_deprior(C[k]+p7H_IM, mlp7->t[k]+p7H_IM, hp7_cm_ati, 2);
-      if(k >= 1 && k < M) hp7_deprior(C[k]+p7H_DM, mlp7->t[k]+p7H_DM, hp7_cm_atd, 2);
-    }
+  for(k = 0; k <= M; k++) {
+    hp7_deprior(C[k]+p7H_MM, mlp7->t[k]+p7H_MM, alpha,   3);  /* MM MI MD */
+    hp7_deprior(C[k]+p7H_IM, mlp7->t[k]+p7H_IM, alpha+3, 2);  /* IM II    */
+    if(k >= 1 && k < M) hp7_deprior(C[k]+p7H_DM, mlp7->t[k]+p7H_DM, alpha+5, 2); /* DM DD */
   }
   for(k = 0; k <= M; k++) {
     hp7_postmean(C[k]+p7H_MM, hp7_atm, 3, h->t[k]+p7H_MM);
@@ -1399,17 +1421,18 @@ cm_p7_HMMOnlyTransform(const P7_HMM *mlp7, int xform, P7_HMM **ret_hmm, char *er
  * Incept:   EPN, Fri Oct 30 2026 (w/Claude)
  *
  * Purpose:  Convert an HMM-only transform code (CM_HP7_*) to the
- *           string used on a CM file's HP7 line ("ml", "a1", "a2"),
- *           and back. cm_p7_HMMOnlyXformCode() returns -1 for an
- *           unrecognized string.
+ *           string used on a CM file's HP7 line ("ml", "h3pri"), and
+ *           back. cm_p7_HMMOnlyXformCode() also accepts "a2", the name
+ *           of "h3pri" in files written between briefs 26_0821-162 and
+ *           26_0821-165 (it was brief 26_0821-143's arm name), and
+ *           returns -1 for an unrecognized string.
  */
 const char *
 cm_p7_HMMOnlyXformString(int xform)
 {
   switch(xform) {
-  case CM_HP7_ML: return "ml";
-  case CM_HP7_A1: return "a1";
-  case CM_HP7_A2: return "a2";
+  case CM_HP7_ML:    return "ml";
+  case CM_HP7_H3PRI: return "h3pri";
   }
   return "?";
 }
@@ -1417,8 +1440,8 @@ int
 cm_p7_HMMOnlyXformCode(const char *s)
 {
   if(strcmp(s, "ml") == 0) return CM_HP7_ML;
-  if(strcmp(s, "a1") == 0) return CM_HP7_A1;
-  if(strcmp(s, "a2") == 0) return CM_HP7_A2;
+  if(strcmp(s, "h3pri") == 0) return CM_HP7_H3PRI;
+  if(strcmp(s, "a2")    == 0) return CM_HP7_H3PRI; /* dev files, briefs 26_0821-162..165 */
   return -1;
 }
 
@@ -1430,7 +1453,8 @@ cm_p7_HMMOnlyXformCode(const char *s)
  *           CM's ML p7 HMM (mlp7) built from the globally configured
  *           CM, returned in <*ret_fp7>; and, if <xform> is not
  *           CM_HP7_ML, the HMM-only search HMM, mlp7 transformed by
- *           cm_p7_HMMOnlyTransform(), in <*ret_hp7> (else NULL).
+ *           cm_p7_HMMOnlyTransform() with the CM prior alphas
+ *           cm->hp7_alpha, in <*ret_hp7> (else NULL).
  *
  *           <cm> must not be configured. It isn't changed: a clone is
  *           configured (global, W taken from <cm>, no band
@@ -1469,7 +1493,7 @@ cm_p7_DeriveFilterHMMs(CM_t *cm, int xform, P7_HMM **ret_fp7, P7_HMM **ret_hp7, 
   tcm = NULL;
 
   if(xform != CM_HP7_ML) {
-    if((status = cm_p7_HMMOnlyTransform(fp7, xform, &hp7, errbuf)) != eslOK) goto ERROR;
+    if((status = cm_p7_HMMOnlyTransform(fp7, xform, cm->hp7_alpha, &hp7, errbuf)) != eslOK) goto ERROR;
     if((status = cm_p7_hmm_SetConsensus(hp7)) != eslOK) ESL_XFAIL(status, errbuf, "Unable to set the HMM-only HMM consensus annotation");
   }
   if((status = cm_p7_hmm_SetConsensus(fp7)) != eslOK) ESL_XFAIL(status, errbuf, "Unable to set the HMM filter consensus annotation");
@@ -1531,6 +1555,160 @@ cm_p7_AttachDerivedFilterHMMs(CM_t *cm, char *errbuf)
   }
   cm->flags |= (CMH_FP7 | CMH_FP7_DERIVED);
   return eslOK;
+}
+
+/* Function: cm_p7_CalOptsSetDefaults()
+ * Incept:   EPN, Fri Oct 30 2026 (w/Claude)
+ *
+ * Purpose:  Set <co> to the default calibration settings for a CM's
+ *           derived filter and HMM-only HMMs (cmbuild's defaults for
+ *           --ElL etc.; its option table shows the same values) for a
+ *           CM of consensus length <clen>. If <do_sim>, the glocal
+ *           Forward parameters are simulated, not predicted, with
+ *           5000 sequences and a 5% tail (brief 26_0824-086).
+ *           (brief 26_0821-165)
+ */
+void
+cm_p7_CalOptsSetDefaults(CM_P7_CALOPTS *co, int clen, int do_sim)
+{
+  co->lmsvL   = co->lvitL = 200;
+  co->lfwdL   = 100;
+  co->gfwdL   = ESL_MAX(100, 2.*clen);
+  co->lmsvN   = co->lvitN = co->lfwdN = 200;
+  co->gfwdN   = do_sim ? 5000 : 4;
+  co->lftailp = 0.055;
+  co->gftailp = do_sim ? 0.05 : 0.065;
+  co->seed    = 42;
+  co->do_sim  = do_sim;
+}
+
+/* Function: cm_p7_DeriveFilterHMMsAsWritten()
+ * Incept:   EPN, Fri Oct 30 2026 (w/Claude)
+ *
+ * Purpose:  Write <cm> as it will appear in a CM file (format 1/e,
+ *           without E-value parameters for its HMMs) to a memory
+ *           buffer, read it back, and derive its filter HMM and (for
+ *           cm->hp7_xform other than CM_HP7_ML) HMM-only HMM from
+ *           the copy read back, with cm_p7_DeriveFilterHMMs(). A CM
+ *           file stores probabilities to 3-5 digits, so HMMs derived
+ *           from <cm> itself would differ from those a reader derives
+ *           by up to ~1e-3 in ln p (5e-3 for the HMM-only HMM; brief
+ *           26_0821-143 §8); these don't. <cm> must not carry a
+ *           filter HMM read from an older CM file (1/e can't be
+ *           written then). (brief 26_0821-162; moved here from
+ *           cmbuild for cmconvert --upgrade, brief 26_0821-165)
+ *
+ * Returns:  eslOK on success, errbuf filled on failure.
+ */
+int
+cm_p7_DeriveFilterHMMsAsWritten(CM_t *cm, P7_HMM **ret_fp7, P7_HMM **ret_hp7, char *errbuf)
+{
+  int           status;
+  char         *buf  = NULL;
+  size_t        size = 0;
+  FILE         *mfp  = NULL;
+  CM_FILE      *cmfp = NULL;
+  CM_t         *rcm  = NULL;
+  ESL_ALPHABET *abc  = NULL;
+
+  if ((mfp = open_memstream(&buf, &size)) == NULL) ESL_XFAIL(eslESYS, errbuf, "cm_p7_DeriveFilterHMMsAsWritten(): open_memstream() failed");
+  if ((status = cm_file_WriteASCII(mfp, CM_FILE_1e, cm)) != eslOK) ESL_XFAIL(status, errbuf, "cm_p7_DeriveFilterHMMsAsWritten(): failed to write CM %s", cm->name);
+  if (fclose(mfp) != 0) { mfp = NULL; ESL_XFAIL(eslESYS, errbuf, "cm_p7_DeriveFilterHMMsAsWritten(): fclose() failed"); }
+  mfp = NULL;
+
+  abc = (ESL_ALPHABET *) cm->abc; /* the derived HMMs point to <cm>'s alphabet */
+  if ((status = cm_file_OpenBuffer(buf, (int) size, FALSE, &cmfp)) != eslOK) ESL_XFAIL(status, errbuf, "cm_p7_DeriveFilterHMMsAsWritten(): failed to open CM buffer");
+  if ((status = cm_file_Read(cmfp, FALSE, &abc, &rcm)) != eslOK)              ESL_XFAIL(status, errbuf, "cm_p7_DeriveFilterHMMsAsWritten(): failed to read CM %s back:\n%s", cm->name, cmfp->errbuf);
+  if ((status = cm_p7_DeriveFilterHMMs(rcm, cm->hp7_xform, ret_fp7, ret_hp7, errbuf)) != eslOK) goto ERROR;
+
+  FreeCM(rcm);
+  cm_file_Close(cmfp);
+  free(buf);
+  return eslOK;
+
+ ERROR:
+  if (mfp  != NULL) fclose(mfp);
+  if (rcm  != NULL) FreeCM(rcm);
+  if (cmfp != NULL) cm_file_Close(cmfp);
+  if (buf  != NULL) free(buf);
+  return status;
+}
+
+/* Function: cm_p7_CalibrateDerivedFilterHMMs()
+ * Incept:   EPN, Fri Oct 30 2026 (w/Claude)
+ *
+ * Purpose:  Derive <cm>'s filter HMM (its ML p7 HMM) and, unless
+ *           cm->hp7_xform is CM_HP7_ML, its HMM-only search HMM (with
+ *           the CM prior alphas cm->hp7_alpha) from <cm> as it will
+ *           be written to a CM file, calibrate both with settings
+ *           <co> on <ncpus> threads, and attach them to <cm> as
+ *           cm->fp7 and cm->hp7 with their E-value parameters, raising
+ *           CMH_FP7_DERIVED. This is how cmbuild gives a CM its
+ *           filter HMMs (brief 26_0821-162), and how cmconvert
+ *           --upgrade replaces the filter HMM stored in an older CM
+ *           file (brief 26_0821-165).
+ *
+ *           Any filter HMM <cm> carries (and its E-value parameters)
+ *           is discarded first.
+ *
+ * Returns:  eslOK on success, errbuf filled on failure.
+ */
+int
+cm_p7_CalibrateDerivedFilterHMMs(CM_t *cm, const CM_P7_CALOPTS *co, int ncpus, char *errbuf)
+{
+  int     status;
+  P7_HMM *fhmm = NULL;
+  P7_HMM *hhmm = NULL;
+  double  fgfmu, fgflambda;
+  double  hgfmu, hgflambda;
+
+  if(cm->fp7 != NULL) { p7_hmm_Destroy(cm->fp7); cm->fp7 = NULL; }
+  if(cm->hp7 != NULL) { p7_hmm_Destroy(cm->hp7); cm->hp7 = NULL; }
+  cm->flags &= ~(CMH_FP7 | CMH_FP7_DERIVED);
+  esl_vec_FSet(cm->fp7_evparam, CM_p7_NEVPARAM, CM_p7_EVPARAM_UNSET);
+  esl_vec_FSet(cm->hp7_evparam, CM_p7_NEVPARAM, CM_p7_EVPARAM_UNSET);
+
+  if((status = cm_p7_DeriveFilterHMMsAsWritten(cm, &fhmm, &hhmm, errbuf)) != eslOK) return status;
+
+  /* calibrate the filter HMM, then the HMM-only HMM the same way (as
+   * the prototype measured in brief 26_0821-143) */
+  if((status = cm_p7_Calibrate(fhmm, errbuf,
+                               co->lmsvL, co->lvitL, co->lfwdL, co->gfwdL, /* length of sequences to search for local (lL) and glocal (gL) modes */
+                               co->lmsvN, co->lvitN, co->lfwdN, co->gfwdN, /* number of seqs to search for each alg */
+                               co->lftailp,                                /* fraction of tail mass to fit for local Fwd */
+                               co->gftailp,                                /* fraction of tail mass to fit for glocal Fwd */
+                               co->seed,                                   /* RNG seed for calibration */
+                               ncpus,
+                               cm_p7_UseP7mlPredictor(cm, TRUE),           /* the filter is the ML HMM: --p7ml lambda/tau coefficients (brief 26_0824-085) */
+                               co->do_sim,                                 /* simulate, don't predict, glocal Fwd stats? (brief 26_0824-087) */
+                               &fgfmu, &fgflambda))
+     != eslOK) { ESL_XFAIL(status, errbuf, "Error calibrating the filter p7 HMM"); }
+  if(hhmm != NULL) {
+    if((status = cm_p7_Calibrate(hhmm, errbuf,
+                                 co->lmsvL, co->lvitL, co->lfwdL, co->gfwdL,
+                                 co->lmsvN, co->lvitN, co->lfwdN, co->gfwdN,
+                                 co->lftailp, co->gftailp,
+                                 co->seed,
+                                 ncpus,
+                                 cm_p7_UseP7mlPredictor(cm, TRUE),
+                                 co->do_sim,
+                                 &hgfmu, &hgflambda))
+       != eslOK) { ESL_XFAIL(status, errbuf, "Error calibrating the HMM-only p7 HMM"); }
+  }
+
+  if((status = cm_SetFilterHMM(cm, fhmm, fgfmu, fgflambda)) != eslOK) ESL_XFAIL(status, errbuf, "Unable to set the HMM filter for the CM");
+  fhmm = NULL;
+  cm->flags |= CMH_FP7_DERIVED;
+  if(hhmm != NULL) {
+    if((status = cm_SetHMMOnlyHMM(cm, hhmm, hgfmu, hgflambda)) != eslOK) ESL_XFAIL(status, errbuf, "Unable to set the HMM-only HMM for the CM");
+    hhmm = NULL;
+  }
+  return eslOK;
+
+ ERROR:
+  if(fhmm != NULL) p7_hmm_Destroy(fhmm);
+  if(hhmm != NULL) p7_hmm_Destroy(hhmm);
+  return status;
 }
 
 /* Function: cm_p7_UseHMMOnlyFilter()

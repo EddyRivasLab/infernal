@@ -275,6 +275,7 @@ cm_nonconfigured_MPIUnpack(ESL_ALPHABET **abc, char *errbuf, char *buf, int n, i
   }
   /* the HMM-only HMM, if any (brief 26_0821-162) */
   if (MPI_Unpack(buf, n, pos, &(cm->hp7_xform), 1, MPI_INT, comm)  != 0)          ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  if (MPI_Unpack(buf, n, pos, cm->hp7_alpha, CM_HP7_NALPHA, MPI_DOUBLE, comm) != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed"); /* brief 26_0821-165 */
   if (MPI_Unpack(buf, n, pos, &has_hp7,         1, MPI_INT, comm)  != 0)          ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   if (has_hp7) { 
     if (MPI_Unpack(buf, n, pos, &tmp_fp7_gfmu,     1, MPI_FLOAT, comm)  != 0)      ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
@@ -408,6 +409,7 @@ cm_nonconfigured_MPIPack(CM_t *cm, char *errbuf, char *buf, int n, int *pos, MPI
   /* the HMM-only HMM, if any (brief 26_0821-162) */
   has_hp7 = (cm->hp7 != NULL) ? TRUE : FALSE;
   if (MPI_Pack(&(cm->hp7_xform), 1, MPI_INT, buf, n, pos, comm)  != 0) ESL_XEXCEPTION(eslESYS, "pack failed");
+  if (MPI_Pack(cm->hp7_alpha, CM_HP7_NALPHA, MPI_DOUBLE, buf, n, pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); /* brief 26_0821-165 */
   if (MPI_Pack(&has_hp7,         1, MPI_INT, buf, n, pos, comm)  != 0) ESL_XEXCEPTION(eslESYS, "pack failed");
   if (has_hp7) { 
     if (MPI_Pack(&(cm->hp7_evparam[CM_p7_GFMU]),     1, MPI_FLOAT, buf, n, pos, comm)  != 0) ESL_XEXCEPTION(eslESYS, "pack failed");
@@ -525,6 +527,8 @@ cm_nonconfigured_MPIPackSize(CM_t *cm, MPI_Comm comm, int *ret_n)
   /* the HMM-only HMM, if any (brief 26_0821-162) */
   if (MPI_Pack_size(1, MPI_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
   n += 2*sz; /* hp7_xform and has_hp7 */
+  if (MPI_Pack_size(CM_HP7_NALPHA, MPI_DOUBLE, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += sz;   /* hp7_alpha (brief 26_0821-165) */
   if(cm->hp7 != NULL) { 
     if (MPI_Pack_size(1, MPI_FLOAT,  comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
     n += 2*sz; 

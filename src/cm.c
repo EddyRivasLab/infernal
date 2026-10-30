@@ -187,6 +187,7 @@ CreateCMShell(void)
   cm->fp7          = NULL;
   cm->hp7          = NULL;
   cm->hp7_xform    = CM_HP7_ML;
+  cm_p7_DefaultHMMOnlyAlpha(cm->hp7_alpha);
   cm->hp7_is_active = FALSE;
   cm->p7_cm_nodepad   = NULL;
   cm->p7_cm_nodepad_M = 0;
@@ -3432,6 +3433,7 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
     esl_vec_FCopy(cm->hp7_evparam, CM_p7_NEVPARAM, new->hp7_evparam);
   }
   new->hp7_xform     = cm->hp7_xform;
+  esl_vec_DCopy(cm->hp7_alpha, CM_HP7_NALPHA, new->hp7_alpha);
   new->hp7_is_active = cm->hp7_is_active;
   if(cm->p7_cm_nodepad != NULL) {
     ESL_ALLOC(new->p7_cm_nodepad, sizeof(int) * (cm->p7_cm_nodepad_M + 1));
