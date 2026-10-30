@@ -429,6 +429,20 @@ hmm_unbanded_oa(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMX *gxf, P7
   return status;
 }
 
+/* hmm_unbanded_oa_mb()
+ * DP memory (Mb) of hmm_unbanded_oa() for an <M> x <L> problem: the
+ * float matrices' cells and specials, plus the double OA matrix's
+ * specials and row pointers.
+ */
+static double
+hmm_unbanded_oa_mb(int M, int L)
+{
+  double cells = (double) sizeof(float)  * (double)(M + 1) * (double)(L + 1) * (double) p7G_NSCELLS * (double) HMM_UNBANDED_OA_NMAT;
+  double xspec = (double) sizeof(float)  * (double)(L + 1) * (double) p7G_NXCELLS * 2.0
+               + (double) sizeof(double) * (double)(L + 1) * (double) (p7G_NXCELLS + 1);
+  return (cells + xspec) / (1024.0 * 1024.0);
+}
+
 static void serial_master(ESL_GETOPTS *go, struct cfg_s *cfg);
 static int  serial_loop  (WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block, ESL_RANDOMNESS *r);
 static void hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm);
@@ -1620,8 +1634,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	 * -- use a deriver at genome scale). */
 	if (do_hmmvit || do_hmmnoband || (do_bandedoa && ! do_p7ibv && ! cm->p7_use_kmerchain)) {
 	  double single_bytes = (double) sizeof(float) * (double)(hmm->M + 1) * (double)(sq->n + 1) * (double) p7G_NSCELLS;
-	  int    nmat         = do_hmmnoband ? 2 : 1;
-	  double needed_mb    = (single_bytes * (double) nmat) / (1024.0 * 1024.0);
+	  double needed_mb    = do_hmmnoband ? hmm_unbanded_oa_mb(hmm->M, sq->n) : single_bytes / (1024.0 * 1024.0); /* brief 26_0821-163: double OA */
 	  double mxsize_limit = esl_opt_GetReal(go, "--mxsize");
 	  hst_mb = needed_mb;
 	  if (needed_mb > mxsize_limit) {
@@ -2485,8 +2498,7 @@ hmm_pipeline_thread(void *arg)
      * full O(M*L) p7_GViterbi; --p7ibv/--p7kmerchain skip it (post-band preflight). */
     if (info->do_hmmvit || info->do_hmmnoband || (! info->do_hmmvit && ! info->do_hmmnoband && ! info->do_p7ibv && ! (info->cm != NULL && info->cm->p7_use_kmerchain))) {
       double single_bytes = (double) sizeof(float) * (double)(info->hmm->M + 1) * (double)(sq->n + 1) * (double) p7G_NSCELLS;
-      int    nmat         = info->do_hmmnoband ? 2 : 1;
-      double needed_mb    = (single_bytes * (double) nmat) / (1024.0 * 1024.0);
+      double needed_mb    = info->do_hmmnoband ? hmm_unbanded_oa_mb(info->hmm->M, sq->n) : single_bytes / (1024.0 * 1024.0); /* brief 26_0821-163: double OA */
       hst_mb = needed_mb;
       if (needed_mb > (double) info->mxsize) {
 	int recommended_mxsize = (int)(ceil(needed_mb / 1024.0) * 1024.0);
@@ -3400,8 +3412,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
        * a full O(M*L) p7_GViterbi (this MPI worker has no --p7ibv support). */
       if (do_hmmvit_w || do_hmmnoband_w || (do_bandedoa_w && ! cm->p7_use_kmerchain)) {
 	double single_bytes = (double) sizeof(float) * (double)(hmm_w->M + 1) * (double)(L + 1) * (double) p7G_NSCELLS;
-	int    nmat         = do_hmmnoband_w ? 2 : 1;
-	double needed_mb    = (single_bytes * (double) nmat) / (1024.0 * 1024.0);
+	double needed_mb    = do_hmmnoband_w ? hmm_unbanded_oa_mb(hmm_w->M, L) : single_bytes / (1024.0 * 1024.0); /* brief 26_0821-163: double OA */
 	hst_mb = needed_mb;
 	double mxsize_limit = esl_opt_GetReal(go, "--mxsize");
 	if (needed_mb > mxsize_limit) {
