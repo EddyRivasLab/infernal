@@ -1873,7 +1873,9 @@ cm_p7_hmm_SetConsensus(P7_HMM *hmm)
   gcc -o cm_p7_modelmaker_utest -std=gnu99 -g -O2 -I. -L. -I../hmmer/src -L../hmmer/src -I../easel -L../easel -DCM_P7_MODELMAKER_TESTDRIVE cm_p7_modelmaker.c -linfernal -lhmmer -leasel -lm
   ./cm_p7_modelmaker_utest
 */
+#include "esl_dirichlet.h"
 #include "esl_getopts.h"
+#include "esl_mixdchlet.h"
 
 /* utest_FitExpTail()
  * Incept:    EPN, Fri Oct  2 2026 (w/Claude)
@@ -1944,6 +1946,129 @@ utest_FitExpTail(ESL_RANDOMNESS *r, int N, int nrep)
   esl_fatal("%s: allocation failed", msg);
 }
 
+/* utest_HMMOnlyTransform()
+ * Incept:    EPN, Fri Oct 30 2026 (w/Claude)
+ *
+ * The HMM-only transform CM_HP7_H3PRI backs the CM's transition prior
+ * out of the ML p7 HMM's transitions, then re-estimates them under
+ * HMMER's DNA prior (cm_p7_HMMOnlyTransform(), brief 26_0821-165).
+ *
+ * 1. Prior_HMMOnlyAlpha() maps the default prior to the constants that
+ *    a CM file without an HP7A line uses, to their 6 printed decimals;
+ *    and a mixture MATL->MATL transition prior is refused.
+ * 2. Exactness. Make an HMM whose transitions are exactly the posterior
+ *    mean, under a non-default Dirichlet <alpha>, of known counts: per
+ *    set, N * p_true, with N the transform's own count total for that
+ *    set (eff_nseq times the HMM's occupancy of the set's state, which
+ *    depends on the transitions, so iterate to a fixed point). With
+ *    <alpha> backed out, the transform must give the HMMER posterior
+ *    mean of the known counts; with the default alphas, it must not.
+ *    Compared at k = 0..M-1 (k = M gets HMMER's edge conventions).
+ */
+static void
+utest_HMMOnlyTransform(ESL_RANDOMNESS *r, ESL_ALPHABET *abc, int M)
+{
+  char     msg[]  = "cm_p7_HMMOnlyTransform() unit test failed";
+  double   alpha[CM_HP7_NALPHA] = { 1.2, 0.3, 0.2, 0.9, 1.5, 0.4, 0.6 }; /* MM MI MD IM II DM DD */
+  double   dflt[CM_HP7_NALPHA], palpha[CM_HP7_NALPHA];
+  int      soff[3] = { p7H_MM, p7H_IM, p7H_DM };  /* first transition of each set */
+  int      sn[3]   = { 3, 2, 2 };
+  int      aoff[3] = { 0, 3, 5 };                 /* first alpha of each set */
+  const double *hpa[3] = { hp7_atm, hp7_ati, hp7_atd };
+  Prior_t *pri    = NULL;
+  P7_HMM  *hmm    = NULL;
+  P7_HMM  *h      = NULL;
+  float   *mocc   = NULL;
+  float   *iocc   = NULL;
+  double **ptrue  = NULL;
+  double   neff   = 10.;
+  char     errbuf[eslERRBUFSIZE];
+  double   N, A, c[3], maxd, maxchange;
+  float    t[3];
+  float    exp_t[3];
+  int      k, x, set, iter;
+  int      status;
+
+  /* 1. */
+  pri = Prior_Default(FALSE);
+  cm_p7_DefaultHMMOnlyAlpha(dflt);
+  if (! Prior_HMMOnlyAlpha(pri, palpha)) esl_fatal("%s: default prior's MATL transitions not single Dirichlets", msg);
+  for (x = 0; x < CM_HP7_NALPHA; x++)
+    if (fabs(palpha[x] - dflt[x]) > 5e-7) esl_fatal("%s: default prior alpha %d is %g, constant is %g", msg, x, palpha[x], dflt[x]);
+  esl_mixdchlet_Destroy(pri->t[pri->tsetmap[MATL_D][MATL_nd]]);
+  pri->t[pri->tsetmap[MATL_D][MATL_nd]] = esl_mixdchlet_Create(2, 3);
+  if (Prior_HMMOnlyAlpha(pri, palpha))   esl_fatal("%s: mixture MATL_D->MATL prior not refused", msg);
+  Prior_Destroy(pri);
+
+  /* 2. */
+  if (p7_hmm_Sample(r, M, abc, &hmm) != eslOK) esl_fatal("%s: p7_hmm_Sample() failed", msg);
+  hmm->eff_nseq = neff;
+  ESL_ALLOC(mocc,  sizeof(float)    * (M+1));
+  ESL_ALLOC(iocc,  sizeof(float)    * (M+1));
+  ESL_ALLOC(ptrue, sizeof(double *) * (M+1));
+  for (k = 0; k <= M; k++) {
+    ESL_ALLOC(ptrue[k], sizeof(double) * p7H_NTRANSITIONS);
+    /* true proportions, bounded away from 0 so no back-out clamps */
+    for (set = 0; set < 3; set++) {
+      esl_dirichlet_DSampleUniform(r, sn[set], ptrue[k] + soff[set]);
+      for (x = 0; x < sn[set]; x++) ptrue[k][soff[set]+x] = 0.5 * ptrue[k][soff[set]+x] + 0.5 / sn[set];
+    }
+  }
+  for (iter = 0, maxchange = 1.; iter < 500 && maxchange > 1e-7; iter++) {
+    p7_hmm_CalculateOccupancy(hmm, mocc, iocc);
+    maxchange = 0.;
+    for (k = 0; k < M; k++)
+      for (set = 0; set < 3; set++) {
+        if (set == 2 && k == 0) continue;
+        N = neff * ((set == 0) ? ((k == 0) ? 1.0 : mocc[k]) : (set == 1) ? iocc[k] : 1.0 - mocc[k]);
+        for (x = 0, A = 0.; x < sn[set]; x++) A += alpha[aoff[set]+x];
+        for (x = 0; x < sn[set]; x++) {
+          t[x] = (N * ptrue[k][soff[set]+x] + alpha[aoff[set]+x]) / (N + A);
+          maxchange = ESL_MAX(maxchange, fabs(t[x] - hmm->t[k][soff[set]+x]));
+          hmm->t[k][soff[set]+x] = t[x];
+        }
+      }
+  }
+  if (maxchange > 1e-6) esl_fatal("%s: counts fixed point didn't converge (%g)", msg, maxchange);
+
+  /* with <alpha> backed out: the HMMER posterior mean of the true counts */
+  if (cm_p7_HMMOnlyTransform(hmm, CM_HP7_H3PRI, alpha, &h, errbuf) != eslOK) esl_fatal("%s: transform failed: %s", msg, errbuf);
+  p7_hmm_CalculateOccupancy(hmm, mocc, iocc);
+  maxd = 0.;
+  for (k = 0; k < M; k++)
+    for (set = 0; set < 3; set++) {
+      if (set == 2 && k == 0) continue;
+      N = neff * ((set == 0) ? ((k == 0) ? 1.0 : mocc[k]) : (set == 1) ? iocc[k] : 1.0 - mocc[k]);
+      for (x = 0; x < sn[set]; x++) c[x] = N * ptrue[k][soff[set]+x];
+      hp7_postmean(c, hpa[set], sn[set], exp_t);
+      for (x = 0; x < sn[set]; x++) maxd = ESL_MAX(maxd, fabs(exp_t[x] - h->t[k][soff[set]+x]));
+    }
+  if (maxd > 1e-5) esl_fatal("%s: with the build prior's alphas, transitions differ from the true counts' by %g", msg, maxd);
+  p7_hmm_Destroy(h);
+
+  /* with the default alphas (the wrong prior): not exact */
+  if (cm_p7_HMMOnlyTransform(hmm, CM_HP7_H3PRI, NULL, &h, errbuf) != eslOK) esl_fatal("%s: transform failed: %s", msg, errbuf);
+  maxd = 0.;
+  for (k = 0; k < M; k++)
+    for (set = 0; set < 3; set++) {
+      if (set == 2 && k == 0) continue;
+      N = neff * ((set == 0) ? ((k == 0) ? 1.0 : mocc[k]) : (set == 1) ? iocc[k] : 1.0 - mocc[k]);
+      for (x = 0; x < sn[set]; x++) c[x] = N * ptrue[k][soff[set]+x];
+      hp7_postmean(c, hpa[set], sn[set], exp_t);
+      for (x = 0; x < sn[set]; x++) maxd = ESL_MAX(maxd, fabs(exp_t[x] - h->t[k][soff[set]+x]));
+    }
+  if (maxd < 1e-3) esl_fatal("%s: the default alphas recovered non-default-prior counts (max diff %g)", msg, maxd);
+  p7_hmm_Destroy(h);
+
+  for (k = 0; k <= M; k++) free(ptrue[k]);
+  free(ptrue); free(mocc); free(iocc);
+  p7_hmm_Destroy(hmm);
+  return;
+
+ ERROR:
+  esl_fatal("%s: allocation failed", msg);
+}
+
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range toggles reqs incomp  help                                       docgroup*/
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "show brief help and exit",                         0 },
@@ -1962,7 +2087,12 @@ main(int argc, char **argv)
   ESL_GETOPTS    *go = cm_CreateDefaultApp("cm_p7_modelmaker_utest", options, 0, argc, argv, banner, usage);
   ESL_RANDOMNESS *r  = esl_randomness_CreateFast(esl_opt_GetInteger(go, "-s"));
 
+  ESL_ALPHABET   *abc = esl_alphabet_Create(eslRNA);
+
   utest_FitExpTail(r, esl_opt_GetInteger(go, "-N"), esl_opt_GetInteger(go, "-R"));
+  utest_HMMOnlyTransform(r, abc, 60);
+
+  esl_alphabet_Destroy(abc);
 
   esl_randomness_Destroy(r);
   esl_getopts_Destroy(go);
