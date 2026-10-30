@@ -26,6 +26,11 @@
 
 #include "infernal.h"
 
+/* The largest |c| (bits per residue) center_shift() uses to center CM
+ * alignment DP scores; a larger CP9 score per residue is not a usable
+ * estimate of the CM's (log-odds scores per residue are a few bits). */
+#define CM_CENTER_MAXSHIFT 20.
+
 static int sub_alignment_prep(CM_t *orig_cm, char *errbuf, ESL_SQ *sq, CMSubMap_t **ret_submap, CM_t **ret_sub_cm);
 static int  plain_cp9_engine(CM_t *cm, char *errbuf, ESL_SQ *sq, float mxsize, int nmx, int do_iterate, int *ret_use_ckpt);
 static void shrink_cp9_matrices(CM_t *cm);
@@ -769,6 +774,126 @@ elr_band_keep(ELR_BAND *eb, int L, int *raw, const int *i2k, const int *kmin, co
   return eslEMEM;
 }
 
+/* Function:  center_shift()
+ * Incept:    EPN, Fri Oct 30 2026 (w/Claude)
+ *
+ * Purpose:   Return the per-residue shift <c> (bits) for centering the
+ *            CM alignment DP scores of a sequence of length <L> (see
+ *            DispatchSqAlignment()): the CP9 Forward score of the HMM
+ *            band calculation that just ran, divided by <L>. This is
+ *            close to the mean score per residue of the CM alignment.
+ *            Return 0. (no centering) if that score is not available
+ *            (HMM bands not calculated, or calculated in scan mode)
+ *            or is not a usable value.
+ */
+static float
+center_shift(CM_t *cm, int L)
+{
+  double c;
+
+  if(cm->cp9b == NULL || L <= 0)         return 0.;
+  if(! isfinite(cm->cp9b->hmm_sc))       return 0.;
+  c = cm->cp9b->hmm_sc / (double) L;
+  if(fabs(c) > CM_CENTER_MAXSHIFT)       return 0.; /* e.g. a CP9 total near -INFTY: no parse in the HMM bands */
+  return (float) c;
+}
+
+/* Function:  center_emission_scores()
+ * Incept:    EPN, Fri Oct 30 2026 (w/Claude)
+ *
+ * Purpose:   Lower the score of every residue <cm> can emit by <c>
+ *            bits: the emission scores (cm->oesc, cm->esc) of ML, MR,
+ *            IL and IR states and the marginal emission scores
+ *            (cm->lmesc, cm->rmesc) of MP states by <c>, the pair
+ *            emission scores of MP states by 2c, and the EL
+ *            self-transition score, which is the score of each residue
+ *            an EL state emits, by <c>. These are all the scores the
+ *            CM alignment DP functions add per residue. The lmesc and
+ *            rmesc of single-emitter states are copies the DP functions
+ *            don't read, and are left alone.
+ *
+ *            The original scores are saved in <*ret_save> for
+ *            restore_emission_scores(), which puts them back exactly
+ *            (subtracting and adding <c> back in float would not).
+ *
+ * Returns:   eslOK on success, eslEMEM if out of memory.
+ */
+static int
+center_emission_scores(CM_t *cm, float c, float **ret_save)
+{
+  int     status;
+  int     v, a;
+  int     K     = cm->abc->K;
+  int     Kp    = cm->abc->Kp;
+  int64_t n;
+  int64_t nsave = 1;
+  float  *save  = NULL;
+
+  for(v = 0; v < cm->M; v++) {
+    if     (cm->sttype[v] == MP_st)                                    nsave += Kp*Kp + K*K + 2*Kp;
+    else if(cm->sttype[v] == ML_st || cm->sttype[v] == MR_st ||
+            cm->sttype[v] == IL_st || cm->sttype[v] == IR_st)          nsave += Kp + K;
+  }
+  ESL_ALLOC(save, sizeof(float) * nsave);
+
+  n = 0;
+  for(v = 0; v < cm->M; v++) {
+    switch(cm->sttype[v]) {
+    case ML_st: case MR_st: case IL_st: case IR_st:
+      for(a = 0; a < Kp; a++) { save[n++] = cm->oesc[v][a]; cm->oesc[v][a] -= c; }
+      for(a = 0; a < K;  a++) { save[n++] = cm->esc[v][a];  cm->esc[v][a]  -= c; }
+      break;
+    case MP_st:
+      for(a = 0; a < Kp*Kp; a++) { save[n++] = cm->oesc[v][a];  cm->oesc[v][a]  -= 2.*c; }
+      for(a = 0; a < K*K;   a++) { save[n++] = cm->esc[v][a];   cm->esc[v][a]   -= 2.*c; }
+      for(a = 0; a < Kp;    a++) { save[n++] = cm->lmesc[v][a]; cm->lmesc[v][a] -= c;    }
+      for(a = 0; a < Kp;    a++) { save[n++] = cm->rmesc[v][a]; cm->rmesc[v][a] -= c;    }
+      break;
+    }
+  }
+  save[n++] = cm->el_selfsc;
+  cm->el_selfsc -= c;
+
+  *ret_save = save;
+  return eslOK;
+
+ ERROR:
+  *ret_save = NULL;
+  return status;
+}
+
+/* Function:  restore_emission_scores()
+ * Incept:    EPN, Fri Oct 30 2026 (w/Claude)
+ *
+ * Purpose:   Put back the scores center_emission_scores() lowered,
+ *            from <save>, and free <save>.
+ */
+static void
+restore_emission_scores(CM_t *cm, float *save)
+{
+  int     v, a;
+  int     K  = cm->abc->K;
+  int     Kp = cm->abc->Kp;
+  int64_t n  = 0;
+
+  for(v = 0; v < cm->M; v++) {
+    switch(cm->sttype[v]) {
+    case ML_st: case MR_st: case IL_st: case IR_st:
+      for(a = 0; a < Kp; a++) cm->oesc[v][a] = save[n++];
+      for(a = 0; a < K;  a++) cm->esc[v][a]  = save[n++];
+      break;
+    case MP_st:
+      for(a = 0; a < Kp*Kp; a++) cm->oesc[v][a]  = save[n++];
+      for(a = 0; a < K*K;   a++) cm->esc[v][a]   = save[n++];
+      for(a = 0; a < Kp;    a++) cm->lmesc[v][a] = save[n++];
+      for(a = 0; a < Kp;    a++) cm->rmesc[v][a] = save[n++];
+      break;
+    }
+  }
+  cm->el_selfsc = save[n++];
+  free(save);
+}
+
 /* Function: DispatchSqAlignment()
  * Date:     EPN, Thu Jan 12 14:47:26 2012
  *
@@ -790,6 +915,25 @@ elr_band_keep(ELR_BAND *eb, int L, int *raw, const int *i2k, const int *kmin, co
  *           during this iterative band tightening, and cm->xtau is
  *           the factor by which we multiply cm->tau at each iteration
  *           during band tightening.
+ *
+ *           Score centering: in cmalign (<idx> != -1), with HMM
+ *           bands calculated here, every residue emission score is
+ *           lowered by c = (CP9 Forward score) / L for the CM DP, and
+ *           c*L is added back to the score it returns. Every
+ *           alignment of the sequence emits all L residues (in
+ *           truncated alignment too, and residues emitted by EL
+ *           states get the shift), so this lowers every parse's score
+ *           by exactly c*L: the optimal parses and posteriors are the
+ *           same in exact arithmetic. But the float partial sums of
+ *           the DP stay near 0 instead of growing to the size of the
+ *           total score, which on long sequences (tens of kb and up)
+ *           otherwise makes the reported score drift by bits to
+ *           thousands of bits and moves some residues (brief
+ *           26_0821-164). The scores in the CM are restored before
+ *           returning. Not done in a search pipeline (<idx> == -1,
+ *           whose hits are bounded by W), or when no HMM bands are
+ *           calculated here (--nonbanded, --small, --qdb, or
+ *           <cp9b_valid>).
  *
  * Args:     cm         - the covariance model
  *           errbuf     - char buffer for reporting errors
@@ -842,6 +986,9 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
   double        save_tau     = cm->tau; /* cm->tau upon entrance, we restore before leaving */
   float         save_thresh1 = (cm->cp9b == NULL) ? -1. : cm->cp9b->thresh1;
   float         save_thresh2 = (cm->cp9b == NULL) ? -1. : cm->cp9b->thresh2;
+  float         center_c     = 0.;   /* per-residue score shift for the CM DP (see Purpose) */
+  float        *center_save  = NULL; /* saved emission scores while centered, else NULL */
+  CM_t         *center_cm    = NULL; /* the CM whose scores are centered (cm or the sub CM) */
 
   /* alignment options */
   int do_nonbanded = (cm->align_opts & CM_ALIGN_NONBANDED) ? TRUE  : FALSE;
@@ -1008,6 +1155,7 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
       double _st059_a_s = 0., _st059_b_s = 0., _st059_bd_s = 0., _st059_c_s = 0., _st059_d_s = 0., _st059_ab_total_s = 0.;
       int    _st059_ab_split = FALSE;
       if(! cp9b_valid) {
+	if(cm->cp9b != NULL) cm->cp9b->hmm_sc = -eslINFINITY; /* set again by the band calculation, for centering */
 	/* TODO #9 mitigation: --p7band produces too-narrow k-envelopes for small-M
 	 * models (M < ~200), causing accuracy regression on rmark4e (Lacto-usp, atoC,
 	 * snoZ152, ar45, SNORA47). Fall back to unbanded CP9 F/B for small CMs; the
@@ -1693,6 +1841,13 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
                 (cm->fp7 ? cm->fp7->M : 0), (int)sq->L, _cp9_cells);
       }
 
+      /* Center the CM DP scores (see Purpose), from here through every CM
+       * DP engine and fallback below; restored at MXESC_ALN_DONE or ERROR. */
+      if(idx != -1 && ! cp9b_valid && (center_c = center_shift(cm, sq->L)) != 0.) {
+	if((status = center_emission_scores(cm, center_c, &center_save)) != eslOK) goto ERROR;
+	center_cm = cm;
+      }
+
       /* CYK pre-pass: run CYK on CP9 bands, derive tighter per-state bands before Inside/Outside */
       if(cm->p7_use_cykbands) {
 	struct timespec _ta_cyk, _tb_cyk;
@@ -2360,6 +2515,12 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 
  MXESC_ALN_DONE: /* brief 26_0430-269: tier-(c) D&C-CYK floor lands here, skipping the free/ckpt OptAcc engine dispatch */
 
+  if(center_save != NULL) {
+    restore_emission_scores(center_cm, center_save);
+    center_save = NULL;
+    sc = (float) ((double) sc + (double) center_c * (double) sq->L);
+  }
+
   if(do_sub) { /* add size of original CM's CP9 matrices used for calculating start/end position */
     mb_tot += orig_cm->cp9_mx->size_Mb;
     mb_tot += orig_cm->cp9_bmx->size_Mb;
@@ -2413,6 +2574,7 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
   return eslOK;
 
  ERROR: 
+  if(center_save != NULL) restore_emission_scores(center_cm, center_save);
   cm->tau = save_tau;
   if(cm->cp9b != NULL) { 
     cm->cp9b->thresh1 = save_thresh1;
