@@ -3641,6 +3641,17 @@ extern int          cm_p7_GForwardDbl (const ESL_DSQ *dsq, int L, const P7_PROFI
 extern int          cm_p7_GBackwardDbl(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMX *gx, float *opt_sc);
 extern int          cm_p7_GForwardDblScore(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, double *opt_sc);
 extern int          cm_p7_GNull2_ByExpectationDbl(const P7_PROFILE *gm, const P7_GMX *pp, float *null2);
+/* double OA matrix for unbanded optimal accuracy (brief 26_0821-161); rows may live in a spare P7_GMX's memory */
+typedef struct {
+  int      M, L;
+  double **dp;    /* [0..L][0..M][0..p7G_NSCELLS-1], indexed [i][k*p7G_NSCELLS+s] like P7_GMX */
+  double  *xmx;   /* [0..L][0..p7G_NXCELLS-1] */
+  double  *own;   /* rows that did not fit in the spare matrix */
+} CM_P7_GMXD;
+extern CM_P7_GMXD  *cm_p7_gmxd_CreateOver(P7_GMX *spare, int M, int L);
+extern void         cm_p7_gmxd_Destroy(CM_P7_GMXD *gx);
+extern int          cm_p7_GOptimalAccuracyDbl(const P7_PROFILE *gm, const P7_GMX *pp, CM_P7_GMXD *gx, float *ret_e);
+extern int          cm_p7_GOATraceDbl(const P7_PROFILE *gm, const P7_GMX *pp, const CM_P7_GMXD *gx, P7_TRACE *tr);
 extern CM_P7_GMXBD *cm_p7_gmxbd_Create(P7_GBANDS *bnd);                                                                       /* brief 26_0821-151 */
 extern void         cm_p7_gmxbd_Destroy(CM_P7_GMXBD *gxd);                                                                     /* brief 26_0821-151 */
 extern int          cm_p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *pp, float *ret_fwdsc, CM_P7_DECSTATS *opt_st); /* brief 26_0526-016 */

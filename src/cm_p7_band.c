@@ -13926,6 +13926,352 @@ cm_p7_GNull2_ByExpectationDbl(const P7_PROFILE *gm, const P7_GMX *pp, float *nul
   return status;
 }
 
+/*****************************************************************
+ * Unbanded optimal accuracy alignment with a double OA matrix
+ * (brief 26_0821-161), for glocal envelope rescoring.
+ *****************************************************************/
+
+/* Function: cm_p7_gmxd_CreateOver()
+ * Incept:   EPN, Fri Oct 30 2026 (w/Claude)
+ *
+ * Purpose:  Create a double OA matrix for <M> x <L>, putting as many of
+ *           its rows as fit into the DP memory of <spare>, a float
+ *           P7_GMX whose contents the caller no longer needs, and
+ *           allocating the rest. In glocal envelope rescoring <spare> is
+ *           the envelope's Forward matrix, which is dead once posteriors
+ *           are decoded (HMMER's p7_GOptimalAccuracy() overwrites it
+ *           too), so the double matrix costs one float matrix more, not
+ *           two. <spare> may be NULL.
+ *
+ * Returns:  the new matrix, or NULL on allocation failure. Free with
+ *           cm_p7_gmxd_Destroy(); <spare> must outlive it and must not
+ *           be used while it exists.
+ */
+CM_P7_GMXD *
+cm_p7_gmxd_CreateOver(P7_GMX *spare, int M, int L)
+{
+  CM_P7_GMXD *gx     = NULL;
+  size_t      rowlen = (size_t) (M+1) * p7G_NSCELLS;   /* doubles per row */
+  size_t      nfit   = 0;
+  size_t      i;
+  int         status;
+
+  ESL_ALLOC(gx, sizeof(CM_P7_GMXD));
+  gx->M = M; gx->L = L; gx->dp = NULL; gx->xmx = NULL; gx->own = NULL;
+  ESL_ALLOC(gx->dp,  sizeof(double *) * (L+1));
+  ESL_ALLOC(gx->xmx, sizeof(double)   * (L+1) * p7G_NXCELLS);
+  if (spare != NULL) nfit = ((size_t) spare->ncells * p7G_NSCELLS * sizeof(float)) / (sizeof(double) * rowlen);
+  if (nfit > (size_t) L+1) nfit = (size_t) L+1;
+  if (nfit < (size_t) L+1) ESL_ALLOC(gx->own, sizeof(double) * rowlen * ((size_t) L+1 - nfit));
+  for (i = 0; i < nfit;          i++) gx->dp[i] = ((double *) spare->dp_mem) + i * rowlen;
+  for (     ; i < (size_t) L+1;  i++) gx->dp[i] = gx->own + (i - nfit) * rowlen;
+  return gx;
+
+ ERROR:
+  cm_p7_gmxd_Destroy(gx);
+  return NULL;
+}
+
+void
+cm_p7_gmxd_Destroy(CM_P7_GMXD *gx)
+{
+  if (gx == NULL) return;
+  if (gx->dp)  free(gx->dp);
+  if (gx->xmx) free(gx->xmx);
+  if (gx->own) free(gx->own);
+  free(gx);
+}
+
+#define TSCDELTA(s,k) ( (tsc[(k) * p7P_NTRANS + (s)] == -eslINFINITY) ? FLT_MIN : 1.0)
+static inline float goad_get_postprob(const P7_GMX *pp, int scur, int sprv, int k, int i);
+static inline int   goad_select_m(const P7_PROFILE *gm, const CM_P7_GMXD *gx, int i, int k);
+static inline int   goad_select_d(const P7_PROFILE *gm, const CM_P7_GMXD *gx, int i, int k);
+static inline int   goad_select_i(const P7_PROFILE *gm, const CM_P7_GMXD *gx, int i, int k);
+static inline int   goad_select_n(int i);
+static inline int   goad_select_c(const P7_PROFILE *gm, const P7_GMX *pp, const CM_P7_GMXD *gx, int i);
+static inline int   goad_select_j(const P7_PROFILE *gm, const P7_GMX *pp, const CM_P7_GMXD *gx, int i);
+static inline int   goad_select_e(const P7_PROFILE *gm, const CM_P7_GMXD *gx, int i, int *ret_k);
+static inline int   goad_select_b(const P7_PROFILE *gm, const CM_P7_GMXD *gx, int i);
+
+/* Function: cm_p7_GOptimalAccuracyDbl()
+ * Incept:   EPN, Fri Oct 30 2026 (w/Claude)
+ *
+ * Purpose:  p7_GOptimalAccuracy() (hmmer/src/generic_optacc.c) with the
+ *           OA matrix <gx> in double. The posterior matrix <pp> stays
+ *           HMMER's float P7_GMX, as in the banded OA (brief
+ *           26_0821-151): a posterior is a probability in [0,1] and
+ *           carries one rounding, but an OA cell is a sum of up to L of
+ *           them, and in float that sum loses about 2^-24 of its size
+ *           per add. Over a 4 kb envelope that was enough to place one
+ *           gap differently from a double OA (brief 26_0821-161).
+ *           Recurrence and max order are HMMER's.
+ *
+ * Returns:  <eslOK>; <*ret_e> is the OA score (expected number of
+ *           correctly aligned residues), as a float.
+ */
+int
+cm_p7_GOptimalAccuracyDbl(const P7_PROFILE *gm, const P7_GMX *pp, CM_P7_GMXD *gx, float *ret_e)
+{
+  int          L    = pp->L;
+  double     **dp   = gx->dp;
+  double      *xmx  = gx->xmx;
+  float const *tsc  = gm->tsc;
+  int          i,k;
+  int          M    = gm->M;
+  double       esc  = p7_profile_IsLocal(gm) ? 1.0 : 0.0;
+  double       t1, t2;
+
+  /* Initialization of the zero row (i=0; no residues to account for.  */
+  XMX(0,p7G_N) = 0.;                                          /* S->N, p=1            */
+  XMX(0,p7G_B) = 0.;                                          /* S->N->B, no N-tail   */
+  XMX(0,p7G_E) = XMX(0,p7G_C) = XMX(0,p7G_J) = -eslINFINITY;  /* need seq to get here */
+  for (k = 0; k <= M; k++)
+    MMX(0,k) = IMX(0,k) = DMX(0,k) = -eslINFINITY;            /* need seq to get here */
+
+  for (i = 1; i <= L; i++)
+    {
+      MMX(i,0) = IMX(i,0) = DMX(i,0) = XMX(i,p7G_E) = -eslINFINITY;
+
+      for (k = 1; k < M; k++)
+	{
+	  MMX(i,k)     = ESL_MAX(ESL_MAX(TSCDELTA(p7P_MM, k-1) * (MMX(i-1,k-1)  + pp->dp[i][k*p7G_NSCELLS + p7G_M]),
+					 TSCDELTA(p7P_IM, k-1) * (IMX(i-1,k-1)  + pp->dp[i][k*p7G_NSCELLS + p7G_M])),
+				 ESL_MAX(TSCDELTA(p7P_DM, k-1) * (DMX(i-1,k-1)  + pp->dp[i][k*p7G_NSCELLS + p7G_M]),
+					 TSCDELTA(p7P_BM, k-1) * (XMX(i-1,p7G_B)+ pp->dp[i][k*p7G_NSCELLS + p7G_M])));
+
+	  XMX(i,p7G_E) = ESL_MAX(XMX(i,p7G_E), 
+				 esc * MMX(i,k));
+
+	  IMX(i,k)     = ESL_MAX(TSCDELTA(p7P_MI, k) * (MMX(i-1,k) + pp->dp[i][k*p7G_NSCELLS + p7G_I]),
+				 TSCDELTA(p7P_II, k) * (IMX(i-1,k) + pp->dp[i][k*p7G_NSCELLS + p7G_I]));
+
+	  DMX(i,k)     = ESL_MAX(TSCDELTA(p7P_MD, k-1) * MMX(i,k-1),
+				 TSCDELTA(p7P_DD, k-1) * DMX(i,k-1));
+	} 
+
+      /* last node (k=M) is unrolled; it has no I state, and it has a p=1.0 {MD}->E transition even in local mode */
+      MMX(i,M)     = ESL_MAX(ESL_MAX(TSCDELTA(p7P_MM, M-1) * (MMX(i-1,M-1)  + pp->dp[i][M*p7G_NSCELLS + p7G_M]),
+				     TSCDELTA(p7P_IM, M-1) * (IMX(i-1,M-1)  + pp->dp[i][M*p7G_NSCELLS + p7G_M])),
+			     ESL_MAX(TSCDELTA(p7P_DM, M-1) * (DMX(i-1,M-1)  + pp->dp[i][M*p7G_NSCELLS + p7G_M]),
+				     TSCDELTA(p7P_BM, M-1) * (XMX(i-1,p7G_B)+ pp->dp[i][M*p7G_NSCELLS + p7G_M])));
+
+      DMX(i,M)     = ESL_MAX(TSCDELTA(p7P_MD, M-1) * MMX(i,M-1),
+			     TSCDELTA(p7P_DD, M-1) * DMX(i,M-1));
+
+      /* note: we calculated XMX before DMX in the loop, because we probably had MMX(i,k) in a register. 
+       * but now we can't do that, because XMX depends on DMX
+       */
+      XMX(i,p7G_E) = ESL_MAX(XMX(i,p7G_E), ESL_MAX(MMX(i,M), DMX(i, M)));
+
+      /* now the special states; it's important that E is already done, and B is done after N,J */
+      t1 = ( (gm->xsc[p7P_J][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0);
+      t2 = ( (gm->xsc[p7P_E][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0);
+      XMX(i, p7G_J) = ESL_MAX( t1 * (XMX(i-1,p7G_J) + pp->xmx[i*p7G_NXCELLS + p7G_J]),
+			       t2 * XMX(i,  p7G_E));
+
+      t1 = ( (gm->xsc[p7P_C][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0);
+      t2 = ( (gm->xsc[p7P_E][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0);
+      XMX(i,p7G_C) = ESL_MAX( t1 * (XMX(i-1,p7G_C) + pp->xmx[i*p7G_NXCELLS + p7G_C]),
+			      t2 * XMX(i,  p7G_E));
+      
+      t1 = ( (gm->xsc[p7P_N][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0);
+      XMX(i,p7G_N) = t1 *  (XMX(i-1,p7G_N) + pp->xmx[i*p7G_NXCELLS + p7G_N]);
+
+      t1 = ( (gm->xsc[p7P_N][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0);
+      t2 = ( (gm->xsc[p7P_J][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0);
+      XMX(i,p7G_B) = ESL_MAX( t1 * XMX(i,  p7G_N), 
+			      t2 * XMX(i,  p7G_J));
+    }
+  
+  gx->M = M; gx->L = L;
+  *ret_e = (float) XMX(L,p7G_C);
+  return eslOK;
+}
+
+
+/* Function: cm_p7_GOATraceDbl()
+ * Incept:   EPN, Fri Oct 30 2026 (w/Claude)
+ *
+ * Purpose:  p7_GOATrace() on a double OA matrix from
+ *           cm_p7_GOptimalAccuracyDbl(); same traceback, same tie rules.
+ *
+ * Returns:  <eslOK> on success.
+ *
+ * Throws:   <eslEINVAL> if the traceback fails; <eslEMEM> on allocation
+ *           failure growing <tr>.
+ */
+int
+cm_p7_GOATraceDbl(const P7_PROFILE *gm, const P7_GMX *pp, const CM_P7_GMXD *gx, P7_TRACE *tr)
+{
+  int           i   = gx->L;	/* position in seq (1..L)         */
+  int           k   = 0;	/* position in model (1..M)       */
+  float        postprob;
+  int          sprv, scur;
+  int          status;
+
+#if eslDEBUGLEVEL > 0
+  if (tr->N != 0) ESL_EXCEPTION(eslEINVAL, "trace isn't empty: forgot to Reuse()?");
+#endif
+
+  if ((status = p7_trace_AppendWithPP(tr, p7T_T, k, i, 0.0)) != eslOK) return status;
+  if ((status = p7_trace_AppendWithPP(tr, p7T_C, k, i, 0.0)) != eslOK) return status;
+
+  sprv = p7T_C;
+  while (sprv != p7T_S) 
+    {
+      switch (sprv) {
+      case p7T_M: scur = goad_select_m(gm,     gx, i, k);  k--; i--; break;
+      case p7T_D: scur = goad_select_d(gm,     gx, i, k);  k--;      break;
+      case p7T_I: scur = goad_select_i(gm,     gx, i, k);       i--; break;
+      case p7T_N: scur = goad_select_n(i);                           break;
+      case p7T_C: scur = goad_select_c(gm, pp, gx, i);               break;
+      case p7T_J: scur = goad_select_j(gm, pp, gx, i);               break;
+      case p7T_E: scur = goad_select_e(gm,     gx, i, &k);           break;
+      case p7T_B: scur = goad_select_b(gm,     gx, i);               break;
+      default: ESL_EXCEPTION(eslEINVAL, "bogus state in traceback");
+      }
+      if (scur == -1) ESL_EXCEPTION(eslEINVAL, "OA traceback choice failed");
+
+      postprob = goad_get_postprob(pp, scur, sprv, k, i);
+      if ((status = p7_trace_AppendWithPP(tr, scur, k, i, postprob)) != eslOK) return status;
+
+      /* For NCJ, we had to defer i decrement. */
+      if ( (scur == p7T_N || scur == p7T_J || scur == p7T_C) && scur == sprv) i--;
+      sprv = scur;
+    }
+  tr->M = gm->M;
+  tr->L = gx->L;
+  return p7_trace_Reverse(tr);
+}
+
+
+
+static inline float
+goad_get_postprob(const P7_GMX *pp, int scur, int sprv, int k, int i)
+{
+  float **dp  = pp->dp;
+  float  *xmx = pp->xmx;
+
+  switch (scur) {
+  case p7T_M: return MMX(i,k);
+  case p7T_I: return IMX(i,k);
+  case p7T_N: if (sprv == scur) return XMX(i,p7G_N);
+  case p7T_C: if (sprv == scur) return XMX(i,p7G_C); 
+  case p7T_J: if (sprv == scur) return XMX(i,p7G_J); 
+  default:    return 0.0;
+  }
+}
+
+static inline int
+goad_select_m(const P7_PROFILE *gm, const CM_P7_GMXD *gx, int i, int k)
+{
+  double      **dp   = gx->dp;	/* so {MDI}MX() macros work       */
+  double       *xmx  = gx->xmx;	/* so XMX() macro works           */
+  float const *tsc  = gm->tsc;	/* so TSCDELTA() macro works */
+  double path[4];
+  int   state[4] = { p7T_M, p7T_I, p7T_D, p7T_B };
+
+  path[0] = TSCDELTA(p7P_MM, k-1) * MMX(i-1,k-1);
+  path[1] = TSCDELTA(p7P_IM, k-1) * IMX(i-1,k-1);
+  path[2] = TSCDELTA(p7P_DM, k-1) * DMX(i-1,k-1);
+  path[3] = TSCDELTA(p7P_BM, k-1) * XMX(i-1,p7G_B);
+  return state[esl_vec_DArgMax(path, 4)];
+}
+
+static inline int
+goad_select_d(const P7_PROFILE *gm, const CM_P7_GMXD *gx, int i, int k)
+{
+  double      **dp   = gx->dp;	/* so {MDI}MX() macros work       */
+  float const *tsc  = gm->tsc;	/* so TSCDELTA() macro works */
+  double        path[2];
+
+  path[0] = TSCDELTA(p7P_MD, k-1) * MMX(i, k-1);
+  path[1] = TSCDELTA(p7P_DD, k-1) * DMX(i, k-1);
+  return ((path[0] >= path[1]) ? p7T_M : p7T_D);
+}
+
+static inline int
+goad_select_i(const P7_PROFILE *gm, const CM_P7_GMXD *gx, int i, int k)
+{
+  double      **dp   = gx->dp;	/* so {MDI}MX() macros work       */
+  float const *tsc  = gm->tsc;	/* so TSCDELTA() macro works */
+  double        path[2];
+
+  path[0] = TSCDELTA(p7P_MI, k) * MMX(i-1,k);
+  path[1] = TSCDELTA(p7P_II, k) * IMX(i-1,k);
+  return ((path[0] >= path[1]) ? p7T_M : p7T_I);
+}
+
+static inline int
+goad_select_n(int i)
+{
+  return ((i==0) ? p7T_S : p7T_N);
+}
+
+static inline int
+goad_select_c(const P7_PROFILE *gm, const P7_GMX *pp, const CM_P7_GMXD *gx, int i)
+{
+  double  t1   =  ( (gm->xsc[p7P_C][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0);
+  double  t2   =  ( (gm->xsc[p7P_E][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0);
+  double *xmx  = gx->xmx;	/* so XMX() macro works           */
+  double  path[2];
+
+  path[0] = t1 * (XMX(i-1, p7G_C) + pp->xmx[i*p7G_NXCELLS + p7G_C]);
+  path[1] = t2 *  XMX(i,p7G_E);
+  return  ((path[0] > path[1]) ? p7T_C : p7T_E);
+}
+
+static inline int
+goad_select_j(const P7_PROFILE *gm, const P7_GMX *pp, const CM_P7_GMXD *gx, int i)
+{
+  double  t1   = ( (gm->xsc[p7P_J][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0);
+  double  t2   = ( (gm->xsc[p7P_E][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0);
+  double *xmx  = gx->xmx;	/* so XMX() macro works           */
+  double  path[2];
+
+  path[0] = t1 * (XMX(i-1,p7G_J) + pp->xmx[i*p7G_NXCELLS + p7G_J]);
+  path[1] = t2 * XMX(i,p7G_E);
+  return  ((path[0] > path[1]) ? p7T_J : p7T_E);
+}
+
+static inline int
+goad_select_e(const P7_PROFILE *gm, const CM_P7_GMXD *gx, int i, int *ret_k)
+{
+  double **dp   = gx->dp;	/* so {MDI}MX() macros work       */
+  double   max  = -eslINFINITY;
+  int     smax = -1;		/* will be returned as "error code" if no max found */
+  int     kmax = -1;
+  int     k;
+
+  if (! p7_profile_IsLocal(gm)) /* glocal/global is easier */
+    {
+      *ret_k = gm->M;
+      return ((MMX(i,gm->M) >= DMX(i,gm->M)) ? p7T_M : p7T_D);
+    }
+
+  for (k = 1; k <= gm->M; k++)
+    {
+      if (MMX(i,k) >= max) { max = MMX(i,k); smax = p7T_M; kmax = k; }
+      if (DMX(i,k) >  max) { max = DMX(i,k); smax = p7T_D; kmax = k; }
+    }
+  *ret_k = kmax;
+  return smax;
+}
+
+static inline int
+goad_select_b(const P7_PROFILE *gm, const CM_P7_GMXD *gx, int i)
+{
+  double t1 = ( (gm->xsc[p7P_N][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0);
+  double t2 = ( (gm->xsc[p7P_J][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0);
+  double *xmx  = gx->xmx;	/* so XMX() macro works           */
+  double path[2];
+
+  path[0] = t1 * XMX(i, p7G_N);
+  path[1] = t2 * XMX(i, p7G_J);
+  return  ((path[0] > path[1]) ? p7T_N : p7T_J);
+}
+#undef TSCDELTA
+
 
 /*****************************************************************
  * Unit tests (brief 26_0821-141)
@@ -14117,6 +14463,71 @@ trace_differs(const P7_TRACE *t1, const P7_TRACE *t2)
     if (t1->st[z] != t2->st[z] || t1->k[z] != t2->k[z] || t1->i[z] != t2->i[z] || t1->pp[z] != t2->pp[z])
       return TRUE;
   return FALSE;
+}
+
+/* utest_oa_dbl(): cm_p7_GOptimalAccuracyDbl()/cm_p7_GOATraceDbl() and
+ * cm_p7_gmxd_CreateOver() (brief 26_0821-161).
+ *  1. On a short glocal envelope (M = 60, a homolog emitted from the
+ *     model) the double OA gives HMMER's float trace and OA score (to
+ *     1e-3).
+ *  2. The double matrix gives bit-identical results whether all of its
+ *     rows, some of them, or none fit in the spare float matrix.
+ *  3. On a long one (M = 1000) double and float OA scores
+ *     differ by less than 0.05; with <be_verbose> the difference is
+ *     printed (float accumulation error, the reason for the change). */
+static void
+utest_oa_dbl(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, int be_verbose)
+{
+  int         Ms[2] = { 60, 1000 };
+  P7_BG      *bg  = p7_bg_Create(abc);
+  int         t, z, a;
+
+  for (t = 0; t < 2; t++)
+    {
+      int         M = Ms[t], L;
+      P7_HMM     *hmm = NULL;
+      P7_PROFILE *gm  = p7_profile_Create(M, abc);
+      P7_GMX     *fx, *pp, *fo, *sm;
+      ESL_SQ     *sq  = esl_sq_CreateDigital(abc);
+      P7_TRACE   *trf = p7_trace_CreateWithPP();
+      P7_TRACE   *trd[3];
+      CM_P7_GMXD *ox;
+      float       oaf, oad[3];
+
+      if (p7_hmm_Sample(r, M, abc, &hmm) != eslOK) esl_fatal("utest_oa_dbl: p7_hmm_Sample failed");
+      do { esl_sq_Reuse(sq); p7_CoreEmit(r, hmm, sq, NULL); } while (sq->n < 2);   /* a homolog, no flanks */
+      L  = sq->n;
+      p7_ProfileConfig(hmm, bg, gm, L, p7_UNIGLOCAL);
+      fx = p7_gmx_Create(M, L);   pp = p7_gmx_Create(M, L);   fo = p7_gmx_Create(M, L);
+      sm = p7_gmx_Create(M, L/3);  /* spare that holds only some of the double rows */
+      cm_p7_GForwardDbl (sq->dsq, sq->n, gm, fx, NULL);
+      cm_p7_GBackwardDbl(sq->dsq, sq->n, gm, pp, NULL);
+      p7_GDecoding(gm, fx, pp, pp);
+
+      p7_GOptimalAccuracy(gm, pp, fo, &oaf);
+      fo->M = M; fo->L = sq->n;   /* p7_GOptimalAccuracy() leaves these to the caller; p7_GOATrace() reads L */
+      p7_GOATrace(gm, pp, fo, trf);
+      for (a = 0; a < 3; a++) {
+	trd[a] = p7_trace_CreateWithPP();
+	ox = cm_p7_gmxd_CreateOver((a == 0) ? fx : ((a == 1) ? sm : NULL), M, sq->n);
+	if (ox == NULL) esl_fatal("utest_oa_dbl: cm_p7_gmxd_CreateOver failed");
+	cm_p7_GOptimalAccuracyDbl(gm, pp, ox, &oad[a]);
+	if (cm_p7_GOATraceDbl(gm, pp, ox, trd[a]) != eslOK) esl_fatal("utest_oa_dbl: cm_p7_GOATraceDbl failed");
+	cm_p7_gmxd_Destroy(ox);
+      }
+      if (oad[1] != oad[0] || oad[2] != oad[0] || trace_differs(trd[1], trd[0]) || trace_differs(trd[2], trd[0]))
+	esl_fatal("utest_oa_dbl: M=%d: result depends on how the double matrix's rows are placed", M);
+      if (be_verbose) printf("utest_oa_dbl: M=%d L=%d  OA float %.4f double %.4f  (diff %.2g)  traces %s\n",
+			     M, (int) sq->n, oaf, oad[0], oaf - oad[0], trace_differs(trf, trd[0]) ? "differ" : "same");
+      if (fabs(oaf - oad[0]) > ((t == 0) ? 1e-3 : 0.05)) esl_fatal("utest_oa_dbl: M=%d: OA float %.4f vs double %.4f", M, oaf, oad[0]);
+      if (t == 0 && trace_differs(trf, trd[0]))          esl_fatal("utest_oa_dbl: M=%d: double OA trace differs from HMMER's", M);
+
+      for (a = 0; a < 3; a++) p7_trace_Destroy(trd[a]);
+      p7_trace_Destroy(trf); esl_sq_Destroy(sq);
+      p7_gmx_Destroy(fx); p7_gmx_Destroy(pp); p7_gmx_Destroy(fo); p7_gmx_Destroy(sm);
+      p7_profile_Destroy(gm); p7_hmm_Destroy(hmm);
+    }
+  p7_bg_Destroy(bg);
 }
 
 static void
@@ -14423,6 +14834,7 @@ main(int argc, char **argv)
   utest_dlogsum();
   utest_generic_dbl(r, abc, esl_opt_GetBoolean(go, "-v"));
   utest_null2_dbl(r, abc, esl_opt_GetBoolean(go, "-v"));
+  utest_oa_dbl(r, abc, esl_opt_GetBoolean(go, "-v"));
   utest_genome_scale(r, abc, esl_opt_GetInteger(go, "-M"), esl_opt_GetInteger(go, "-W"), 0.85, TRUE,  esl_opt_GetBoolean(go, "-v"));
   /* brief 26_0821-151: fractional posteriors, so the OA sums need double */
   utest_genome_scale(r, abc, esl_opt_GetInteger(go, "-M"), esl_opt_GetInteger(go, "-W"), 0.70, FALSE, esl_opt_GetBoolean(go, "-v"));

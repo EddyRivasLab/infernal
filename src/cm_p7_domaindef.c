@@ -558,9 +558,15 @@ glocal_rescore_isolated_domain(P7_DOMAINDEF *ddef, const P7_PROFILE *gm, P7_OPRO
     }
 
     if(do_aln) { 
-      /* Find an optimal accuracy alignment */
-      p7_GOptimalAccuracy(gm, gx2, gx1, &oasc);      /* <ox1> is now overwritten with OA scores              */
-      p7_GOATrace        (gm, gx2, gx1, ddef->tr);   /* <tr>'s seq coords are offset by i-1, rel to orig dsq */
+      /* Find an optimal accuracy alignment. OA scores go in a double
+       * matrix whose first rows reuse <gx1>'s memory; the Forward values
+       * there are no longer needed (brief 26_0821-161). */
+      CM_P7_GMXD *oax = cm_p7_gmxd_CreateOver(gx1, gm->M, Ld);
+      if (oax == NULL) { status = eslEMEM; goto ERROR; }
+      cm_p7_GOptimalAccuracyDbl(gm, gx2, oax, &oasc);
+      status = cm_p7_GOATraceDbl(gm, gx2, oax, ddef->tr); /* <tr>'s seq coords are offset by i-1, rel to orig dsq */
+      cm_p7_gmxd_Destroy(oax);
+      if (status != eslOK) goto ERROR;
       
       /* hack the trace's sq coords to be correct w.r.t. original dsq */
       for (z = 0; z < ddef->tr->N; z++)
