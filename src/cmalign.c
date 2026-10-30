@@ -396,8 +396,7 @@ hmm_noparse_fallback(CM_t *cm, const ESL_SQ *sq, int do_trunc, int ibv_base_slab
 
 /* hmm_unbanded_oa()
  * Unbanded optimal accuracy alignment of <dsq> (length <L>) to <gm>, for
- * --hmmnoband and for the banded modes' fallback when the p7 Viterbi trace
- * is empty. Forward and Backward use double recursions into float matrices
+ * --hmmnoband. Forward and Backward use double recursions into float matrices
  * <gxf> and <gxb> (grown here), the posteriors are decoded into <gxb>, and
  * the OA alignment is computed in a double matrix whose first rows reuse
  * <gxf>'s memory, dead once the posteriors exist. HMMER's float generic
@@ -1784,21 +1783,11 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	      p7_gmx_GrowTo(gx, hmm->M, sq->n);
 	      p7_GViterbi(sq->dsq, sq->n, gm, gx, &sc);
 	      p7_trace_Reuse(vtr);
-	      status = p7_GTrace(sq->dsq, sq->n, gm, gx, vtr);
-
-	      if (status != eslOK || vtr->N == 0) {
-		/* Unbanded OA; the dead Viterbi matrix <gx> holds Forward
-		 * (brief 26_0821-163), so this needs one new matrix, not two. */
-		P7_GMX *fallback_gxb = p7_gmx_Create(hmm->M, sq->n);
-		if(cm_StageVerbose()) fprintf(stderr, "#HMM_UNBANDED_FALLBACK %s L=%d M=%d\n", sq->name, (int) sq->n, hmm->M);
-		p7_trace_Reuse(tr[idx]);
-		hmm_unbanded_oa(sq->dsq, sq->n, gm, gx, fallback_gxb, tr[idx], &fwdsc);
-		p7_gmx_Destroy(fallback_gxb);
-		p7_trace_Destroy(vtr);
-		hmm_set_stats(hstA + (size_t) idx * HMMST_N, hmm_score_bits(fwdsc, do_trunc, bg, sq->dsq, sq->n),
-			      hst_t0, hst_t0, hmm_now(), hst_mb);
-		continue;
-	      }
+	      /* p7_GTrace() never returns an empty trace; its failures are
+	       * exceptions. The unbanded-OA fallback that used to follow
+	       * could not run and was removed (brief 26_0821-163). */
+	      if ((status = p7_GTrace(sq->dsq, sq->n, gm, gx, vtr)) != eslOK)
+		cm_Fail("p7_GTrace() failed for sequence %s", sq->name);
 
 	      {
 		int tpos;
@@ -2603,20 +2592,9 @@ hmm_pipeline_thread(void *arg)
 	  p7_gmx_GrowTo(info->gx, info->hmm->M, sq->n);
 	  p7_GViterbi(sq->dsq, sq->n, info->gm, info->gx, &sc);
 	  p7_trace_Reuse(vtr);
-	  status = p7_GTrace(sq->dsq, sq->n, info->gm, info->gx, vtr);
-
-	  if (status != eslOK || vtr->N == 0) {
-	    /* Viterbi failed; fall back to unbanded OA, Forward in the dead
-	     * Viterbi matrix (brief 26_0821-163) */
-	    P7_GMX *fallback_gxb = p7_gmx_Create(info->hmm->M, sq->n);
-	    if(cm_StageVerbose()) fprintf(stderr, "#HMM_UNBANDED_FALLBACK %s L=%d M=%d\n", sq->name, (int) sq->n, info->hmm->M);
-	    p7_trace_Reuse(info->hmm_tr[idx]);
-	    hmm_unbanded_oa(sq->dsq, sq->n, info->gm, info->gx, fallback_gxb, info->hmm_tr[idx], &fwdsc);
-	    p7_gmx_Destroy(fallback_gxb);
-	    p7_trace_Destroy(vtr);
-	    hst_raw = fwdsc;
-	    goto HMM_NEXT_SQ;
-	  }
+	  /* no empty-trace fallback; see hmm_alignment() (brief 26_0821-163) */
+	  if ((status = p7_GTrace(sq->dsq, sq->n, info->gm, info->gx, vtr)) != eslOK)
+	    cm_Fail("p7_GTrace() failed for sequence %s", sq->name);
 
 	  {
 	    int tpos;
@@ -2750,7 +2728,6 @@ hmm_pipeline_thread(void *arg)
       p7_gmxb_Destroy(bxb);
     }
 
-  HMM_NEXT_SQ:
     hmm_set_stats(info->hmm_st + (size_t) idx * HMMST_N, hmm_score_bits(hst_raw, info->do_trunc, info->bg, sq->dsq, sq->n),
 		  hst_t0, hst_aln0, hmm_now(), hst_mb);
     status = esl_workqueue_WorkerUpdate(info->queue, sq, &new_sq);
@@ -3492,17 +3469,8 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  vtr_w = p7_trace_Create();
 	  p7_gmx_GrowTo(gx_w, hmm_w->M, L);
 	  p7_GViterbi(dsq, L, gm_w, gx_w, &sc_w);
+	  /* no empty-trace fallback; see hmm_alignment() (brief 26_0821-163) */
 	  p7_GTrace(dsq, L, gm_w, gx_w, vtr_w);
-
-	  if (vtr_w->N == 0) {
-	    /* fallback to unbanded, Forward in the dead Viterbi matrix (brief 26_0821-163) */
-	    P7_GMX *fb_gxb = p7_gmx_Create(hmm_w->M, L);
-	    hmm_unbanded_oa(dsq, L, gm_w, gx_w, fb_gxb, wtr, &fwdsc_w);
-	    p7_gmx_Destroy(fb_gxb);
-	    p7_trace_Destroy(vtr_w);
-	    hst_raw = fwdsc_w;
-	    goto HMM_MPI_SEND;
-	  }
 
 	  ESL_ALLOC(i2k_w, sizeof(int) * (L + 1));
 	  esl_vec_ISet(i2k_w, (L + 1), -1);
@@ -3600,7 +3568,6 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	p7_gmxb_Destroy(bxb_w);
       }
 
-    HMM_MPI_SEND:
       /* Send trace and score-table values back to master */
       hmm_set_stats(hst_st, hmm_score_bits(hst_raw, do_trunc_w, bg_w, dsq, L), hst_t0, hst_aln0, hmm_now(), hst_mb);
       hmm_trace_MPISend(wtr, idx, hst_st, 0, INFERNAL_ALNDATA_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size);
