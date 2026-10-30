@@ -2071,8 +2071,17 @@ typedef struct cm_s {
 
   /* p7 hmms, added 08.05.08 */
   P7_HMM       *mlp7;         /* the maximum likelihood p7 HMM, built from the CM  */
-  P7_HMM       *fp7;          /* the filter p7 HMM, read from CM file */
+  P7_HMM       *fp7;          /* the filter p7 HMM: derived from the CM (mlp7, CMH_FP7_DERIVED), or read from an older CM file */
   float         fp7_evparam[CM_p7_NEVPARAM]; /* E-value params (CMH_FP7_STATS) */
+  /* HMM-only search HMM (cmsearch/cmscan --hmmonly), derived from the CM
+   * by the transform <hp7_xform> (CM_HP7_*). NULL when HMM-only search
+   * uses fp7 itself: CM_HP7_ML (zero-basepair models), and CM files
+   * that store their filter HMM (format 1/d and older). See
+   * cm_p7_DeriveFilterHMMs(). (brief 26_0821-162) */
+  P7_HMM       *hp7;
+  float         hp7_evparam[CM_p7_NEVPARAM]; /* E-value params for hp7 */
+  int           hp7_xform;    /* CM_HP7_ML, CM_HP7_A1 or CM_HP7_A2 */
+  int           hp7_is_active; /* TRUE once cm_p7_UseHMMOnlyFilter() has swapped hp7 into fp7 */
 
   /* p7 per-HMM-node band pads (CMH_P7NODEPAD). Computed by cm_ComputeP7CMNodePad()
    * at cmbuild time from the CM and stored in the CM file. Indexed by HMM
@@ -2133,6 +2142,13 @@ typedef struct cm_s {
 #define CMH_FILTER_PVAL_CUTOFFS (1<<25) /* per-CM F1/F2/F3 P-value cutoffs (cm->F{1,2,3}_pcutoff) are valid */
 #define CMH_PKNOT               (1<<26) /* consensus pseudoknot annotation exists (cm->pknot) */
 #define CMH_EXPTAIL_NONULL3_STATS (1<<27) /* null3-off exp tail stats (cm->expA_nonull3) are valid */
+#define CMH_FP7_DERIVED         (1<<28) /* cm->fp7 (and cm->hp7) were derived from the CM, not read from a stored filter HMM block */
+
+/* transforms of the CM's ML p7 HMM (mlp7) that give the HMM-only
+ * search HMM, cm->hp7_xform (see cm_p7_HMMOnlyTransform()) */
+#define CM_HP7_ML 0  /* none: HMM-only search uses the filter HMM (mlp7) itself */
+#define CM_HP7_A1 1  /* mlp7 transitions re-estimated under HMMER's DNA transition prior */
+#define CM_HP7_A2 2  /* as A1, with the default CM transition prior backed out first */
 
 /* model configuration options, cm->config_opts */
 #define CM_CONFIG_LOCAL         (1<<0)  /* configure the model for local alignment */
@@ -2214,6 +2230,10 @@ enum cm_file_formats_e {
                    * shipped. Unified into CM_FILE_1d below; 1/c is REJECTED on read.  */
   CM_FILE_1d = 4, /* adds optional null3-OFF E-value block AND consensus pknot annotation
                    * (union of the two retired 1/c formats; each block flag-gated)      */
+  CM_FILE_1e = 5, /* PROVISIONAL dev format (brief 26_0821-162): no stored filter HMM
+                   * block; the filter and HMM-only HMMs are derived from the CM when
+                   * read, and only their E-value parameters are stored (HP7, EFP7L,
+                   * EHP7L, EHP7GF lines). Not the final 1.2 format tag.              */
 };
 
 typedef struct cm_file_s {
@@ -3280,7 +3300,9 @@ extern int     cm_file_OpenBuffer(char *buffer, int size, int allow_1p0, CM_FILE
 extern void    cm_file_Close(CM_FILE *cmfp);
 extern int     cm_file_CreateLock(CM_FILE *cmfp);
 extern int     cm_file_WriteASCII(FILE *fp, int format, CM_t *cm);
-extern int     cm_file_WriteBinary(FILE *fp, int format, CM_t *cm, off_t *opt_fp7_offset);
+extern int     cm_file_WriteBinary(FILE *fp, int format, CM_t *cm, off_t *opt_fp7_offset, off_t *opt_hp7_offset);
+extern int     cm_file_DefaultFormat(CM_t *cm);
+extern int     cm_file_UseHMMOnlyFilters(CM_FILE *cmfp, char *errbuf);
 extern int     cm_file_Read(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_cm);
 extern int     cm_file_PositionByKey(CM_FILE *cmfp, const char *key);
 extern int     cm_file_Position(CM_FILE *cmfp, const off_t offset);
@@ -3816,6 +3838,13 @@ extern int          cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, 
 extern int          cm_p7_GlocalFwdSimFit(ESL_RANDOMNESS *r, char *errbuf, P7_PROFILE *gm, P7_BG *bg, int L, int N, double tailp, int ncpus, double *ret_mu, double *ret_lambda);
 extern int          cm_p7_FitExpTail(const double *xv, int N, double tailp, double *ret_mu, double *ret_lambda);
 extern int          cm_SetFilterHMM(CM_t *cm, P7_HMM *hmm, double gfmu, double gflambda);
+extern int          cm_SetHMMOnlyHMM(CM_t *cm, P7_HMM *hmm, double gfmu, double gflambda);
+extern int          cm_p7_HMMOnlyTransform(const P7_HMM *mlp7, int xform, P7_HMM **ret_hmm, char *errbuf);
+extern int          cm_p7_DeriveFilterHMMs(CM_t *cm, int xform, P7_HMM **ret_fp7, P7_HMM **ret_hp7, char *errbuf);
+extern int          cm_p7_AttachDerivedFilterHMMs(CM_t *cm, char *errbuf);
+extern int          cm_p7_UseHMMOnlyFilter(CM_t *cm);
+extern const char  *cm_p7_HMMOnlyXformString(int xform);
+extern int          cm_p7_HMMOnlyXformCode(const char *s);
 extern int          dump_p7(P7_HMM *hmm, FILE *fp);
 extern float        cm_p7_hmm_Sizeof(P7_HMM *hmm);
 extern int          cm_p7_hmm_SetConsensus(P7_HMM *hmm);

@@ -179,6 +179,7 @@ cm_nonconfigured_MPIUnpack(ESL_ALPHABET **abc, char *errbuf, char *buf, int n, i
   int    atype, i, K, M, nnodes;
   float  tmp_fp7_gfmu;
   float  tmp_fp7_gflambda;
+  int    has_hp7;
 
   cm = CreateCMShell(); 
   if (cm == NULL) { status = eslEMEM; goto ERROR; }
@@ -270,6 +271,17 @@ cm_nonconfigured_MPIUnpack(ESL_ALPHABET **abc, char *errbuf, char *buf, int n, i
     if (MPI_Unpack(buf, n, pos, &tmp_fp7_gflambda, 1, MPI_FLOAT, comm)  != 0)      ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
     if((status = p7_hmm_MPIUnpack(buf, n, pos, comm, &aabc, &hmm)) != eslOK) ESL_XEXCEPTION(status, "mpi unpack failed");
     if((status = cm_SetFilterHMM(cm, hmm, tmp_fp7_gfmu, tmp_fp7_gflambda)) != eslOK) ESL_XEXCEPTION(eslESYS, "Unable to set filter HMM for CM");
+    hmm = NULL;
+  }
+  /* the HMM-only HMM, if any (brief 26_0821-162) */
+  if (MPI_Unpack(buf, n, pos, &(cm->hp7_xform), 1, MPI_INT, comm)  != 0)          ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  if (MPI_Unpack(buf, n, pos, &has_hp7,         1, MPI_INT, comm)  != 0)          ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  if (has_hp7) { 
+    if (MPI_Unpack(buf, n, pos, &tmp_fp7_gfmu,     1, MPI_FLOAT, comm)  != 0)      ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+    if (MPI_Unpack(buf, n, pos, &tmp_fp7_gflambda, 1, MPI_FLOAT, comm)  != 0)      ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+    if((status = p7_hmm_MPIUnpack(buf, n, pos, comm, &aabc, &hmm)) != eslOK) ESL_XEXCEPTION(status, "mpi unpack failed");
+    if((status = cm_SetHMMOnlyHMM(cm, hmm, tmp_fp7_gfmu, tmp_fp7_gflambda)) != eslOK) ESL_XEXCEPTION(eslESYS, "Unable to set HMM-only HMM for CM");
+    hmm = NULL;
   }
 
   /* Verify we're not configured */
@@ -322,6 +334,7 @@ cm_nonconfigured_MPIPack(CM_t *cm, char *errbuf, char *buf, int n, int *pos, MPI
   int   M      = cm->M;
   int   nnodes = cm->nodes;
   int   clen   = cm->clen;
+  int   has_hp7;
 
   /* Verify we're not configured */
   if((status = cm_nonconfigured_Verify(cm, errbuf)) != eslOK) ESL_XEXCEPTION(status, errbuf);
@@ -391,6 +404,15 @@ cm_nonconfigured_MPIPack(CM_t *cm, char *errbuf, char *buf, int n, int *pos, MPI
     if (MPI_Pack(&(cm->fp7_evparam[CM_p7_GFMU]),     1, MPI_FLOAT, buf, n, pos, comm)  != 0) ESL_XEXCEPTION(eslESYS, "pack failed");
     if (MPI_Pack(&(cm->fp7_evparam[CM_p7_GFLAMBDA]), 1, MPI_FLOAT, buf, n, pos, comm)  != 0) ESL_XEXCEPTION(eslESYS, "pack failed");
     if((status = p7_hmm_MPIPack(cm->fp7, buf, n, pos, comm)) != eslOK) ESL_XEXCEPTION(status, "pack failed");
+  }
+  /* the HMM-only HMM, if any (brief 26_0821-162) */
+  has_hp7 = (cm->hp7 != NULL) ? TRUE : FALSE;
+  if (MPI_Pack(&(cm->hp7_xform), 1, MPI_INT, buf, n, pos, comm)  != 0) ESL_XEXCEPTION(eslESYS, "pack failed");
+  if (MPI_Pack(&has_hp7,         1, MPI_INT, buf, n, pos, comm)  != 0) ESL_XEXCEPTION(eslESYS, "pack failed");
+  if (has_hp7) { 
+    if (MPI_Pack(&(cm->hp7_evparam[CM_p7_GFMU]),     1, MPI_FLOAT, buf, n, pos, comm)  != 0) ESL_XEXCEPTION(eslESYS, "pack failed");
+    if (MPI_Pack(&(cm->hp7_evparam[CM_p7_GFLAMBDA]), 1, MPI_FLOAT, buf, n, pos, comm)  != 0) ESL_XEXCEPTION(eslESYS, "pack failed");
+    if((status = p7_hmm_MPIPack(cm->hp7, buf, n, pos, comm)) != eslOK) ESL_XEXCEPTION(status, "pack failed");
   }
 
   if (*pos > n) ESL_XEXCEPTION(eslEMEM, "buffer overflow");
@@ -499,6 +521,15 @@ cm_nonconfigured_MPIPackSize(CM_t *cm, MPI_Comm comm, int *ret_n)
     n += 2*sz; /* tmp_fp7_gfmu and tmp_fp7_gflambda */
     if ((status = p7_hmm_MPIPackSize(cm->fp7, comm, &sz)) != eslOK) ESL_XEXCEPTION(status, "p7_hmm_MPIPackSize() failed");
     n += sz; /* cm->ap7A[i] p7 HMM */
+  }
+  /* the HMM-only HMM, if any (brief 26_0821-162) */
+  if (MPI_Pack_size(1, MPI_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  n += 2*sz; /* hp7_xform and has_hp7 */
+  if(cm->hp7 != NULL) { 
+    if (MPI_Pack_size(1, MPI_FLOAT,  comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+    n += 2*sz; 
+    if ((status = p7_hmm_MPIPackSize(cm->hp7, comm, &sz)) != eslOK) ESL_XEXCEPTION(status, "p7_hmm_MPIPackSize() failed");
+    n += sz;
   }
 
   *ret_n = n;

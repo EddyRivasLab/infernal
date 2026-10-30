@@ -137,6 +137,15 @@
 1  prep       build/t.pad.serial      @src/cmbuild@ --wnone --p7pad --p7pad-N 50 --p7pad-cpu 0 -F %T.SERIAL.CM%     !testsuite/tRNA.sto!
 1  prep       build/t.pad.cpu1        @src/cmbuild@ --wnone --p7pad --p7pad-N 50 --p7pad-cpu 1 -F %T.CPU1.CM%       !testsuite/tRNA.sto!
 
+# F1/F2/F3 P-value cutoff options smoke tests (cmbuild computes them only
+# with --fil-pcut; cmsearch reads them only with --use-fil-pcut, and falls
+# back to the default thresholds when the CM has none)
+1  prep       build/t.pcut.on         @src/cmbuild@ --wnone --fil-pcut --fil-pcut-N 50 -F %T.PCUT.CM%       !testsuite/tRNA.sto!
+1  prep       build/t.pcut.seed17     @src/cmbuild@ --wnone --fil-pcut --fil-pcut-N 50 --fil-pcut-seed 17 -F %T.PCUT17.CM% !testsuite/tRNA.sto!
+1  prep       build/t.pcut.no         @src/cmbuild@ --wnone --no-fil-pcut              -F %T.NOPCUT.CM%     !testsuite/tRNA.sto!
+2  exercise   search/t.pcut.use       @src/cmsearch@ --use-fil-pcut %T.PCUT.CM%   !testsuite/1k-tRNA.fa!
+2  exercise   search/t.pcut.absent    @src/cmsearch@ --use-fil-pcut %T.NOPCUT.CM% !testsuite/1k-tRNA.fa!
+
 # cmsearch exercises (CM must be calibrated)
 1  prep        copy/tC        cp !testsuite/tRNA.c.cm! %TRNA.C.CM%
 1  prep        copy/vC        cp !testsuite/Vault.c.cm! %VAULT.C.CM%
@@ -533,7 +542,7 @@
 1  exercise  build:se/rf         @src/cmbuild@ --hand -F %SE.CM% !testsuite/se.rf.sto! 
 1  exercise  build:se/null       @src/cmbuild@ -F --null !testsuite/at4.null! %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/pri        @src/cmbuild@ -F --prior !testsuite/plus1.prior! %SE.CM% !testsuite/se.sto! 
-1  exercise  build:se/rsearch    @src/cmbuild@ --rsearch !testsuite/RIBOSUM85-60.mat! --p7eent -F %SE.CM% !testsuite/se.1.sto!
+1  exercise  build:se/rsearch    @src/cmbuild@ --rsearch !testsuite/RIBOSUM85-60.mat! -F %SE.CM% !testsuite/se.1.sto!
 1  exercise  build:se/noss       @src/cmbuild@ --noss -F %SE.CM% !testsuite/se.sto!
 
 1  exercise  build:se/betaW      @src/cmbuild@ --betaW 1E-12 -F %SE.CM% !testsuite/se.sto! 
@@ -575,9 +584,9 @@
 
 # eweighting
 1  exercise  build:se/eent       @src/cmbuild@ --eent -F %SE.CM% !testsuite/se.sto! 
-1  exercise  build:vault/enon    @src/cmbuild@ --enone --p7eent -F %V.CM% !testsuite/Vault.sto! 
-1  exercise  build:vault/ere     @src/cmbuild@ --ere 0.8 --p7eent -F %V.CM% !testsuite/Vault.sto! 
-1  exercise  build:vault/eset    @src/cmbuild@ --eset 10.0 --p7eent -F %V.CM% !testsuite/Vault.sto! 
+1  exercise  build:vault/enon    @src/cmbuild@ --enone -F %V.CM% !testsuite/Vault.sto! 
+1  exercise  build:vault/ere     @src/cmbuild@ --ere 0.8 -F %V.CM% !testsuite/Vault.sto! 
+1  exercise  build:vault/eset    @src/cmbuild@ --eset 10.0 -F %V.CM% !testsuite/Vault.sto! 
 1  exercise  build:vault/ems     @src/cmbuild@ --eminseq 8.0 -F %V.CM% !testsuite/Vault.sto! 
 1  exercise  build:trna/esig     @src/cmbuild@ --esigma 3.0 -F %TRNA.CM% !testsuite/tRNA.sto! 
 1  exercise  build:pkhav/emx1    @src/cmbuild@ --emaxseq 5.0 -F %PKHAV.CM% !testsuite/PK-HAV.sto! 
@@ -587,7 +596,7 @@
 1  exercise  build:pkhav/efrcun  @src/cmbuild@ --ere 3.0 --p7ml --eforce -F %PKHAV.CM% !testsuite/PK-HAV.sto! 
 1  fail      build:pkhav/efnoere @src/cmbuild@ --p7ml --eforce -F %PKHAV.CM% !testsuite/PK-HAV.sto! 
 1  fail      build:pkhav/efemx   @src/cmbuild@ --ere 1.5 --p7ml --eforce --emaxseq 5.0 -F %PKHAV.CM% !testsuite/PK-HAV.sto! 
-1  fail      build:pkhav/v1ere   @src/cmbuild@ --v1p0 --ere 1.5 --p7eent -F %PKHAV.CM% !testsuite/PK-HAV.sto!
+1  fail      build:pkhav/v1ere   @src/cmbuild@ --v1p0 --ere 1.5 -F %PKHAV.CM% !testsuite/PK-HAV.sto!
 
 # --refine
 1  exercise  build:se/rfn        @src/cmbuild@ -F --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
@@ -633,10 +642,6 @@
 
 # filter p7 HMM construction
 1  exercise  build:se/p7ml         @src/cmbuild@ -F --p7ml %SE.CM% !testsuite/se.sto!
-1  exercise  build:vault/p7ere     @src/cmbuild@ -F --p7ere 0.45 %V.CM% !testsuite/Vault.sto!
-1  exercise  build:se/p7pri        @src/cmbuild@ -F --p7prior !testsuite/test.hprior! %SE.CM% !testsuite/se.sto!
-1  exercise  build:se/p7hpri       @src/cmbuild@ -F --p7hprior %SE.CM% !testsuite/se.sto!
-1  exercise  build:se/p7hemt       @src/cmbuild@ -F --p7hemit %SE.CM% !testsuite/se.sto!
 
 # filter p7 HMM calibration
 1  exercise  build:se/EmN          @src/cmbuild@ -F --EmN 100 %SE.CM% !testsuite/se.sto!

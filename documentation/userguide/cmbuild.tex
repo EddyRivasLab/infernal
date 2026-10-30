@@ -506,13 +506,8 @@ default entropy is 1.41 bits per position (roughly 0.59 bits of
 information, relative to uniform base composition). This threshold can
 be changed with the \prog{--ere <x>} option. Entropy weighting may
 be turned off entirely with the \prog{--enone} option.
-These options apply to the CM only: the model's filter HMM is entropy
-weighted separately, to its own target of 0.38 bits per position. When
-you use \prog{--enone}, \prog{--ere} or \prog{--eset}, you must also
-choose the filter HMM's weighting: \prog{--p7eent} keeps its own
-entropy weighting (the default), \prog{--p7ere <x>} sets its target,
-and \prog{--p7ml} makes the filter the CM's own maximum likelihood HMM,
-so it follows the CM's weighting.
+The model's filter HMM and HMM-only search HMM are derived from the CM
+(see below), so they follow the CM's weighting.
 
 
 \subsubsection{Architecture construction}
@@ -566,6 +561,25 @@ ROOT\_IL and ROOT\_IR states from the implicit parsetrees. Any
 transition counts in these states are \emph{ignored} by the
 construction procedure -- they are set to zero before the transition
 probability parameters for these states are determined.
+
+\subsubsection{Filter HMMs}
+
+\prog{cmsearch} and \prog{cmscan} use profile HMMs as filters, and as
+the search model in HMM-only mode. Two HMMs are derived from each CM,
+and every program that reads the CM derives the same two from it; the
+CM file stores only their E-value parameters. The \emph{filter HMM} is
+the CM's maximum likelihood profile HMM, which is as similar to the CM
+as a profile HMM can be (while ignoring the secondary structure). The
+\emph{HMM-only search HMM}, used with \prog{--hmmonly}, is the same
+HMM with its transition probabilities re-estimated under HMMER's DNA
+transition prior, after the CM's own transition prior is backed out
+of them. (For a model built with a non-default prior, the CM's prior
+is not backed out, and a model with zero basepairs uses its filter HMM
+for HMM-only search too.) \prog{cmbuild} calibrates both. Before
+version 1.2, \prog{cmbuild} built a separate filter HMM from the
+alignment and stored it in the CM file, which made the file about
+50\% larger. CM files in those older formats keep working: their
+stored filter HMM is used, as before, for both purposes.
 
 \subsubsection{Automatic E-value calibration}
 \label{section:cmbuild-autocal}

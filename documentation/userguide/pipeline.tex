@@ -1542,10 +1542,12 @@ see the HMMER3 guide for details on null2.
 
 Unlike in the standard pipeline, the filter thresholds used in the
 HMM-only pipeline are always the same, i.e. they are not dependent on
-the size of the search space. The default thresholds are the same
-values used in the HMMER3 pipeline: the SSV filter threshold is
-$0.02$, the local Viterbi threshold is $0.001$ and the local Forward
-threshold is $1e-5$. These can be changed with the \ccode{--hmmF1}
+the size of the search space. The default thresholds are the SSV
+filter threshold of $0.05$, the local Viterbi threshold of $0.003$ and
+the local Forward threshold of $1e-4$. (Before version 1.2 they were
+HMMER3's values, $0.02$, $0.001$ and $1e-5$; the looser 1.2 values
+find more remote homologs at about 1.4 times the running time of the
+HMM-only pipeline.) These can be changed with the \ccode{--hmmF1}
 (SSV), \ccode{--hmmF2} (Viterbi) and \ccode{--hmmF3} (Forward). The
 \ccode{--hmmmax} option runs the HMM-only pipeline in maximum
 sensitivity mode with the SSV P-value threshold set at 0.3 and the

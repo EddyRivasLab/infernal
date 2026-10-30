@@ -73,7 +73,10 @@ Infernal and HMMER3.
 Do not output a CM file. Instead, output the filter p7 HMM
 for each CM in
 .B <cmfile>
-in HMMER3 ASCII text format.
+in HMMER3 ASCII text format. For a CM in the current format, this is
+the HMM derived from the CM when it is read (its maximum likelihood p7
+HMM); for a CM in an older format, it is the filter HMM stored in the
+file.
 
 .TP
 .B --cp9ascm

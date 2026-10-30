@@ -193,9 +193,9 @@ static ESL_OPTIONS options[] = {
   /* Options for precise control of each stage of the HMM-only filter pipeline */
   /* name          type         default  env  range  toggles   reqs  incomp            help                                                         docgroup*/
   { "--hmmmax",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL, /* see ** above */ "in HMM-only mode, turn off all filters",  102 },
-  { "--hmmF1",      eslARG_REAL,  "0.02", NULL, "x>0",   NULL,  NULL, "--nohmmonly",    "HMM-only: stage 1 (SSV) P threshold",                          102 },
-  { "--hmmF2",      eslARG_REAL,  "1e-3", NULL, "x>0",   NULL,  NULL, "--nohmmonly",    "HMM-only: stage 2 (Vit) P threshold",                          102 },
-  { "--hmmF3",      eslARG_REAL,  "1e-5", NULL, "x>0",   NULL,  NULL, "--nohmmonly",    "HMM-only: stage 3 (Fwd) P threshold",                          102 },
+  { "--hmmF1",      eslARG_REAL,  "0.05", NULL, "x>0",   NULL,  NULL, "--nohmmonly",    "HMM-only: stage 1 (SSV) P threshold",                          102 },
+  { "--hmmF2",      eslARG_REAL,  "3e-3", NULL, "x>0",   NULL,  NULL, "--nohmmonly",    "HMM-only: stage 2 (Vit) P threshold",                          102 },
+  { "--hmmF3",      eslARG_REAL,  "1e-4", NULL, "x>0",   NULL,  NULL, "--nohmmonly",    "HMM-only: stage 3 (Fwd) P threshold",                          102 },
   { "--hmmnobias",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nohmmonly",    "HMM-only: turn off bias composition filter",                   102 },
   { "--hmmnonull2", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nohmmonly",    "HMM-only: turn off null2 score correction",                    102 },
   { "--nohmmonly",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--hmmmax",       "never run HMM-only mode (even for models w/o basepairs)",      102 },
@@ -250,9 +250,11 @@ static ESL_OPTIONS options[] = {
   /* per-CM F1/F2/F3 cutoff caps (CMH_FILTER_PVAL_CUTOFFS pcut). Search-time
    * caps on the CLEN-scaled tightening factor; effective_factor = min(logistic, cap).
    * Whole feature is opt-in via --use-fil-pcut; without that flag, F1F2F3CUT in
-   * the CM file is ignored. With --use-fil-pcut, default cap is 10 per stage
+   * the CM file is ignored. cmbuild writes F1F2F3CUT only with --fil-pcut
+   * (brief 26_0821-160); a CM without it searches with the default
+   * thresholds. With --use-fil-pcut, default cap is 10 per stage
    * (validated as the strict-improvement Pareto point on rmark4). */
-  { "--use-fil-pcut", eslARG_NONE, FALSE, NULL, NULL,    NULL, NULL, "--max,--nohmm", "enable per-CM F1/F2/F3 P-value override (reads F1F2F3CUT from CM file)", 106 },
+  { "--use-fil-pcut", eslARG_NONE, FALSE, NULL, NULL,    NULL, NULL, "--max,--nohmm", "use per-CM F1/F2/F3 P-value cutoffs (F1F2F3CUT, from cmbuild --fil-pcut)", 106 },
   { "--pcut-F1cap", eslARG_REAL, "10.0", NULL, "x>=1.0", NULL, "--use-fil-pcut", NULL, "with --use-fil-pcut: max F1 tightening factor",                          106 },
   { "--pcut-F2cap", eslARG_REAL, "10.0", NULL, "x>=1.0", NULL, "--use-fil-pcut", NULL, "with --use-fil-pcut: max F2 tightening factor",                          106 },
   { "--pcut-F3cap", eslARG_REAL, "10.0", NULL, "x>=1.0", NULL, "--use-fil-pcut", NULL, "with --use-fil-pcut: max F3 tightening factor",                          106 },
@@ -2726,6 +2728,17 @@ int
 setup_hmm_filter(ESL_GETOPTS *go, WORKER_INFO *info)
 { 
   int do_trunc_ends = (esl_opt_GetBoolean(go, "--notrunc") || esl_opt_GetBoolean(go, "--inttrunc")) ? FALSE : TRUE;
+  int nbps          = CMCountNodetype(info->cm, MATP_nd);
+
+  /* If this model will be searched in (local or glocal) HMM-only mode
+   * (this must match cm_pli_NewModel()'s choice of pipeline), its
+   * HMM-only search HMM, if it has one, replaces the filter HMM
+   * (brief 26_0821-162). */
+  if((! (esl_opt_GetBoolean(go, "--nohmmonly") || esl_opt_GetBoolean(go, "--max") || esl_opt_GetBoolean(go, "--nohmm"))) &&
+     (esl_opt_GetBoolean(go, "--hmmonly") || nbps == 0)) { 
+    cm_p7_UseHMMOnlyFilter(info->cm);
+  }
+  if(info->cm->fp7_evparam[CM_p7_LMMU] == CM_p7_EVPARAM_UNSET) ESL_FAIL(eslEINVAL, info->pli->errbuf, "no filter HMM E-value parameters were read for CM: %s", info->cm->name);
 
   /* set up the HMM filter-related structures */
   info->gm = p7_profile_Create (info->cm->fp7->M, info->cm->abc);

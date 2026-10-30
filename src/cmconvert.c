@@ -232,7 +232,7 @@ main(int argc, char **argv)
       }
 
       if      (esl_opt_GetBoolean(go, "-a")       == TRUE) cm_file_WriteASCII (ofp, fmtcode, cm);
-      else if (esl_opt_GetBoolean(go, "-b")       == TRUE) cm_file_WriteBinary(ofp, fmtcode, cm, NULL);
+      else if (esl_opt_GetBoolean(go, "-b")       == TRUE) cm_file_WriteBinary(ofp, fmtcode, cm, NULL, NULL);
       else if (esl_opt_GetBoolean(go, "-1")       == TRUE) cm_file_Write1p0ASCII(ofp, cm);
       else if (esl_opt_GetBoolean(go, "--mlhmm")  == TRUE) p7_hmmfile_WriteASCII(ofp, -1, cm->mlp7); /* -1 = write the current default format */
       else if (esl_opt_GetBoolean(go, "--fhmm")   == TRUE) p7_hmmfile_WriteASCII(ofp, -1, cm->fp7);  /* -1 = write the current default format */

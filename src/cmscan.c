@@ -210,9 +210,9 @@ static ESL_OPTIONS options[] = {
   /* Options for precise control of each stage of the HMM-only filter pipeline */
   /* name          type         default  env  range  toggles   reqs  incomp            help                                                         docgroup*/
   { "--hmmmax",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL, /* see ** above */ "in HMM-only mode, turn off all filters",  102 },
-  { "--hmmF1",      eslARG_REAL,  "0.02", NULL, "x>0",   NULL,  NULL, "--nohmmonly",    "in HMM-only mode, set stage 1 (SSV) P value threshold to <x>", 102 },
-  { "--hmmF2",      eslARG_REAL,  "1e-3", NULL, "x>0",   NULL,  NULL, "--nohmmonly",    "in HMM-only mode, set stage 2 (Vit) P value threshold to <x>", 102 },
-  { "--hmmF3",      eslARG_REAL,  "1e-5", NULL, "x>0",   NULL,  NULL, "--nohmmonly",    "in HMM-only mode, set stage 3 (Fwd) P value threshold to <x>", 102 },
+  { "--hmmF1",      eslARG_REAL,  "0.05", NULL, "x>0",   NULL,  NULL, "--nohmmonly",    "in HMM-only mode, set stage 1 (SSV) P value threshold to <x>", 102 },
+  { "--hmmF2",      eslARG_REAL,  "3e-3", NULL, "x>0",   NULL,  NULL, "--nohmmonly",    "in HMM-only mode, set stage 2 (Vit) P value threshold to <x>", 102 },
+  { "--hmmF3",      eslARG_REAL,  "1e-4", NULL, "x>0",   NULL,  NULL, "--nohmmonly",    "in HMM-only mode, set stage 3 (Fwd) P value threshold to <x>", 102 },
   { "--hmmnobias",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nohmmonly",    "in HMM-only mode, turn off the bias composition filter",       102 },
   { "--hmmnonull2", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--nohmmonly",    "in HMM-only mode, turn off the null2 score correction",        102 },
   { "--nohmmonly",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--hmmmax",      "never run HMM-only mode, not even for models with 0 basepairs", 102 },
@@ -269,9 +269,11 @@ static ESL_OPTIONS options[] = {
   /* per-CM F1/F2/F3 cutoff caps (CMH_FILTER_PVAL_CUTOFFS pcut). Search-time
    * caps on the CLEN-scaled tightening factor; effective_factor = min(logistic, cap).
    * Whole feature is opt-in via --use-fil-pcut; without that flag, F1F2F3CUT in
-   * the CM file is ignored. With --use-fil-pcut, default cap is 10 per stage
+   * the CM file is ignored. cmbuild writes F1F2F3CUT only with --fil-pcut
+   * (brief 26_0821-160); a CM without it searches with the default
+   * thresholds. With --use-fil-pcut, default cap is 10 per stage
    * (validated as the strict-improvement Pareto point on rmark4). */
-  { "--use-fil-pcut", eslARG_NONE, FALSE, NULL, NULL,    NULL, NULL, "--max,--nohmm", "enable per-CM F1/F2/F3 P-value override (reads F1F2F3CUT from CM file)", 106 },
+  { "--use-fil-pcut", eslARG_NONE, FALSE, NULL, NULL,    NULL, NULL, "--max,--nohmm", "use per-CM F1/F2/F3 P-value cutoffs (F1F2F3CUT, from cmbuild --fil-pcut)", 106 },
   { "--pcut-F1cap", eslARG_REAL, "10.0", NULL, "x>=1.0", NULL, "--use-fil-pcut", NULL, "with --use-fil-pcut: max F1 tightening factor",                          106 },
   { "--pcut-F2cap", eslARG_REAL, "10.0", NULL, "x>=1.0", NULL, "--use-fil-pcut", NULL, "with --use-fil-pcut: max F2 tightening factor",                          106 },
   { "--pcut-F3cap", eslARG_REAL, "10.0", NULL, "x>=1.0", NULL, "--use-fil-pcut", NULL, "with --use-fil-pcut: max F3 tightening factor",                          106 },
@@ -651,6 +653,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
 	/* open the target profile database */
 	if ((status = cm_file_Open(cfg->cmfile, CMDBENV, FALSE, &cmfp, NULL)) != eslOK) cm_Fail("Unexpected error %d in opening cm file %s.\n%s", status, cfg->cmfile, cmfp->errbuf);  
+	/* --hmmonly: read each model's HMM-only search HMM, not its filter HMM (brief 26_0821-162) */
+	if (esl_opt_GetBoolean(go, "--hmmonly") && (status = cm_file_UseHMMOnlyFilters(cmfp, errbuf)) != eslOK) cm_Fail(errbuf);
 #ifdef HMMER_THREADS
 	if (ncpus > 0) { /* if we are threaded, create locks to prevent multiple readers */
 	  if ((status = cm_file_CreateLock(cmfp)) != eslOK) cm_Fail("Unexpected error %d creating lock\n", status);
@@ -1368,6 +1372,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   if      (cmfp->do_gzip)          mpi_failure("Reading gzipped CM files is not supported");
   if      (cmfp->do_stdin)         mpi_failure("Reading CM files from stdin is not supported");
   if (! cmfp->is_pressed)          mpi_failure("Failed to open binary auxfiles for %s: use cmpress first\n",             cmfp->fname);
+  if (esl_opt_GetBoolean(go, "--hmmonly") && (status = cm_file_UseHMMOnlyFilters(cmfp, errbuf)) != eslOK) mpi_failure(errbuf);
   nmodels = (int64_t) cmfp->ssi->nprimary;
 
   hstatus = cm_file_Read(cmfp, FALSE, &abc, NULL);
@@ -1462,6 +1467,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	/* Open the target profile database */
 	status = cm_file_Open(cfg->cmfile, CMDBENV, FALSE, &cmfp, errbuf);
 	if (status != eslOK) mpi_failure("Unexpected error %d in opening cm file %s.\n%s", status, cfg->cmfile, errbuf);  
+	if (esl_opt_GetBoolean(go, "--hmmonly") && (status = cm_file_UseHMMOnlyFilters(cmfp, errbuf)) != eslOK) mpi_failure(errbuf);
 	pli->cmfp = cmfp;  /* for four-stage input, pipeline needs <cmfp> */
 	
 	cm_pli_NewSeq(pli, qsq, seq_idx);
@@ -1762,6 +1768,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   if      (cmfp->do_gzip)          mpi_failure("Reading gzipped CM files is not supported");
   if      (cmfp->do_stdin)         mpi_failure("Reading CM files from stdin is not supported");
   if (! cmfp->is_pressed)          mpi_failure("Failed to open binary auxfiles for %s: use cmpress first\n",             cmfp->fname);
+  if (esl_opt_GetBoolean(go, "--hmmonly") && (status = cm_file_UseHMMOnlyFilters(cmfp, errbuf)) != eslOK) mpi_failure(errbuf);
 
   hstatus = cm_file_Read(cmfp, FALSE, &abc, NULL);
   if(hstatus == eslEFORMAT)  mpi_failure("bad file format in CM file %s\n%s",           cfg->cmfile, cmfp->errbuf);
@@ -1849,6 +1856,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	/* Open the target profile database */
 	status = cm_file_Open(cfg->cmfile, CMDBENV, FALSE, &cmfp, errbuf);
 	if (status != eslOK) mpi_failure("Unexpected error %d in opening cm file %s.\n%s", status, cfg->cmfile, errbuf);  
+	if (esl_opt_GetBoolean(go, "--hmmonly") && (status = cm_file_UseHMMOnlyFilters(cmfp, errbuf)) != eslOK) mpi_failure(errbuf);
 	pli->cmfp = cmfp;  /* for four-stage input, pipeline needs <cmfp> */
 	
 	cm_pli_NewSeq(pli, qsq, seq_idx);

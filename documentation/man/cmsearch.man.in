@@ -517,11 +517,15 @@ sensitivity. It will have no effect if the database is larger than 20 Gb.
 
 .TP
 .B --hmmonly
-Only use the filter profile HMM for searches, do not use the CM.
+Only use a profile HMM for searches, do not use the CM.
+The profile HMM is derived from the CM: it is the CM's maximum
+likelihood profile HMM with its transition probabilities re-estimated
+under HMMER's prior (for a model with no basepairs, it is the filter
+HMM itself).
 Only filter stages F1 through F3 will be executed, using strict
-P-value thresholds (0.02 for F1, 0.001 for F2 and 0.00001 for F3).
+P-value thresholds (0.05 for F1, 0.003 for F2 and 0.0001 for F3).
 Additionally a bias composition filter is used after the F1 stage
-(with P=0.02 survival threshold).
+(with the same P-value threshold as F1).
 Any hit that survives all stages and has an HMM E-value or
 bit score above the reporting threshold will be output. 
 The user can change the HMM-only filter thresholds and options with

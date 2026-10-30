@@ -185,6 +185,9 @@ CreateCMShell(void)
   cm->pend         = DEFAULT_PEND;   /* summed probability of internal local end */
   cm->mlp7         = NULL;
   cm->fp7          = NULL;
+  cm->hp7          = NULL;
+  cm->hp7_xform    = CM_HP7_ML;
+  cm->hp7_is_active = FALSE;
   cm->p7_cm_nodepad   = NULL;
   cm->p7_cm_nodepad_M = 0;
   cm->F1_pcutoff   = 0.0f;
@@ -192,6 +195,7 @@ CreateCMShell(void)
   cm->F3_pcutoff   = 0.0f;
 
   for (z = 0; z < CM_p7_NEVPARAM; z++) cm->fp7_evparam[z]  = CM_p7_EVPARAM_UNSET;
+  for (z = 0; z < CM_p7_NEVPARAM; z++) cm->hp7_evparam[z]  = CM_p7_EVPARAM_UNSET;
 
   cm->ga       = 0.;  /* only valid if cm->flags & CMH_GA */
   cm->tc       = 0.;  /* only valid if cm->flags & CMH_TC */
@@ -553,6 +557,10 @@ FreeCM(CM_t *cm)
   if(cm->fp7  != NULL) {
     p7_hmm_Destroy(cm->fp7);
     cm->fp7  = NULL;
+  }
+  if(cm->hp7  != NULL) {
+    p7_hmm_Destroy(cm->hp7);
+    cm->hp7  = NULL;
   }
   if(cm->p7_cm_nodepad != NULL) { free(cm->p7_cm_nodepad); cm->p7_cm_nodepad = NULL; }
   if(cm->p7_wv_nodepad != NULL) { free(cm->p7_wv_nodepad); cm->p7_wv_nodepad = NULL; }
@@ -3419,6 +3427,12 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
     if((new->fp7  = p7_hmm_Clone(cm->fp7))  == NULL) { status = eslEMEM; goto ERROR; }
     esl_vec_FCopy(cm->fp7_evparam, CM_p7_NEVPARAM, new->fp7_evparam);
   }
+  if(cm->hp7  != NULL) {
+    if((new->hp7  = p7_hmm_Clone(cm->hp7))  == NULL) { status = eslEMEM; goto ERROR; }
+    esl_vec_FCopy(cm->hp7_evparam, CM_p7_NEVPARAM, new->hp7_evparam);
+  }
+  new->hp7_xform     = cm->hp7_xform;
+  new->hp7_is_active = cm->hp7_is_active;
   if(cm->p7_cm_nodepad != NULL) {
     ESL_ALLOC(new->p7_cm_nodepad, sizeof(int) * (cm->p7_cm_nodepad_M + 1));
     memcpy(new->p7_cm_nodepad, cm->p7_cm_nodepad, sizeof(int) * (cm->p7_cm_nodepad_M + 1));
@@ -3594,6 +3608,7 @@ cm_Sizeof(CM_t *cm)
   /* p7 HMMs */
   if(cm->mlp7 != NULL) bytes += (1000000. * cm_p7_hmm_Sizeof(cm->mlp7));
   if(cm->fp7  != NULL) bytes += (1000000. * cm_p7_hmm_Sizeof(cm->fp7));
+  if(cm->hp7  != NULL) bytes += (1000000. * cm_p7_hmm_Sizeof(cm->hp7));
 
   /* CM HMM banded DP matrices */
   if(cm->hb_mx     != NULL) bytes += (1000000. * cm->hb_mx->size_Mb);
