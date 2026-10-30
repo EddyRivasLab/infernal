@@ -487,7 +487,7 @@ main(int argc, char **argv)
       cm_AppendComlog(cm, go->argc, go->argv, FALSE, 0); /* we don't check return status, it should be fine, but if not, we don't want to die now... */
 
       if(cfg.cmfp->is_binary) { 
-	if ((status = cm_file_WriteBinary(outfp, -1, cm, NULL)) != eslOK) ESL_FAIL(status, errbuf, "binary CM save failed");
+	if ((status = cm_file_WriteBinary(outfp, -1, cm, NULL, NULL)) != eslOK) ESL_FAIL(status, errbuf, "binary CM save failed");
       }
       else { 
 	if ((status = cm_file_WriteASCII(outfp, -1, cm)) != eslOK) ESL_FAIL(status, errbuf, "CM save failed");
