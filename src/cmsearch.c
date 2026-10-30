@@ -2726,6 +2726,17 @@ int
 setup_hmm_filter(ESL_GETOPTS *go, WORKER_INFO *info)
 { 
   int do_trunc_ends = (esl_opt_GetBoolean(go, "--notrunc") || esl_opt_GetBoolean(go, "--inttrunc")) ? FALSE : TRUE;
+  int nbps          = CMCountNodetype(info->cm, MATP_nd);
+
+  /* If this model will be searched in (local or glocal) HMM-only mode
+   * (this must match cm_pli_NewModel()'s choice of pipeline), its
+   * HMM-only search HMM, if it has one, replaces the filter HMM
+   * (brief 26_0821-162). */
+  if((! (esl_opt_GetBoolean(go, "--nohmmonly") || esl_opt_GetBoolean(go, "--max") || esl_opt_GetBoolean(go, "--nohmm"))) &&
+     (esl_opt_GetBoolean(go, "--hmmonly") || nbps == 0)) { 
+    cm_p7_UseHMMOnlyFilter(info->cm);
+  }
+  if(info->cm->fp7_evparam[CM_p7_LMMU] == CM_p7_EVPARAM_UNSET) ESL_FAIL(eslEINVAL, info->pli->errbuf, "no filter HMM E-value parameters were read for CM: %s", info->cm->name);
 
   /* set up the HMM filter-related structures */
   info->gm = p7_profile_Create (info->cm->fp7->M, info->cm->abc);

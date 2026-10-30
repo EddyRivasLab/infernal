@@ -651,6 +651,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
 	/* open the target profile database */
 	if ((status = cm_file_Open(cfg->cmfile, CMDBENV, FALSE, &cmfp, NULL)) != eslOK) cm_Fail("Unexpected error %d in opening cm file %s.\n%s", status, cfg->cmfile, cmfp->errbuf);  
+	/* --hmmonly: read each model's HMM-only search HMM, not its filter HMM (brief 26_0821-162) */
+	if (esl_opt_GetBoolean(go, "--hmmonly") && (status = cm_file_UseHMMOnlyFilters(cmfp, errbuf)) != eslOK) cm_Fail(errbuf);
 #ifdef HMMER_THREADS
 	if (ncpus > 0) { /* if we are threaded, create locks to prevent multiple readers */
 	  if ((status = cm_file_CreateLock(cmfp)) != eslOK) cm_Fail("Unexpected error %d creating lock\n", status);
@@ -1368,6 +1370,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   if      (cmfp->do_gzip)          mpi_failure("Reading gzipped CM files is not supported");
   if      (cmfp->do_stdin)         mpi_failure("Reading CM files from stdin is not supported");
   if (! cmfp->is_pressed)          mpi_failure("Failed to open binary auxfiles for %s: use cmpress first\n",             cmfp->fname);
+  if (esl_opt_GetBoolean(go, "--hmmonly") && (status = cm_file_UseHMMOnlyFilters(cmfp, errbuf)) != eslOK) mpi_failure(errbuf);
   nmodels = (int64_t) cmfp->ssi->nprimary;
 
   hstatus = cm_file_Read(cmfp, FALSE, &abc, NULL);
@@ -1462,6 +1465,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	/* Open the target profile database */
 	status = cm_file_Open(cfg->cmfile, CMDBENV, FALSE, &cmfp, errbuf);
 	if (status != eslOK) mpi_failure("Unexpected error %d in opening cm file %s.\n%s", status, cfg->cmfile, errbuf);  
+	if (esl_opt_GetBoolean(go, "--hmmonly") && (status = cm_file_UseHMMOnlyFilters(cmfp, errbuf)) != eslOK) mpi_failure(errbuf);
 	pli->cmfp = cmfp;  /* for four-stage input, pipeline needs <cmfp> */
 	
 	cm_pli_NewSeq(pli, qsq, seq_idx);
@@ -1762,6 +1766,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   if      (cmfp->do_gzip)          mpi_failure("Reading gzipped CM files is not supported");
   if      (cmfp->do_stdin)         mpi_failure("Reading CM files from stdin is not supported");
   if (! cmfp->is_pressed)          mpi_failure("Failed to open binary auxfiles for %s: use cmpress first\n",             cmfp->fname);
+  if (esl_opt_GetBoolean(go, "--hmmonly") && (status = cm_file_UseHMMOnlyFilters(cmfp, errbuf)) != eslOK) mpi_failure(errbuf);
 
   hstatus = cm_file_Read(cmfp, FALSE, &abc, NULL);
   if(hstatus == eslEFORMAT)  mpi_failure("bad file format in CM file %s\n%s",           cfg->cmfile, cmfp->errbuf);
@@ -1849,6 +1854,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	/* Open the target profile database */
 	status = cm_file_Open(cfg->cmfile, CMDBENV, FALSE, &cmfp, errbuf);
 	if (status != eslOK) mpi_failure("Unexpected error %d in opening cm file %s.\n%s", status, cfg->cmfile, errbuf);  
+	if (esl_opt_GetBoolean(go, "--hmmonly") && (status = cm_file_UseHMMOnlyFilters(cmfp, errbuf)) != eslOK) mpi_failure(errbuf);
 	pli->cmfp = cmfp;  /* for four-stage input, pipeline needs <cmfp> */
 	
 	cm_pli_NewSeq(pli, qsq, seq_idx);
