@@ -274,7 +274,6 @@ struct cfg_s {
  * cmbuild builds one model at a time, so build_and_calibrate_p7_filter()
  * and output_result() read this for the same model.
  */
-#define EFORCE_MAX_NEFF 1e6 /* --eforce's eff seq # ceiling; this high, the prior is effectively gone (brief 26_0824-088) */
 enum ere_outcome_e {
   ERE_NONE        = 0,  /* not --eent */
   ERE_MET         = 1,  /* target reached with eff seq # <= the usual cap (nseq or --emaxseq) */

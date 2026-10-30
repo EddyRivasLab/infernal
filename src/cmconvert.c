@@ -24,6 +24,12 @@
 
 #define OUTOPTS "-a,-b,-1,--mlhmm,--fhmm,--cp9ascm"
 
+#if defined (HMMER_THREADS)
+#define CPUOPTS     NULL
+#else
+#define CPUOPTS     "--cpu"
+#endif
+
 static ESL_OPTIONS options[] = {
   /* name               type  default   env  range   toggles        reqs      incomp  help                                                         docgroup */
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,       NULL, "show brief help and exit",                                         0 },
@@ -35,8 +41,11 @@ static ESL_OPTIONS options[] = {
   { "--mlhmm",   eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "output maximum likelihood HMM for CM in HMMER3 format",            1 },
   { "--fhmm",    eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "output filter HMM for CM in HMMER3 format",                        1 },
   { "--cp9ascm", eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "output CM's ML CP9 HMM as an unstructured (MATL-chain) CM", 1 },
-  { "--outfmt",  eslARG_STRING, NULL,  NULL, NULL,      NULL,       NULL,"-1,--mlhmm,--fhmm,--cp9ascm", "output format: 1/a, 1/b, or 1/d (default: 1/d)",            1 },
+  { "--outfmt",  eslARG_STRING, NULL,  NULL, NULL,      NULL,       NULL,"-1,--mlhmm,--fhmm,--cp9ascm", "output format 1/a, 1/b or 1/d (default: 1/e or the input's)", 1 },
   { "--dropknots",eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,       NULL, "allow dropping pseudoknots the output format can't store", 1 },
+  { "--upgrade", eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,"-1,--mlhmm,--fhmm,--cp9ascm,--outfmt", "convert older-format CMs to the current format", 1 },
+  { "--prior",   eslARG_INFILE, NULL,  NULL, NULL,      NULL,"--upgrade",       NULL, "with --upgrade: CMs were built with prior file <f>",      1 },
+  { "--cpu",     eslARG_INT,  CMNCPU,"INFERNAL_NCPU","n>=0",NULL,       NULL,  CPUOPTS, "with --upgrade: number of CPUs for calibration",  1 },
   /* options for controlling p7 per-node band pad computation */
   { "--p7pad",      eslARG_NONE,    FALSE, NULL, NULL,    NULL,  NULL,    "--no-p7pad", "compute p7 per-node band pads (O(M^2) memory)",   2 },
   { "--no-p7pad",   eslARG_NONE,    FALSE, NULL, NULL,    NULL,  NULL,       "--p7pad", "don't compute p7 per-node band pads (default)",   2 },
@@ -49,7 +58,9 @@ static ESL_OPTIONS options[] = {
 static char usage[]  = "[-options] <cmfile>";
 static char banner[] = "convert CM file to a different Infernal format";
 
-static int  configure_model(CM_t *cm, char *errbuf);
+static int  configure_model(CM_t *cm, char *errbuf, int set_filter);
+static int  upgrade_model(const ESL_GETOPTS *go, CM_t *cm, int format, const Prior_t *user_pri, char *errbuf);
+static int  comlog_cmbuild_option(const char *comlog, const char *opt, char **opt_arg);
 
 int
 main(int argc, char **argv)
@@ -60,9 +71,10 @@ main(int argc, char **argv)
   CM_FILE       *cmfp    = NULL;
   CM_t          *cm      = NULL;
   FILE          *ofp     = NULL;
-  int            fmtcode = -1;	/* -1 = write the current default format (INFERNAL1/d); set by --outfmt */
+  int            fmtcode = -1;	/* -1 = cm_file_DefaultFormat(): INFERNAL1/e, or an older format for a CM with a stored filter HMM; set by --outfmt */
   int            status;
   char           errbuf[eslERRBUFSIZE];
+  Prior_t       *user_pri = NULL;   /* --prior <f>: the prior the CMs were built with, for --upgrade */
 
   go = esl_getopts_Create(options);
   if (esl_opt_ProcessCmdline(go, argc, argv) != eslOK ||
@@ -99,7 +111,9 @@ main(int argc, char **argv)
   cmfile = esl_opt_GetArg(go, 1);
 
   /* --outfmt <s>: choose the 1.x output format for -a/-b. Default (NULL) writes
-   * the current default format (fmtcode -1 = INFERNAL1/d). 1/a and 1/b predate the
+   * the default format (fmtcode -1, cm_file_DefaultFormat(): INFERNAL1/e, or for
+   * a CM read with a stored filter HMM, its own older format family, unless
+   * --upgrade). 1/a and 1/b predate the
    * consensus pseudoknot annotation, so writing to them drops pknots (handled below).
    * 1/c is a retired ambiguous dev format and cannot be selected.
    */
@@ -117,6 +131,14 @@ main(int argc, char **argv)
   if      (status == eslENOTFOUND) cm_Fail("File existence/permissions problem in trying to open CM file %s.\n%s\n", cmfile, errbuf);
   else if (status == eslEFORMAT)   cm_Fail("File format problem in trying to open CM file %s.\n%s\n",                cmfile, errbuf);
   else if (status != eslOK)        cm_Fail("Unexpected error %d in opening CM file %s.\n%s\n",                       status, cmfile, errbuf);
+
+  /* --prior <f> (with --upgrade) */
+  if (esl_opt_IsOn(go, "--prior")) {
+    FILE *pfp;
+    if ((pfp = fopen(esl_opt_GetString(go, "--prior"), "r")) == NULL) cm_Fail("Failed to open prior file %s\n", esl_opt_GetString(go, "--prior"));
+    if ((user_pri = Prior_Read(pfp)) == NULL)                          cm_Fail("Failed to parse prior file %s\n", esl_opt_GetString(go, "--prior"));
+    fclose(pfp);
+  }
 
   /* open output file for writing, if nec */
   if ( esl_opt_IsOn(go, "-o") ) {
@@ -140,7 +162,7 @@ main(int argc, char **argv)
           drops_pknot = TRUE;
           if (! esl_opt_GetBoolean(go, "--dropknots"))
             cm_Fail("CM %s has consensus pseudoknot annotation, which the INFERNAL1/%s format cannot store.\n"
-                    "Use --dropknots to convert it anyway without that annotation, or omit --outfmt to write the default INFERNAL1/d format.",
+                    "Use --dropknots to convert it anyway without that annotation, or omit --outfmt.",
                     cm->name, (fmtcode == CM_FILE_1a) ? "a" : "b");
         }
         else if (esl_opt_GetBoolean(go, "-1")) {
@@ -151,6 +173,8 @@ main(int argc, char **argv)
         }
       }
 
+      int   do_upgrade  = (esl_opt_GetBoolean(go, "--upgrade") && ! (cm->flags & CMH_FP7_DERIVED)) ? TRUE : FALSE; /* 1/e models are already current */
+
       if(cmfp->format == CM_FILE_1 || esl_opt_GetBoolean(go, "--mlhmm") || esl_opt_GetBoolean(go, "--cp9ascm")) {
 	/* if format == CM_FILE_1, we need to calculate QDBs
 	 * (cm->dmin, cm->dmax), cm->W, cm->consensus. These are
@@ -159,8 +183,19 @@ main(int argc, char **argv)
 	 * in configure_model(). If --cp9ascm, we need cm->cp9 to be
 	 * built (globally, i.e. without CM_CONFIG_LOCAL), which
 	 * configure_model() also does as a side effect of cm_Configure().
+	 * With --upgrade, the filter HMMs are derived and calibrated
+	 * below instead.
 	 */
-	if ((status = configure_model(cm, errbuf)) != eslOK) cm_Fail(errbuf);
+	if ((status = configure_model(cm, errbuf, ! do_upgrade)) != eslOK) cm_Fail(errbuf);
+      }
+
+      /* --upgrade: replace the filter HMM stored in an older-format CM
+       * with the derived filter and HMM-only HMMs, calibrated as cmbuild
+       * would, so the CM is written in the current format (brief
+       * 26_0821-165). Before the pads, so that --p7pad computes them
+       * for the derived filter HMM. */
+      if (do_upgrade) {
+        if ((status = upgrade_model(go, cm, cmfp->format, user_pri, errbuf)) != eslOK) cm_Fail(errbuf);
       }
 
       /* Compute p7 per-node band pads and embed in CM, only with --p7pad and
@@ -248,6 +283,7 @@ main(int argc, char **argv)
   cm_file_Close(cmfp);
 
   if(esl_opt_IsOn(go, "-o")) fclose(ofp);
+  if(user_pri != NULL) Prior_Destroy(user_pri);
   esl_alphabet_Destroy(abc);
   esl_getopts_Destroy(go);
   return 0;
@@ -261,7 +297,7 @@ main(int argc, char **argv)
  * v1.0-->v1.0.2 cm files.
  */
 static int
-configure_model(CM_t *cm, char *errbuf)
+configure_model(CM_t *cm, char *errbuf, int set_filter)
 {
   int status;
   int lmsvL, lvitL, lfwdL, gfwdL;
@@ -273,6 +309,7 @@ configure_model(CM_t *cm, char *errbuf)
   cm->config_opts |= CM_CONFIG_QDB;
   if ((status = cm_Configure(cm, errbuf, -1)) != eslOK) return status;
   if ((status = cm_SetConsensus(cm, cm->cmcons, NULL)) != eslOK) ESL_FAIL(status, errbuf, "Failed to calculate consensus sequence");
+  if (! set_filter) return eslOK;
 
   /* We'll define the filter HMM as the ML p7 HMM because that's the
    * only option available (by default, in cmbuild, a filter HMM gets
@@ -303,4 +340,146 @@ configure_model(CM_t *cm, char *errbuf)
   if((status = cm_SetFilterHMM(cm, cm->mlp7, fil_gfmu, fil_gflambda)) != eslOK) ESL_FAIL(status, errbuf, "Unable to set the HMM filter for the CM");
 
   return eslOK;
+}
+
+
+/* upgrade_model()
+ * Incept:    EPN, Fri Oct 30 2026 (w/Claude)
+ *
+ * Purpose:   cmconvert --upgrade (brief 26_0821-165): give <cm>, read
+ *            from a CM file in older format <format>, the filter HMMs
+ *            that cmbuild gives a CM now, so that it is written in the
+ *            current format: discard its stored filter HMM, derive the
+ *            filter HMM (the CM's ML p7 HMM) and the HMM-only search
+ *            HMM from the CM, and calibrate both, with
+ *            cm_p7_CalibrateDerivedFilterHMMs() and cmbuild's default
+ *            calibration settings.
+ *
+ *            The HMM-only HMM depends on how the CM was built, which a
+ *            CM file doesn't record except in its COM lines. Like
+ *            cmbuild (its determine_hp7_xform() and
+ *            determine_pretend_cm_is_hmm()):
+ *            - The CM's transition prior: <user_pri> (cmconvert
+ *              --prior) if given; else the v0.56-v1.0.2 prior for a
+ *              v1.0 format file, or if the cmbuild COM line has --p56
+ *              or --v1p0; else the default prior. If the COM line has
+ *              --prior <f> and <user_pri> isn't given, the prior is
+ *              unknown and the HMM-only HMM is the filter HMM (HP7 ml),
+ *              with a note on stderr. (A recorded path isn't trusted to
+ *              be readable, or to be the same file.)
+ *            - A CM with no basepairs built with the default zero-
+ *              basepair (HMMER-like) prior, i.e. not from a v1.0 file
+ *              and without --p56/--v1p0/--noh3pri/--prior on its
+ *              cmbuild COM line, nor cmconvert --prior: HP7 ml.
+ *            - The filter HMMs' glocal Forward E-value parameters are
+ *              simulated, not predicted, where cmbuild would simulate
+ *              them: a --prior build, --eset 0, or an EFFN at
+ *              EFORCE_MAX_NEFF (a missed --eforce target).
+ *            The CM's own E-value parameters (ECM lines, from
+ *            cmcalibrate) belong to the CM and are kept. The per-CM
+ *            filter P-value cutoffs (cmbuild --fil-pcut) belong to the
+ *            old filter HMM and are dropped. P7 band pads (P7NODEPAD) are
+ *            kept unless --p7pad recomputes them.
+ *
+ * Returns:   eslOK on success, errbuf filled on failure.
+ */
+static int
+upgrade_model(const ESL_GETOPTS *go, CM_t *cm, int format, const Prior_t *user_pri, char *errbuf)
+{
+  int            status;
+  Prior_t       *pri       = NULL;
+  const Prior_t *pri2use   = NULL;
+  char          *eset_arg  = NULL;
+  int            com_prior = comlog_cmbuild_option(cm->comlog, "--prior", NULL);
+  int            is_v1p0   = (format == CM_FILE_1 || comlog_cmbuild_option(cm->comlog, "--p56", NULL) || comlog_cmbuild_option(cm->comlog, "--v1p0", NULL)) ? TRUE : FALSE;
+  int            pretend_cm_is_hmm;
+  int            do_sim;
+  int            ncpus     = 0;
+  CM_P7_CALOPTS  co;
+
+  pretend_cm_is_hmm = (CMCountNodetype(cm, MATP_nd) == 0 && user_pri == NULL && ! com_prior && ! is_v1p0 &&
+                       ! comlog_cmbuild_option(cm->comlog, "--noh3pri", NULL)) ? TRUE : FALSE;
+
+  if      (user_pri != NULL) pri2use = user_pri;
+  else if (com_prior)        pri2use = NULL;  /* unknown prior file */
+  else if (is_v1p0)          pri2use = pri = Prior_Default_v0p56_through_v1p02();
+  else                       pri2use = pri = Prior_Default(FALSE);
+
+  if      (pretend_cm_is_hmm)                                      cm->hp7_xform = CM_HP7_ML;
+  else if (pri2use != NULL && Prior_HMMOnlyAlpha(pri2use, cm->hp7_alpha)) cm->hp7_xform = CM_HP7_H3PRI;
+  else {
+    cm->hp7_xform = CM_HP7_ML;
+    if (pri2use == NULL)
+      fprintf(stderr, "# cmconvert: CM %s was built with cmbuild --prior; without cmconvert --prior <f> for that prior,\n"
+              "#   its HMM-only search HMM is its filter HMM (HP7 ml).\n", cm->name);
+  }
+  if (cm->hp7_xform == CM_HP7_ML) cm_p7_DefaultHMMOnlyAlpha(cm->hp7_alpha); /* unused; keep the in-memory default */
+
+  do_sim = (user_pri != NULL || com_prior || cm->eff_nseq >= EFORCE_MAX_NEFF) ? TRUE : FALSE;
+  if (comlog_cmbuild_option(cm->comlog, "--eset", &eset_arg) && eset_arg != NULL && atof(eset_arg) == 0.) do_sim = TRUE;
+  if (eset_arg != NULL) free(eset_arg);
+
+  /* the per-CM filter P-value cutoffs were calibrated for the old filter HMM */
+  cm->flags &= ~CMH_FILTER_PVAL_CUTOFFS;
+
+  cm_p7_CalOptsSetDefaults(&co, cm->clen, do_sim);
+#ifdef HMMER_THREADS
+  ncpus = ESL_MIN(esl_opt_GetInteger(go, "--cpu"), esl_threads_GetCPUCount());
+#endif
+  if ((status = cm_p7_CalibrateDerivedFilterHMMs(cm, &co, ncpus, errbuf)) != eslOK) goto ERROR;
+
+  if (pri != NULL) Prior_Destroy(pri);
+  return eslOK;
+
+ ERROR:
+  if (pri != NULL) Prior_Destroy(pri);
+  return status;
+}
+
+/* comlog_cmbuild_option()
+ * Incept:    EPN, Fri Oct 30 2026 (w/Claude)
+ *
+ * Purpose:   Return TRUE if the first cmbuild command in a CM's
+ *            command log <comlog> (its COM lines) has option <opt>,
+ *            and if <opt_arg> isn't NULL, return the token after it
+ *            in <*opt_arg> (newly allocated; NULL if none). Return
+ *            FALSE if <comlog> is NULL or has no cmbuild command.
+ *            Used by cmconvert --upgrade (brief 26_0821-165).
+ */
+static int
+comlog_cmbuild_option(const char *comlog, const char *opt, char **opt_arg)
+{
+  char *lines = NULL;
+  char *line, *lp;
+  char *tok,  *tp;
+  char *prog;
+  int   found = FALSE;
+  int   done  = FALSE;
+
+  if (opt_arg != NULL) *opt_arg = NULL;
+  if (comlog == NULL) return FALSE;
+  if (esl_strdup(comlog, -1, &lines) != eslOK) return FALSE;
+
+  for (line = strtok_r(lines, "\n", &lp); line != NULL && ! done; line = strtok_r(NULL, "\n", &lp)) {
+    /* the program is the first token, possibly with a path */
+    if ((tok = strtok_r(line, " \t", &tp)) == NULL) continue;
+    prog = strrchr(tok, '/');
+    prog = (prog == NULL) ? tok : prog+1;
+    if (strcmp(prog, "cmbuild") != 0) continue;
+    done = TRUE; /* only the first cmbuild command */
+    while ((tok = strtok_r(NULL, " \t", &tp)) != NULL) {
+      if (strcmp(tok, opt) == 0) {
+        found = TRUE;
+        if (opt_arg != NULL && (tok = strtok_r(NULL, " \t", &tp)) != NULL) esl_strdup(tok, -1, opt_arg);
+        break;
+      }
+      if (strncmp(tok, opt, strlen(opt)) == 0 && tok[strlen(opt)] == '=') { /* --opt=arg */
+        found = TRUE;
+        if (opt_arg != NULL) esl_strdup(tok + strlen(opt) + 1, -1, opt_arg);
+        break;
+      }
+    }
+  }
+  free(lines);
+  return found;
 }

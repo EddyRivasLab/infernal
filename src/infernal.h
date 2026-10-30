@@ -2151,6 +2151,13 @@ typedef struct cm_s {
 #define CMH_EXPTAIL_NONULL3_STATS (1<<27) /* null3-off exp tail stats (cm->expA_nonull3) are valid */
 #define CMH_FP7_DERIVED         (1<<28) /* cm->fp7 (and cm->hp7) were derived from the CM, not read from a stored filter HMM block */
 
+/* cmbuild --eforce's effective sequence number ceiling; this high, the
+ * prior is effectively gone (brief 26_0824-088). A CM with this EFFN
+ * missed its --eforce target, and its filter HMM E-value parameters are
+ * simulated, not predicted (brief 26_0824-089; also cmconvert --upgrade,
+ * brief 26_0821-165). */
+#define EFORCE_MAX_NEFF 1e6
+
 /* Settings for calibrating a CM's derived filter and HMM-only HMMs
  * with cm_p7_Calibrate(): see cm_p7_CalOptsSetDefaults() and
  * cm_p7_CalibrateDerivedFilterHMMs(). (brief 26_0821-165) */
