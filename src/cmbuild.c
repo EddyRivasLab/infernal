@@ -723,8 +723,8 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
       esl_printf("\nAlternative relative sequence weighting strategies:\n");             esl_opt_DisplayHelp(stdout, go, 4, 2, 100);
       esl_printf("\nAlternative effective sequence weighting strategies:\n");            esl_opt_DisplayHelp(stdout, go, 5, 2, 100);
 
-      esl_printf("\nOptions for HMM filter construction%s:\n", do_dev ? "" : devnote);   esl_opt_DisplayHelp(stdout, go, 6, 2, 100);
-      if (do_dev) esl_opt_DisplayHelp(stdout, go, 106, 2, 100);
+      /* the only HMM filter construction option left is the --p7ml no-op (brief 26_0821-162) */
+      if (do_dev) { esl_printf("\nOptions for HMM filter construction:\n");  esl_opt_DisplayHelp(stdout, go, 106, 2, 100); }
 
       esl_printf("\nOptions for HMM filter calibration%s:\n", do_dev ? "" : devnote);    esl_opt_DisplayHelp(stdout, go, 7, 2, 100);
       if (do_dev) esl_opt_DisplayHelp(stdout, go, 107, 2, 100);

@@ -1400,8 +1400,8 @@ cm_SetHMMOnlyHMM(CM_t *cm, P7_HMM *hmm, double gfmu, double gflambda)
 
 /* HMM-only search HMM transforms (cm_p7_HMMOnlyTransform()).
  *
- * Ported from the brief 26_0821-143 prototype (search modes a1 and a2,
- * fp7why-impl 2b1698c0/4302843c), unchanged in arithmetic, so that the
+ * Ported from the brief 26_0821-143 prototype (its search modes a1 and
+ * a2), unchanged in arithmetic, so that the
  * landed HMMs are the ones the R0b decision was measured on (briefs
  * 26_0821-143/26_0821-146/26_0821-158).
  *
