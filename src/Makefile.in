@@ -196,7 +196,8 @@ UTESTS =\
 	hmmband_utest\
 
 ITESTS =\
-	itest_brute
+	itest_brute\
+	itest_hmmread
 
 REGTESTS =\
 	cm_fast_calibrate_regression

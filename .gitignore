@@ -46,6 +46,7 @@ src/test_phase4_predict
 src/test_wviterbi
 src/*_utest
 src/itest_brute
+src/itest_hmmread
 src/cm_fast_calibrate_regression
 src/search.tbl
 src/save_infernal.h
