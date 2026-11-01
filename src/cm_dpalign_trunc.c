@@ -3548,6 +3548,12 @@ cm_CheckptTrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   {
     int cur_blk = -1, blk_lo = 0, blk_hi = -1;
     tr = CreateParsetree(100);
+    /* brief 26_0821-166: the truncation fields the stock cm_tr_alignT_hb() sets. Without
+     * them ParsetreeScore() scored this parse as a standard one (local begin score, no
+     * truncation penalty), so it could exceed the Inside total. */
+    tr->is_std    = FALSE;
+    tr->pass_idx  = pass_idx;
+    tr->trpenalty = cx.g_pty[b];
     InsertTraceNodewithMode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0, mode_ckpt);
     int i = 1, j = L, d = L, y; char mode = mode_ckpt, nxtmode = mode_ckpt;
     v = 0;
@@ -4711,6 +4717,9 @@ cm_CheckptTrCYKAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_l
   if ((status = ckpt_trcyk_traceback(cm, errbuf, L, mode, b, JCY, LCY, RCY, TCY,
                                      cx.jmin, cx.jmax,
                                      ckpt_trcyk_ysh_fetch, &fctx, &tr)) != eslOK) goto ERROR;
+  /* brief 26_0821-166: truncated begin penalty and pass, as cm_tr_alignT_hb() sets them */
+  tr->pass_idx  = pass_idx;
+  tr->trpenalty = cx.g_pty[b];
 
   { int w; for (w = fctx.blk_lo; w <= fctx.blk_hi; w++) {
       if (tJa[w]) { trckpt_deck_free(&cx, w, tJa[w]); tJa[w] = NULL; }
@@ -5559,6 +5568,7 @@ trckpt_tr_optacc_traceback(CM_t *cm, char *errbuf, int L, char preset_mode, int 
   ESL_STACK *pda_i = NULL, *pda_c = NULL;
   int v, i, j, d, k, y, yoffset, bifparent;
   int jp_v = 0, dp_v = 0;
+  int pty_idx;
   char mode, nxtmode;
   int allow_S_trunc_end, allow_S_local_end;
   CP9Bands_t *cp9b = cm->cp9b;
@@ -5567,6 +5577,10 @@ trckpt_tr_optacc_traceback(CM_t *cm, char *errbuf, int L, char preset_mode, int 
   if (tr == NULL) { status = eslEMEM; goto ERROR; }
   tr->is_std = FALSE; /* lower is_std flag, now we'll know this parsetree was created by a truncated (non-standard) alignment function */
   tr->pass_idx = pass_idx; /* brief 26_0610-089: sibling tracebacks also set pass_idx alongside is_std; was missing here, stuck at CreateParsetree()'s PLI_PASS_STD_ANY default */
+  /* brief 26_0821-166: and the truncation penalty of the begin into <b>, which was left at
+   * CreateParsetree()'s 0., so ParsetreeScore() scored the parse above the Inside total */
+  if ((pty_idx = cm_tr_penalties_IdxForPass(pass_idx)) == -1) ESL_XFAIL(eslEINCOMPAT, errbuf, "trckpt_tr_optacc_traceback(): bad pass_idx %d", pass_idx);
+  tr->trpenalty = (cm->flags & CMH_LOCAL_BEGIN) ? cm->trp->l_ptyAA[pty_idx][b] : cm->trp->g_ptyAA[pty_idx][b];
   InsertTraceNodewithMode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0, preset_mode);
   pda_i = esl_stack_ICreate();
   pda_c = esl_stack_CCreate();
