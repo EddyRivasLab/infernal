@@ -50,7 +50,6 @@ static uint32_t  v1b_magic  = 0xe3edb0b3; /* v1.2 binary: "cm03" + 0x80808080 (a
 static uint32_t  v1c_magic  = 0xe3edb0b4; /* RETIRED 1/c binary: "cm04" + 0x80808080; ambiguous dev-only format (two branches collided on it), rejected on read */
 static uint32_t  v1d_magic  = 0xe3edb0b5; /* 1/d binary: "cm05" + 0x80808080 (adds optional null3-OFF E-value block AND consensus pseudoknots) */
 static uint32_t  v1e_magic  = 0xe3edb0b7; /* PROVISIONAL 1/e binary: "cm07" + 0x80808080 (derived filter HMMs; adds HMM-only HMM block; brief 26_0821-162) and HMM-only prior alphas (brief 26_0821-165) */
-static uint32_t  v1e0_magic = 0xe3edb0b6; /* RETIRED first 1/e binary, "cm06" (brief 26_0821-162), without the alphas: rejected, rerun cmpress */
 static uint32_t  v1a_fmagic = 0xb1e1e6f3; /* 1/a binary MSV/SSV file: "1afs" = 0x 31 61 66 73  + 0x80808080 */
 /* Note: 's' at end of 1afs is arbitrary. It is consistent with H3's
  * trailing 's' iforSSE binary files, but in Infernal this is used
@@ -475,7 +474,6 @@ open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, in
   else if (magic.n == v1d_magic) { cmfp->format = CM_FILE_1d; cmfp->parser = read_bin_1p1_cm; cmfp->is_binary = TRUE; }
   else if (magic.n == v1e_magic) { cmfp->format = CM_FILE_1e; cmfp->parser = read_bin_1p1_cm; cmfp->is_binary = TRUE; }
   else if (magic.n == v1c_magic) ESL_XFAIL(eslEFORMAT, errbuf, "INFERNAL1/c is a retired ambiguous dev format; rebuild as INFERNAL1/d");
-  else if (magic.n == v1e0_magic) ESL_XFAIL(eslEFORMAT, errbuf, "%s is a binary CM file written by an earlier development version of Infernal 1.2;\nrerun cmpress (or cmconvert -b) on the ASCII CM file", cmfp->fname);
   else if (cmfp->is_pressed) ESL_XFAIL(eslEFORMAT, errbuf, "Binary format tag in %s unrecognized\nCurrent Infernal format is INFERNAL1/e. Previous binary formats are not supported.", cmfp->fname);
 
   /* 8. Checks for ASCII file format */
@@ -2097,10 +2095,7 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
        * the derived filter and HMM-only HMMs (brief 26_0821-162) */
       else if (cmfp->format >= CM_FILE_1e && strcmp(tag, "HP7") == 0) {
 	if ((status = esl_fileparser_GetTokenOnLine(cmfp->efp, &tok1, NULL))   != eslOK)  ESL_XFAIL(status,     cmfp->errbuf, "Too few fields on HP7 line");
-	if ((cm->hp7_xform = cm_p7_HMMOnlyXformCode(tok1)) < 0) {
-	  if (strcmp(tok1, "a1") == 0)                                                   ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "HP7 line: transform a1 was written by an earlier development version of Infernal 1.2; rebuild the CM");
-	  else                                                                           ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "HP7 line: unknown HMM-only transform %s", tok1);
-	}
+	if ((cm->hp7_xform = cm_p7_HMMOnlyXformCode(tok1)) < 0)                         ESL_XFAIL(eslEFORMAT, cmfp->errbuf, "HP7 line: unknown HMM-only transform %s", tok1);
 	read_hp7_xform = TRUE;
       }
       else if (cmfp->format >= CM_FILE_1e && strcmp(tag, "HP7A") == 0) {

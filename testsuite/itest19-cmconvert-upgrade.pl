@@ -14,8 +14,8 @@
 # 3. A calibrated INFERNAL1/a file upgrades to INFERNAL1/e, keeping its
 #    CM parameters and cmcalibrate E-value parameters; cmsearch runs on
 #    it, default and --hmmonly; upgrading the result changes nothing.
-# 4. A file saying HP7 a2 (development versions' name for h3pri) reads
-#    as h3pri; HP7 a1 is rejected.
+# 4. HP7 values written only by development versions (a2, a1) are
+#    rejected: formats that were never released aren't supported.
 #
 # Usage:    ./itest19-cmconvert-upgrade.pl <builddir> <srcdir> <tmpfile prefix>
 # Example:  ./itest19-cmconvert-upgrade.pl ..         ..       tmpfoo
@@ -96,12 +96,10 @@ if (stripped($up4) ne stripped($up4b)) { die "FAIL: subtest 3: upgrading a curre
 # 4.
 my $direct = "$tmppfx.default.cm";
 my $a2     = tmp("a2.cm");
-my $a2conv = tmp("a2.conv.cm");
 my $a1     = tmp("a1.cm");
 write_lines($a2, map { s/^HP7(\s+)h3pri/HP7$1a2/r } read_lines($direct));
-`$builddir/src/cmconvert $a2 > $a2conv 2> /dev/null`;
-if ($? != 0) { die "FAIL: subtest 4: HP7 a2 file not read\n"; }
-if (stripped($a2conv) ne stripped($direct)) { die "FAIL: subtest 4: HP7 a2 file doesn't convert to the h3pri file\n"; }
+`$builddir/src/cmconvert $a2 > /dev/null 2>&1`;
+if ($? == 0) { die "FAIL: subtest 4: HP7 a2 file not rejected\n"; }
 write_lines($a1, map { s/^HP7(\s+)h3pri/HP7$1a1/r } grep { ! /^HP7A / } read_lines($direct));
 `$builddir/src/cmconvert $a1 > /dev/null 2>&1`;
 if ($? == 0) { die "FAIL: subtest 4: HP7 a1 file not rejected\n"; }

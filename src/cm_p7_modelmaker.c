@@ -1422,10 +1422,11 @@ cm_p7_HMMOnlyTransform(const P7_HMM *mlp7, int xform, const double *alpha, P7_HM
  *
  * Purpose:  Convert an HMM-only transform code (CM_HP7_*) to the
  *           string used on a CM file's HP7 line ("ml", "h3pri"), and
- *           back. cm_p7_HMMOnlyXformCode() also accepts "a2", the name
- *           of "h3pri" in files written between briefs 26_0821-162 and
- *           26_0821-165 (it was brief 26_0821-143's arm name), and
- *           returns -1 for an unrecognized string.
+ *           back. cm_p7_HMMOnlyXformCode() returns -1 for an
+ *           unrecognized string. (Development files written between
+ *           briefs 26_0821-162 and 26_0821-165 said "a2" for h3pri, and
+ *           "a1" for a retired transform; formats that were never
+ *           released aren't supported, so those are rejected.)
  */
 const char *
 cm_p7_HMMOnlyXformString(int xform)
@@ -1441,7 +1442,6 @@ cm_p7_HMMOnlyXformCode(const char *s)
 {
   if(strcmp(s, "ml") == 0) return CM_HP7_ML;
   if(strcmp(s, "h3pri") == 0) return CM_HP7_H3PRI;
-  if(strcmp(s, "a2")    == 0) return CM_HP7_H3PRI; /* dev files, briefs 26_0821-162..165 */
   return -1;
 }
 
