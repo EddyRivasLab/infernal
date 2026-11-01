@@ -3993,7 +3993,7 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
       /* read the HMM from the file */
       if (pli->cmfp      == NULL) ESL_FAIL(eslENOTFOUND, pli->errbuf, "No file available to read HMM from in pli_p7_env_def()");
       if (pli->cmfp->hfp == NULL) ESL_FAIL(eslENOTFOUND, pli->errbuf, "No file available to read HMM from in pli_p7_env_def()");
-      if((status = cm_p7_hmmfile_Read(pli->cmfp, pli->abc, om->offs[p7_MOFFSET], opt_hmm)) != eslOK) ESL_FAIL(status, pli->errbuf, "%s", pli->cmfp->errbuf);
+      if((status = cm_p7_hmmfile_Read(pli->cmfp, pli->abc, om->offs[p7_MOFFSET], opt_hmm, NULL)) != eslOK) ESL_FAIL(status, pli->errbuf, "%s", pli->cmfp->errbuf);
     }
 
     if((*opt_gm) == NULL) { /* we need gm to create Lgm, Rgm or Tgm */

@@ -1360,6 +1360,16 @@ cm_file_Position(CM_FILE *cmfp, const off_t offset)
  *            read an HMM from it at that position. Return the HMM
  *            in <ret_hmm>.
  *
+ *            If <opt_end_offset> is non-NULL, return in it the file
+ *            position just after the HMM (-1 in stdin or gzip mode).
+ *            It is taken while <cmfp->hfp> is still locked: in a
+ *            threaded cmscan, other threads read HMMs from the same
+ *            <cmfp->hfp> (pli_p7_env_def()), so its position can move
+ *            as soon as this function returns. A caller that reads the
+ *            next HMM stored after this one, or repositions its CM file
+ *            after it, must use <*opt_end_offset> rather than
+ *            ftello(cmfp->hfp->f) (brief 26_0821-168).
+ *
  *            Caller must already know the alphabet the HMM is
  *            expected to be in, passed in as <abc>.  If the alphabet
  *            for the HMM is of a different type than <abc>, we return
@@ -1393,12 +1403,14 @@ cm_file_Position(CM_FILE *cmfp, const off_t offset)
  *            as file positioning functions (<fseeko()> or <ftello()>.
  */
 int
-cm_p7_hmmfile_Read(CM_FILE *cmfp, ESL_ALPHABET *abc, off_t offset, P7_HMM **ret_hmm)
+cm_p7_hmmfile_Read(CM_FILE *cmfp, ESL_ALPHABET *abc, off_t offset, P7_HMM **ret_hmm, off_t *opt_end_offset)
 {
   int      status;
   P7_HMM  *hmm  = NULL;
   char    *tok1 = NULL;
   uint32_t magic;
+
+  if (opt_end_offset != NULL) *opt_end_offset = -1;
 
 #ifdef HMMER_THREADS
   if(!cmfp->hfp->do_stdin && !cmfp->hfp->do_gzip) { 
@@ -1446,6 +1458,11 @@ cm_p7_hmmfile_Read(CM_FILE *cmfp, ESL_ALPHABET *abc, off_t offset, P7_HMM **ret_
   else if (status == eslEFORMAT)   ESL_XFAIL(status, cmfp->errbuf, "bad file format for HMM filter");
   else if (status == eslEINCOMPAT) ESL_XFAIL(status, cmfp->errbuf, "HMM filters are of different alphabets");
   else if (status != eslOK)        ESL_XFAIL(status, cmfp->errbuf, "Unexpected error in reading HMM filters");
+
+  /* the end of this HMM, before another thread can move the file */
+  if (opt_end_offset != NULL && !cmfp->hfp->do_stdin && !cmfp->hfp->do_gzip) {
+    if ((*opt_end_offset = ftello(cmfp->hfp->f)) < 0) ESL_XFAIL(eslESYS, cmfp->errbuf, "ftello() failed");
+  }
 
 #ifdef HMMER_THREADS
   if(!cmfp->hfp->do_stdin && !cmfp->hfp->do_gzip) { 
@@ -1822,6 +1839,7 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
   int           alphatype;
   off_t         offset = 0;
   off_t         fp7_offset = 0;
+  off_t         end_offset = -1;  /* end of the filter HMM read, from cm_p7_hmmfile_Read() */
   int           v, x, y, nd;            /* counters */
   int           read_fp7_stats = FALSE;
   int           read_fp7_lstats = FALSE; /* 1/e: EFP7L line read */
@@ -2525,11 +2543,11 @@ read_asc_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
     else { 
       fp7_offset = -1; /* this is irrelevant if stdin or gzip mode, cm_p7_hmmfile_Read will ignore it */
     } 
-    if((status = cm_p7_hmmfile_Read(cmfp, abc, fp7_offset, &hmm)) != eslOK) goto ERROR;
+    if((status = cm_p7_hmmfile_Read(cmfp, abc, fp7_offset, &hmm, &end_offset)) != eslOK) goto ERROR;
     if((status = cm_SetFilterHMM(cm, hmm, tmp_fp7_gfmu, tmp_fp7_gflambda)) != eslOK) ESL_XFAIL(status, cmfp->errbuf, "Unable to set filter HMM for CM");
     if(!cmfp->hfp->do_stdin && !cmfp->hfp->do_gzip) { 
       /* now position the CM file to the end of the HMM we just read */
-      if (fseeko(cmfp->f, ftello(cmfp->hfp->f), SEEK_SET) != 0) ESL_XFAIL(eslESYS, cmfp->errbuf, "Failed to set position for CM file parser after reading filter HMMs");
+      if (fseeko(cmfp->f, end_offset, SEEK_SET) != 0) ESL_XFAIL(eslESYS, cmfp->errbuf, "Failed to set position for CM file parser after reading filter HMMs");
     }
   } 
 
@@ -2632,6 +2650,7 @@ read_bin_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
   int           v, x;
   off_t         offset = 0;
   off_t         fp7_offset = 0;
+  off_t         end_offset = -1;  /* end of the last HMM read, from cm_p7_hmmfile_Read() */
   int           status;
   float         tmp_fp7_gfmu;
   float         tmp_fp7_gflambda;
@@ -2840,20 +2859,21 @@ read_bin_1p1_cm(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_
     else {
       fp7_offset = -1; /* this is irrelevant if stdin or gzip mode, cm_p7_hmmfile_Read will ignore it */
     }
-    if((status = cm_p7_hmmfile_Read(cmfp, abc, fp7_offset, &hmm)) != eslOK) goto ERROR;
+    if((status = cm_p7_hmmfile_Read(cmfp, abc, fp7_offset, &hmm, &end_offset)) != eslOK) goto ERROR;
     if((status = cm_SetFilterHMM(cm, hmm, tmp_fp7_gfmu, tmp_fp7_gflambda)) != eslOK) ESL_XFAIL(status, cmfp->errbuf, "Unable to set filter HMM for CM");
     hmm = NULL;
     if(cmfp->format >= CM_FILE_1e && cm->hp7_xform != CM_HP7_ML) { 
-      if(!cmfp->hfp->do_stdin && !cmfp->hfp->do_gzip) {
-	if((fp7_offset = ftello(cmfp->hfp->f)) < 0) ESL_XFAIL(eslESYS, cmfp->errbuf, "ftello() failed");
-      }
-      if((status = cm_p7_hmmfile_Read(cmfp, abc, fp7_offset, &hmm)) != eslOK) goto ERROR;
+      /* the HMM-only HMM follows the filter HMM. Use the end offset
+       * from the read, not ftello(cmfp->hfp->f): in a threaded
+       * cmscan another thread can move cmfp->hfp->f in between
+       * (brief 26_0821-168). */
+      if((status = cm_p7_hmmfile_Read(cmfp, abc, end_offset, &hmm, &end_offset)) != eslOK) goto ERROR;
       if((status = cm_SetHMMOnlyHMM(cm, hmm, tmp_hp7_gfmu, tmp_hp7_gflambda)) != eslOK) ESL_XFAIL(status, cmfp->errbuf, "Unable to set HMM-only HMM for CM");
       hmm = NULL;
     }
     if(!cmfp->hfp->do_stdin && !cmfp->hfp->do_gzip) {
       /* now position the CM file to the end of the HMM(s) we just read */
-      if (fseeko(cmfp->f, ftello(cmfp->hfp->f), SEEK_SET) != 0) ESL_XFAIL(eslESYS, cmfp->errbuf, "Failed to set position for CM file parser after reading filter HMMs");
+      if (fseeko(cmfp->f, end_offset, SEEK_SET) != 0) ESL_XFAIL(eslESYS, cmfp->errbuf, "Failed to set position for CM file parser after reading filter HMMs");
     }
   }
 
