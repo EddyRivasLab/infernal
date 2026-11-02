@@ -23,8 +23,11 @@
 
 #include "infernal.h"
 
-static int   bp_is_canonical(char lseq, char rseq);
 static float post_code_to_avg_pp(char postcode);
+/* bp_is_canonical(), cm_bp_match_marks(), cm_bp_nc_mark() and cm_singlet_mark()
+ * are extern (declared in infernal.h) so the cmalign per-seq annotation path can
+ * share the exact same classification rules.
+ */
 
 /*****************************************************************
  * 1. The CM_ALIDISPLAY object
@@ -489,41 +492,22 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
 	  rnnc = '?';
 	}
 	else if (mode == TRMODE_J) { 
+	  /* shared classification: identity-letter / ':' (consistent sub) for the
+	   * mline, and 'v' (negative non-canonical) for the ncline. */
+	  char clmid, crmid;  /* lmid/rmid are int here; helper takes char* */
 	  tmpsc = DegeneratePairScore(cm->abc, cm->esc[v], symi, symj); 
-	  if (lseq == toupper(lcons) && rseq == toupper(rcons)) { 
-	    lmid = lseq; 
-	    rmid = rseq; 
-	  }
-	  else if (tmpsc >= 0) { 
-	    lmid = rmid = ':';
-	  }
-	  /* determine lnnc, rnnc for optional negative scoring
-	   * non-canonical annotation, they are 'v' if lseq and rseq
-	   * are a negative scoring non-canonical (not a
-	   * AU,UA,GC,CG,GU,UG) pair. 
-	   */
-	  if (tmpsc < 0 && (! bp_is_canonical(lseq, rseq))) {
-	    lnnc = rnnc = 'v';
-	  }
+	  cm_bp_match_marks(lseq, rseq, lcons, rcons, tmpsc, &clmid, &crmid);
+	  lmid = clmid; rmid = crmid;
+	  lnnc = rnnc = cm_bp_nc_mark(lseq, rseq, tmpsc);
 	}
       } 
       else if ((cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) &&
 	       (mode == TRMODE_J || mode == TRMODE_L)) { 
-	if (lseq == toupper(lcons)) { 
-	  lmid = lseq; 
-	}
-	else if(esl_abc_FAvgScore(cm->abc, symi, cm->esc[v]) > 0) { 
-	  lmid = '+';
-	}
+	lmid = cm_singlet_mark(lseq, lcons, esl_abc_FAvgScore(cm->abc, symi, cm->esc[v]));
       } 
       else if ((cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) && 
 	       (mode == TRMODE_J || mode == TRMODE_R)) {
-	if (rseq == toupper(rcons)) {
-	  rmid = rseq;
-	}
-	else if(esl_abc_FAvgScore(cm->abc, symj, cm->esc[v]) > 0) {
-	  rmid = '+';
-	}
+	rmid = cm_singlet_mark(rseq, rcons, esl_abc_FAvgScore(cm->abc, symj, cm->esc[v]));
       }
       if((cm->stid[v] == MATP_ML || cm->stid[v] == MATP_MR) && mode == TRMODE_J) { 
 	lnnc = rnnc = 'v'; /* mark non-truncated half base-pairs (MATP_ML or MATP_MR) with 'v' */
@@ -1060,6 +1044,72 @@ bp_is_canonical(char lseq, char rseq)
   }
 
   return FALSE;
+}
+
+/* Function: cm_bp_match_marks()
+ * Date:     EPN, Sun Jun 28 2026 (w/Claude)
+ *
+ * Purpose:  Shared classification of a both-residues-present (Joint-mode MP)
+ *           consensus base pair for the "match" line (mline; also the
+ *           cmalign --bpstatus #=GR PS line).
+ *           Given the two observed residues <lseq>,<rseq> (uppercase), the two
+ *           consensus residues <lcons>,<rcons>, and the model pair-emission
+ *           score <pairsc> = DegeneratePairScore() for the observed pair:
+ *             - both residues == consensus  -> identity letters (lseq, rseq)
+ *             - else pairsc >= 0            -> ':' at both ends (consistent sub)
+ *             - else                        -> ' ' at both ends
+ *           Mirrors the inline logic that used to live in cm_alidisplay_Create().
+ *           cmsearch prints the identity letters; cmalign's #=GR PS line keeps
+ *           only the ':' marks (it blanks identity letters).
+ */
+void
+cm_bp_match_marks(char lseq, char rseq, char lcons, char rcons, float pairsc, char *ret_lmid, char *ret_rmid)
+{
+  char lmid = ' ';
+  char rmid = ' ';
+  if (lseq == toupper(lcons) && rseq == toupper(rcons)) { lmid = lseq; rmid = rseq; }
+  else if (pairsc >= 0)                                 { lmid = rmid = MM_SUBPAIR; }
+  if (ret_lmid != NULL) *ret_lmid = lmid;
+  if (ret_rmid != NULL) *ret_rmid = rmid;
+  return;
+}
+
+/* Function: cm_bp_nc_mark()
+ * Date:     EPN, Sun Jun 28 2026 (w/Claude)
+ *
+ * Purpose:  Shared classification of a both-residues-present (Joint-mode MP)
+ *           consensus base pair for the negative-non-canonical "NC" (ncline)
+ *           mark: returns 'v' iff the observed pair scores negative AND is not a
+ *           canonical WC/GU pair; ' ' otherwise. (The 'v' for half-present pairs
+ *           and the '?' for truncated pairs are state/gap-pattern based and set
+ *           by the caller, not here.)
+ */
+char
+cm_bp_nc_mark(char lseq, char rseq, float pairsc)
+{
+  if (pairsc < 0 && (! bp_is_canonical(lseq, rseq))) return 'v';
+  return ' ';
+}
+
+/* Function: cm_singlet_mark()
+ * Date:     EPN, Sun Jun 28 2026 (w/Claude)
+ *
+ * Purpose:  Shared classification of an emitted singlet residue for the mline /
+ *           cmalign #=GR PS line, given the observed residue <seq> (uppercase), the
+ *           consensus residue <cons>, and the model average singlet-emission
+ *           score <avgsc> = esl_abc_FAvgScore():
+ *             - seq == consensus -> identity letter (seq)
+ *             - else avgsc > 0   -> '+'  (positive substitution)
+ *             - else             -> ' '
+ *           cmsearch prints the identity letter; cmalign's #=GR PS line keeps
+ *           only the '+' marks.
+ */
+char
+cm_singlet_mark(char seq, char cons, float avgsc)
+{
+  if (seq == toupper(cons)) return seq;
+  else if (avgsc > 0)       return MM_SUBSINGLET;
+  return ' ';
 }
 
 /*---------------- end, alidisplay object -----------------------*/
