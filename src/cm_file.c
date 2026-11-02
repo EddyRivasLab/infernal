@@ -1162,14 +1162,21 @@ cm_file_WriteBinary(FILE *fp, int format, CM_t *cm, off_t *opt_fp7_offset, off_t
  *            older family of formats, so that the stored filter HMM
  *            and its E-value parameters are written back unchanged:
  *            <CM_FILE_1d> iff <cm> has pknot annotation or null3-OFF
- *            E-value parameters, else <CM_FILE_1b>.
- *            (brief 26_0821-162)
+ *            E-value parameters; else <CM_FILE_1a> if <cm> was read
+ *            from a 1/a file and carries nothing 1/a can't store (node
+ *            pads, filter P-value cutoffs), so a released 1/a model
+ *            stays 1/a; else <CM_FILE_1b>.
+ *            (briefs 26_0821-162/26_0821-171)
  */
 int
 cm_file_DefaultFormat(CM_t *cm)
 {
-  if ((cm->flags & CMH_FP7) && ! (cm->flags & CMH_FP7_DERIVED))
-    return (cm->flags & (CMH_PKNOT | CMH_EXPTAIL_NONULL3_STATS)) ? CM_FILE_1d : CM_FILE_1b;
+  if ((cm->flags & CMH_FP7) && ! (cm->flags & CMH_FP7_DERIVED)) {
+    if (cm->flags & (CMH_PKNOT | CMH_EXPTAIL_NONULL3_STATS))        return CM_FILE_1d;
+    if (cm->file_format == CM_FILE_1a &&
+        ! (cm->flags & (CMH_P7NODEPAD | CMH_FILTER_PVAL_CUTOFFS)))  return CM_FILE_1a;
+    return CM_FILE_1b;
+  }
   return CM_FILE_1e;
 }
 /*----------------- end, save file output  ----------------------*/
@@ -1278,8 +1285,14 @@ write_bin_string(FILE *fp, char *s)
 int
 cm_file_Read(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc,  CM_t **opt_cm)
 {
+  int status;
+
   /* A call to SSI to remember file position may eventually go here.  */
-  return (*cmfp->parser)(cmfp, read_fp7, ret_abc, opt_cm);
+  status = (*cmfp->parser)(cmfp, read_fp7, ret_abc, opt_cm);
+  /* record the source format, so cm_file_DefaultFormat() can keep a
+   * released 1/a model in 1/a (brief 26_0821-171) */
+  if (status == eslOK && opt_cm != NULL && *opt_cm != NULL) (*opt_cm)->file_format = cmfp->format;
+  return status;
 }
 
 /* Function:  cm_file_PositionByKey()

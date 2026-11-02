@@ -2064,6 +2064,8 @@ typedef struct cm_s {
   /* p7 hmms, added 08.05.08 */
   P7_HMM       *mlp7;         /* the maximum likelihood p7 HMM, built from the CM  */
   P7_HMM       *fp7;          /* the filter p7 HMM: derived from the CM (mlp7, CMH_FP7_DERIVED), or read from an older CM file */
+  int           file_format;  /* CM_FILE_* format the CM was read from; -1 if not read from a file.
+                               * cm_file_DefaultFormat() uses it to write a released 1/a model back as 1/a */
   float         fp7_evparam[CM_p7_NEVPARAM]; /* E-value params (CMH_FP7_STATS) */
   /* HMM-only search HMM (cmsearch/cmscan --hmmonly), derived from the CM
    * by the transform <hp7_xform> (CM_HP7_*). NULL when HMM-only search
