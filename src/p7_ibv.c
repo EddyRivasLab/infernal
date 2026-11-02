@@ -1657,14 +1657,14 @@ utest_genome_drift(const ESL_ALPHABET *abc, int M, int delta, int be_verbose)
 
   memset(&cm, 0, sizeof(CM_t));
   cm.fp7 = hmm0;
-  if (cm_p7_Seq2BandsIBV_dnc(&cm, errbuf, dsq, L, delta, 0, FALSE, FALSE, FALSE, P7IBV_MODE_DELTA, 0,
+  if (cm_p7_Seq2BandsIBV_dnc(&cm, errbuf, dsq, L, delta, 0, FALSE, FALSE, P7IBV_MODE_DELTA, 0,
                              &i2k0, &kmin0, &kmax0, &nc0) != eslOK) esl_fatal("utest_genome_drift: plain run failed: %s", errbuf);
   st0 = ibv_last_rowstats;
 
   persc = st0.optimal / P7IBV_INTSCALE / (double) L;
   hmm1  = ibv_utest_hmm(abc, M, persc);
   cm.fp7 = hmm1;
-  if (cm_p7_Seq2BandsIBV_dnc(&cm, errbuf, dsq, L, delta, 0, FALSE, FALSE, FALSE, P7IBV_MODE_DELTA, 0,
+  if (cm_p7_Seq2BandsIBV_dnc(&cm, errbuf, dsq, L, delta, 0, FALSE, FALSE, P7IBV_MODE_DELTA, 0,
                              &i2k1, &kmin1, &kmax1, &nc1) != eslOK) esl_fatal("utest_genome_drift: shifted run failed: %s", errbuf);
   st1 = ibv_last_rowstats;
 
