@@ -141,35 +141,36 @@ static ESL_OPTIONS options[] = {
   { "--maxtau",      eslARG_REAL,      "0.05", NULL,   "0<x<0.5",       NULL,        NULL, "--fixedtau,--nonbanded", "set max tau <x> when tightening HMM bands",                  3 },
   { "--nonbanded",   eslARG_NONE,       FALSE, NULL,        NULL,    ACCOPTS,        NULL,                     NULL, "do not use HMM bands for faster alignment",                  3 },
   { "--p7band",      eslARG_NONE,       FALSE, NULL,        NULL,    ACCOPTS,        NULL,                     NULL, "use p7 Viterbi-derived bands for faster alignment",          3 },
-  { "--p7padplus",    eslARG_INT,        "10", NULL,      "n>=0",       NULL,        NULL,                     NULL, "add <n> to every per-node p7 band pad (w/--p7band or --hmm) [default 10]", 3 },
+  { "--p7padplus",    eslARG_INT,        "10", NULL,      "n>=0",       NULL,        NULL,                     NULL, "add <n> to every per-node p7 band pad (w/--p7band or --hmm) [default 10]", 7 },
   { "--p7ibv",       eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,            NULL, "use F+B direct-band derivation (w/--p7band or --hmm)",        3 },
-  { "--p7ibv-delta",  eslARG_INT,     "20000", NULL,      "n>=0",       NULL,     "--p7ibv",              NULL, "F+B band score margin, in milli-bits",                                       3 },
-  { "--p7ibv-mode",  eslARG_STRING, "delta", NULL,        NULL,       NULL,     "--p7ibv",              NULL, "IBV band mode: delta|fixed|hybrid",             3 },
-  { "--p7ibv-width", eslARG_INT,       "20", NULL,      "n>=0",       NULL,     "--p7ibv",              NULL, "fixed-width pad W around argmax-k pin (fixed/hybrid)",       3 },
+  { "--p7ibv-delta",  eslARG_INT,     "20000", NULL,      "n>=0",       NULL,     "--p7ibv",              NULL, "F+B band score margin, in milli-bits",                                       7 },
+  { "--p7ibv-mode",  eslARG_STRING, "delta", NULL,        NULL,       NULL,     "--p7ibv",              NULL, "IBV band mode: delta|fixed|hybrid",             7 },
+  { "--p7ibv-width", eslARG_INT,       "20", NULL,      "n>=0",       NULL,     "--p7ibv",              NULL, "fixed-width pad W around argmax-k pin (fixed/hybrid)",       7 },
   { "--p7ibv-mem",   eslARG_NONE,       FALSE, NULL,        NULL,       NULL,     "--p7ibv",              NULL, "use D&C O(M*logL) band deriver",                 3 },
-  { "--p7ibv-base-slab", eslARG_INT,      "0", NULL,      "n>=0",       NULL, "--p7ibv-mem",              NULL, "D&C base-case slab size; 0=auto (mem-capped)",               3 },
+  { "--p7ibv-base-slab", eslARG_INT,      "0", NULL,      "n>=0",       NULL, "--p7ibv-mem",              NULL, "D&C base-case slab size; 0=auto (mem-capped)",               7 },
   { "--p7kmerchain", eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL, "--p7ibv", "k-mer seed+chain bands, w/--p7band or --hmm [default: CLEN>4000]", 3 },
-  { "--p7kmerchain-ramp",  eslARG_NONE,  FALSE, NULL,        NULL,       NULL, "--p7kmerchain",                   NULL, "kmerchain: interpolated ramp between anchors, not flat band", 3 },
-  { "--p7kmerchain-alpha", eslARG_REAL, "0.75", NULL,      "x>=0",       NULL, "--p7kmerchain-ramp",              NULL, "kmerchain ramp-slack alpha [default 0.75]",       3 },
-  { "--p7kmerchain-mink", eslARG_INT,      "0", NULL,      "n>=0",       NULL,        NULL,                     NULL, "gate kmerchain if no exact match is >= <n> nt [default 0=off]", 3 },
-  { "--p7kmerchain-mgate", eslARG_INT,     "0", NULL,      "n>=0",       NULL,        NULL,                     NULL, "gate kmerchain if M < <n> [default 0=off]",          3 },
-  { "--p7kmerchain-fbvit", eslARG_NONE, FALSE, NULL,  NULL,       NULL, "--p7kmerchain",   "--p7kmerchain-fbibv", "gate fallback uses old Vit-trace band, not native CP9",           3 },
-  { "--p7kmerchain-fbibv", eslARG_NONE, FALSE, NULL,  NULL,       NULL, "--p7kmerchain",   "--p7kmerchain-fbvit", "chain=NONE fallback uses --p7ibv D&C bands, not native CP9", 3 },
-  { "--cykbands",    eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--p7band",                    NULL, "run CYK pre-pass and tighten bands before Inside/Outside",   3 },
-  { "--cykpad",       eslARG_INT,         "2", NULL,      "n>=0",       NULL,  "--cykbands",                   NULL, "pad <n> for parsetree band tightening [default 2]",  3 },
-  { "--no-cykbands-dnc", eslARG_NONE,   FALSE, NULL,        NULL,       NULL,  "--cykbands",                   NULL, "disable size-conditional D&C-CYK fallback for --cykbands pre-pass",    3 },
-  { "--dump-bands",    eslARG_OUTFILE,     NULL, NULL,        NULL,       NULL,   "--p7band",                    NULL, "dump per-(state,j) band TSV to <f> before cm_AlignHB",      3 },
+  { "--p7kmerchain-ramp",  eslARG_NONE,  FALSE, NULL,        NULL,       NULL, "--p7kmerchain",                   NULL, "kmerchain: interpolated ramp between anchors, not flat band", 7 },
+  { "--p7kmerchain-alpha", eslARG_REAL, "0.75", NULL,      "x>=0",       NULL, "--p7kmerchain-ramp",              NULL, "kmerchain ramp-slack alpha [default 0.75]",       7 },
+  { "--p7kmerchain-mink", eslARG_INT,      "0", NULL,      "n>=0",       NULL,        NULL,                     NULL, "gate kmerchain if no exact match is >= <n> nt [default 0=off]", 7 },
+  { "--p7kmerchain-mgate", eslARG_INT,     "0", NULL,      "n>=0",       NULL,        NULL,                     NULL, "gate kmerchain if M < <n> [default 0=off]",          7 },
+  { "--p7kmerchain-fbvit", eslARG_NONE, FALSE, NULL,  NULL,       NULL, "--p7kmerchain",   "--p7kmerchain-fbibv", "gate fallback uses old Vit-trace band, not native CP9",           7 },
+  { "--p7kmerchain-fbibv", eslARG_NONE, FALSE, NULL,  NULL,       NULL, "--p7kmerchain",   "--p7kmerchain-fbvit", "chain=NONE fallback uses --p7ibv D&C bands, not native CP9", 7 },
+  { "--cykbands",    eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--p7band",                    NULL, "run CYK pre-pass and tighten bands before Inside/Outside",   7 },
+  { "--cykpad",       eslARG_INT,         "2", NULL,      "n>=0",       NULL,  "--cykbands",                   NULL, "pad <n> for parsetree band tightening [default 2]",  7 },
+  { "--no-cykbands-dnc", eslARG_NONE,   FALSE, NULL,        NULL,       NULL,  "--cykbands",                   NULL, "disable size-conditional D&C-CYK fallback for --cykbands pre-pass",    7 },
+  { "--dump-bands",    eslARG_OUTFILE,     NULL, NULL,        NULL,       NULL,   "--p7band",                    NULL, "dump per-(state,j) band TSV to <f> before cm_AlignHB",      7 },
   { "--small",       eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,                "--mxsize", "use small memory divide and conquer (d&c) algorithm",       3 },  /* for --small, required opts are enforced below */
-  /* brief 26_0430-303: demoted to docgroup 6 (no esl_opt_DisplayHelp() call below
-   * prints that group) so it no longer appears in user-facing -h output. Hard-force
-   * semantics are UNCHANGED -- dev-only, not "prefer"; --no-mxesc's incompat list
-   * (below) is deliberately left untouched, see brief 303. */
-  { "--ckpt",        eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,"--cyk,--sample,--nonbanded,--small,--sub", "use checkpointed sqrt(M)-memory HMM-banded optacc engines", 6 },
-  /* docgroup 7: developer options, shown only by --devhelp (brief 26_0821-135) */
+  /* docgroup 7 (developer options, --devhelp only): the tuning and diagnostic
+   * options above, and the ones below, are not in user-facing -h output (brief
+   * 26_0821-171; --ckpt was in the unprinted docgroup 6 since brief 26_0430-303).
+   * --ckpt's hard-force semantics are unchanged -- dev-only, not "prefer";
+   * --no-mxesc's incompat list (below) is deliberately left untouched, see brief
+   * 26_0430-303. */
+  { "--ckpt",        eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,"--cyk,--sample,--nonbanded,--small,--sub", "use checkpointed sqrt(M)-memory HMM-banded optacc engines", 7 },
   { "--devdiag",     eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "show developer stage/band diagnostics on stderr", 7 },
-  { "--no-mxesc",    eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,     "--ckpt,--small,--nonbanded", "disable --mxsize engine auto-escalation", 3 },
-  { "--no-mxesc-fixedtau", eslARG_NONE, FALSE, NULL,        NULL,       NULL,        NULL,     "--ckpt,--small,--nonbanded", "restore the p7-banded CP9 F/B tau-ratchet (fixed-tau is the default)", 3 },
-  { "--ckpt-cykbands", eslARG_NONE,     FALSE, NULL,        NULL,       NULL,        NULL,                          NULL, "tighten --ckpt-tier pass-2 bands from the pass-1 CYK parsetree", 3 },
+  { "--no-mxesc",    eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,     "--ckpt,--small,--nonbanded", "disable --mxsize engine auto-escalation", 7 },
+  { "--no-mxesc-fixedtau", eslARG_NONE, FALSE, NULL,        NULL,       NULL,        NULL,     "--ckpt,--small,--nonbanded", "restore the p7-banded CP9 F/B tau-ratchet (fixed-tau is the default)", 7 },
+  { "--ckpt-cykbands", eslARG_NONE,     FALSE, NULL,        NULL,       NULL,        NULL,                          NULL, "tighten --ckpt-tier pass-2 bands from the pass-1 CYK parsetree", 7 },
   /* options controlling optional output */
   { "--sfile",    eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL,        NULL,          NULL, "dump alignment score information to file <f>",            4 },
   { "--tfile",    eslARG_OUTFILE,        NULL, NULL,        NULL,       NULL,        NULL,          NULL, "dump individual sequence parsetrees to file <f>",         4 },
