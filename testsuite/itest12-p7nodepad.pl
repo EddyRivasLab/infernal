@@ -179,7 +179,8 @@ if ($pads_orig ne $pads_back) {
 }
 
 ######################################################################
-# Subtest 7: cmconvert v1a -> v1b adds pads.
+# Subtest 7: cmconvert of a v1.0 CM with --p7pad adds pads; v1.0 input
+# is written in the current format, 1/e (brief 26_0821-171).
 # Copy the checked-in legacy 1.0 CM locally first because cmconvert
 # writes to the current directory and we want isolation.
 ######################################################################
@@ -190,12 +191,12 @@ if ($? != 0) { die "FAIL: failed to copy legacy v1a input CM\n"; }
 if ($? != 0) { die "FAIL: cmconvert v1a->v1b (with pads) failed\n"; }
 
 $first = first_line("$tmppfx.converted.cm");
-if ($first !~ /^INFERNAL1\/b\b/) { die "FAIL: subtest 7: cmconvert output first line is '$first', expected to start with 'INFERNAL1/b'\n"; }
+if ($first !~ /^INFERNAL1\/e\b/) { die "FAIL: subtest 7: cmconvert output first line is '$first', expected to start with 'INFERNAL1/e'\n"; }
 if (! file_has_header("$tmppfx.converted.cm", "P7NODEPAD", "yes")) { die "FAIL: subtest 7: cmconvert output missing 'P7NODEPAD yes'\n"; }
 
 ######################################################################
 # Subtest 8: cmconvert without --p7pad (and with the no-op --no-p7pad)
-# produces v1b with pads disabled.
+# produces 1/e with pads disabled.
 ######################################################################
 `$builddir/src/cmconvert $tmppfx.1p0-input.cm > $tmppfx.converted.nopad.cm 2>>$tmppfx.cmbuild.log`;
 if ($? != 0) { die "FAIL: cmconvert (default, no pads) failed\n"; }
@@ -204,7 +205,7 @@ if ($? != 0) { die "FAIL: cmconvert --no-p7pad failed\n"; }
 if (! file_has_header("$tmppfx.converted.nopad2.cm", "P7NODEPAD", "no")) { die "FAIL: subtest 8: cmconvert --no-p7pad output missing 'P7NODEPAD no'\n"; }
 
 $first = first_line("$tmppfx.converted.nopad.cm");
-if ($first !~ /^INFERNAL1\/b\b/) { die "FAIL: subtest 8: cmconvert --no-p7pad first line is '$first', expected to start with 'INFERNAL1/b'\n"; }
+if ($first !~ /^INFERNAL1\/e\b/) { die "FAIL: subtest 8: cmconvert --no-p7pad first line is '$first', expected to start with 'INFERNAL1/e'\n"; }
 if (! file_has_header("$tmppfx.converted.nopad.cm", "P7NODEPAD", "no")) { die "FAIL: subtest 8: cmconvert --no-p7pad output missing 'P7NODEPAD no'\n"; }
 
 ######################################################################
