@@ -73,7 +73,6 @@ PROGS = cmalign\
 	test_phase2_features\
 	test_phase3_features\
 	test_phase4_predict\
-	test_wviterbi
 
 # list of executable programs that get installed
 # cmcalibrate is installed as a fallback tool: cmbuild's cm_FastCalibrate()
@@ -114,7 +113,6 @@ PROGOBJS = \
 	test_phase2_features.o\
 	test_phase3_features.o\
 	test_phase4_predict.o\
-	test_wviterbi.o
 
 HDRS =  infernal.h
 

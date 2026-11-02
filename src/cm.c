@@ -143,9 +143,6 @@ CreateCMShell(void)
   cm->p7_ibv_base_slab = 0;              /* 0 = auto: D&C picks slab to cap base-case memory (brief 26_0430-124) */
   cm->p7_ibv_mode      = P7IBV_MODE_DELTA;/* default: posterior-mass Delta cloud (brief 26_0430-140, --p7ibv-mode) */
   cm->p7_ibv_width     = 20;             /* default fixed-width pad W around argmax-k pin (brief 26_0430-140, --p7ibv-width) */
-  cm->p7_ibv_wv        = FALSE;          /* default: no windowed-Viterbi band (--p7ibv-wv, brief 26_0430-169) */
-  cm->p7_wv_nodepad    = NULL;           /* computed align-time when --p7ibv-wv (brief 26_0430-169) */
-  cm->p7_wv_nodepad_M  = 0;
   cm->null2_omega  = V1P0_NULL2_OMEGA;   /* will be redefined upon reading cmfile (if CM was created by Infernal version later than 1.0.2) */
   cm->null3_omega  = V1P0_NULL3_OMEGA;   /* will be redefined upon reading cmfile (if CM was created by Infernal version later than 1.0.2) */ 
   cm->cp9          = NULL;          
@@ -560,7 +557,6 @@ FreeCM(CM_t *cm)
     cm->hp7  = NULL;
   }
   if(cm->p7_cm_nodepad != NULL) { free(cm->p7_cm_nodepad); cm->p7_cm_nodepad = NULL; }
-  if(cm->p7_wv_nodepad != NULL) { free(cm->p7_wv_nodepad); cm->p7_wv_nodepad = NULL; }
   if(cm->emap   != NULL) FreeEmitMap(cm->emap);
   if(cm->cmcons != NULL) FreeCMConsensus(cm->cmcons);
   if(cm->trp    != NULL) cm_tr_penalties_Destroy(cm->trp);
@@ -3327,15 +3323,6 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
   new->p7_ibv_base_slab = cm->p7_ibv_base_slab;
   new->p7_ibv_mode      = cm->p7_ibv_mode;
   new->p7_ibv_width     = cm->p7_ibv_width;
-  new->p7_ibv_wv        = cm->p7_ibv_wv;
-  if(cm->p7_wv_nodepad != NULL) {
-    ESL_ALLOC(new->p7_wv_nodepad, sizeof(int) * (cm->p7_wv_nodepad_M + 1));
-    memcpy(new->p7_wv_nodepad, cm->p7_wv_nodepad, sizeof(int) * (cm->p7_wv_nodepad_M + 1));
-    new->p7_wv_nodepad_M = cm->p7_wv_nodepad_M;
-  } else {
-    new->p7_wv_nodepad   = NULL;
-    new->p7_wv_nodepad_M = 0;
-  }
   new->config_opts = cm->config_opts;
   new->align_opts  = cm->align_opts;
   new->search_opts = cm->search_opts;

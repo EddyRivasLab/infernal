@@ -1236,26 +1236,11 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	     * O(M*logL) band deriver, byte-identical to the flat path but with
 	     * dramatically lower peak memory at large M/L.
 	     */
-	    if (cm->p7_ibv_wv) {
-	      /* Brief 26_0430-169: windowed-Viterbi band = MAP-trace i2k +/- F+B-halfwidth
-	       * pad (cm->p7_wv_nodepad, calibrated once at align-time setup). */
-	      _p7b_kind = "p7ibv-wv";
-	      int *wv_nodepad = NULL;
-	      int  wk;
-	      if (cm->p7_wv_nodepad == NULL)
-		ESL_FAIL(eslEINVAL, errbuf, "--p7ibv-wv: cm->p7_wv_nodepad not calibrated");
-	      ESL_ALLOC(wv_nodepad, sizeof(int) * (cm->fp7->M + 1));
-	      for (wk = 0; wk <= cm->fp7->M; wk++) wv_nodepad[wk] = cm->p7_wv_nodepad[wk] + cm->p7bpad;
-	      status = p7_Seq2BandsWV(cm, errbuf, sq->dsq, sq->L, wv_nodepad,
-				      do_trunc, /* brief 26_0430-171 */
-				      &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
-	      free(wv_nodepad);
-	    } else if (cm->p7_ibv_mem) {
+	    if (cm->p7_ibv_mem) {
 	      _p7b_kind = "p7ibv-dnc";
 	      status = p7_Seq2BandsIBV_dnc(cm, errbuf, sq->dsq, sq->L,
 					   cm->p7_ibv_delta, cm->p7_ibv_base_slab,
 					   TRUE, /* do_boundary_widen: CM-side preserves current behavior */
-					   FALSE, /* brief 26_0430-172: do_kband (unbanded; --p7ibv-mem keeps exact delta band) */
 					   do_trunc, /* brief 26_0430-171 */
 					   cm->p7_ibv_mode, cm->p7_ibv_width, /* brief 26_0430-140 */
 					   &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
@@ -1320,7 +1305,7 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 		_p7b_kind = "kmerchain->p7ibv";
 		status = p7_Seq2BandsIBV_dnc(cm, errbuf, sq->dsq, sq->L,
 					     cm->p7_ibv_delta, cm->p7_ibv_base_slab,
-					     TRUE, FALSE, do_trunc, cm->p7_ibv_mode, cm->p7_ibv_width,
+					     TRUE, do_trunc, cm->p7_ibv_mode, cm->p7_ibv_width,
 					     &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
 		if (status == eslEINCONCEIVABLE) goto ERROR; /* brief 26_0821-144: empty IBV row */
 		if (status == eslOK && p7_ncells == 0) {
@@ -1516,7 +1501,7 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	      p7_ncells = 0;
 	      if((status = p7_Seq2BandsIBV_dnc(cm, errbuf, sq->dsq, sq->L,
 					       cm->p7_ibv_delta, cm->p7_ibv_base_slab,
-					       TRUE, FALSE, do_trunc, cm->p7_ibv_mode, cm->p7_ibv_width,
+					       TRUE, do_trunc, cm->p7_ibv_mode, cm->p7_ibv_width,
 					       &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells)) != eslOK) goto ERROR;
 	      if(p7_ncells == 0) ESL_XFAIL(eslENORESULT, errbuf, "--p7ibv-mem no-parse retry produced no p7 band");
 	      if(p7b_end_at_M) cm_p7_bands_ReachModelEnd(p7_kmax, sq->L, cm->cp9->M); /* brief 26_0821-100 */
@@ -2313,7 +2298,7 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
           /* 2026-07-11 (brief 190 follow-up): bd_s = converting the winning
            * kmerchain chain's pins into HMM bands (p7_pins2bands_nodepad),
            * split out of what was previously folded into b_s. bd_s is 0 (and
-           * meaningless) for non-kmerchain methods (p7ibv/p7ibv-wv/etc.),
+           * meaningless) for non-kmerchain methods (p7ibv/etc.),
            * which don't route through p7_Seq2BandsKmerChain at all. */
           fprintf(stderr, "#STAGETIME seq=%s L=%d M=%d method=%s a_s=%.6f b_s=%.6f bd_s=%.6f c_s=%.6f d_s=%.6f tot_s=%.6f\n",
                   sq->name, (int)sq->L, cm->fp7->M, _p7b_kind,

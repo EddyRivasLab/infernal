@@ -1261,7 +1261,7 @@ brief035_rss_kb(void)
  *           dsq        - digital target sequence, 1..L
  *           L          - length of dsq
  *           nodepad    - [0..M] per-node pad array, or NULL for uniform cm->p7bpad
- *           do_trunc   - brief 26_0628-033: CM_ALIGN_TRUNC flag, mirrors p7_Seq2BandsWV's
+ *           do_trunc   - brief 26_0628-033: CM_ALIGN_TRUNC flag, mirrors the other p7 band derivers'
  *                        do_trunc argument for signature-shape consistency. Unused
  *                        internally: this deriver chains exact k-mer seeds against
  *                        the raw consensus, with no begin/end-anywhere (Tgm) score

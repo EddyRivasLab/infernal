@@ -43,7 +43,6 @@ src/bandcyk-truncation-test
 src/test_phase2_features
 src/test_phase3_features
 src/test_phase4_predict
-src/test_wviterbi
 src/*_utest
 src/itest_brute
 src/itest_hmmread
