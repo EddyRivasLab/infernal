@@ -646,10 +646,6 @@ DispatchSqBlockAlignment(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float m
   int           pass_idx;        /* pass_idx passed to DispatchSqAlignment() */
   char          mode;            /* mode passed to DispatchSqAlignment() */
   int           cp9b_valid;      /* passed to DispatchSqAlignment() */
-  CM_P7_OM_HOLDER om_holder;     /* reusable LOCAL p7 profile/OPROFILE for the
-				  * --p7pinbridge SW scan, built once and reused
-				  * across this block (brief 26_0430-090). Safe because
-				  * this call owns the whole block. */
 
   ESL_ALLOC(dataA, sizeof(CM_ALNDATA *) * ESL_MAX(1, sq_block->count)); // avoid 0 malloc
   for(j = 0; j < sq_block->count; j++) dataA[j] = NULL;
@@ -664,12 +660,10 @@ DispatchSqBlockAlignment(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float m
   cp9b_valid = FALSE;
 
   /* main loop: for each sequence, call DispatchSqAlignment() to do the work */
-  cm_p7_om_holder_Init(&om_holder);
   for(j = 0; j < sq_block->count; j++) {
     sqp = sq_block->list + j;
-    if((status = DispatchSqAlignment(cm, errbuf, sqp, sq_block->first_seqidx + j, mxsize, mode, pass_idx, cp9b_valid, w, w_tot, r, &om_holder, &(dataA[j]))) != eslOK) { cm_p7_om_holder_Reset(&om_holder); goto ERROR; }
+    if((status = DispatchSqAlignment(cm, errbuf, sqp, sq_block->first_seqidx + j, mxsize, mode, pass_idx, cp9b_valid, w, w_tot, r, &(dataA[j]))) != eslOK) goto ERROR;
   }
-  cm_p7_om_holder_Reset(&om_holder);
   *ret_dataA = dataA;
 
   return eslOK;
@@ -946,11 +940,6 @@ restore_emission_scores(CM_t *cm, float *save)
  *           w          - stopwatch for timing individual stages, can be NULL
  *           w_tot      - stopwatch for timing total time per seq, can be NULL
  *           r          - RNG, req'd if CM_ALIGN_SAMPLE, can be NULL otherwise
- *           om_holder  - reusable LOCAL p7 profile/OPROFILE holder for the
- *                        --p7pinbridge SW scan (brief 26_0430-090); built once per
- *                        worker/block and reused across sequences. Can be NULL
- *                        (then the pinbridge wrapper builds/frees its own per
- *                        call). MUST be per-thread (not shared across threads).
  *           elr        - (dispatch_sq_alignment_core() only) local-mode EL
  *                        retry state, see ELR_BAND; NULL for a plain alignment.
  *           ret_data   - RETURN: newly created CM_ALNDATA object
@@ -967,7 +956,7 @@ restore_emission_scores(CM_t *cm, float *save)
 static int
 dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsize, char mode, int pass_idx,
 			   int cp9b_valid, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r,
-			   CM_P7_OM_HOLDER *om_holder, ELR_BAND *elr, CM_ALNDATA **ret_data)
+			   ELR_BAND *elr, CM_ALNDATA **ret_data)
 {
   int           status;            /* easel status */
   CM_ALNDATA   *data         = NULL; /* CM_ALNDATA we'll create and fill */
@@ -1161,7 +1150,7 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	 * snoZ152, ar45, SNORA47). Fall back to unbanded CP9 F/B for small CMs; the
 	 * absolute wall savings from --p7band on tiny CMs is negligible. See brief 26_0430-059. */
 #define P7BAND_MIN_M 0   /* was 200; gate was introduced in brief 26_0430-062 (session 19) for
-                            the pinbridge-era band-derivation path. The current F+B IBV
+                            an earlier band-derivation path. The current F+B IBV
                             (briefs 26_0430-116-126) is a different algorithm; gate removed per
                             brief 26_0430-141. */
 	if(do_p7band && cm->fp7 != NULL && cm->fp7->M < P7BAND_MIN_M) {
@@ -1196,10 +1185,9 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	    p7_ProfileConfig(cm->fp7, bg_p7b, gm_p7b, sq->L, p7_GLOCAL);
 	  }
 	  /* gx_p7b (full O(M*L) p7 matrix) is allocated lazily only where the
-	   * unbanded p7_Seq2BandsVit path actually needs it (brief 26_0430-094). The
-	   * --p7pinbridge success path never touches it, so we avoid the eager
-	   * full-matrix alloc that (a) defeats pinbridge's large-M memory win and
-	   * (b) overflows int32 in p7_gmx_Create at M=L ~ 1.5e5 (e.g. HSV). */
+	   * unbanded p7_Seq2BandsVit path actually needs it (brief 26_0430-094),
+	   * to avoid an eager full-matrix alloc that overflows int32 in
+	   * p7_gmx_Create at M=L ~ 1.5e5 (e.g. HSV). */
 	  tr_p7b = p7_trace_Create();
 
 	  /* Build local nodepad copy with p7bpad (p7padplus) added */
@@ -1210,17 +1198,8 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	    for(k = 0; k <= cm->fp7->M; k++) local_nodepad[k] = cm->p7_cm_nodepad[k] + cm->p7bpad;
 	  }
 
-	  /* Derive p7 bands: either SW-pinbridge prefilter + banded Viterbi (--p7pinbridge)
-	   * or full unbanded p7_GViterbi (default). Pinbridge wrapper falls back to
-	   * full p7_Seq2BandsVit if the banded trace fails inside the prefilter band
-	   * (signaled by ncells=0). Pinbridge is correct for both truncated and
-	   * non-truncated alignment.
-	   *
-	   * M-threshold gate: pinbridge has per-sequence overhead (build OPROFILE,
-	   * SSE scan setup, LSIS allocation, banded traceback) that on small models
-	   * exceeds the cost of full p7_GViterbi at O(LM). For M < 200 the full
-	   * Viterbi wins; gate pinbridge on M >= 200 to capture the big-M speedup
-	   * without the tiny-M tail regressions. */
+	  /* Derive p7 bands: IBV (--p7ibv), k-mer chain (--p7kmerchain), or
+	   * full unbanded p7_GViterbi trace. */
 	  struct timespec _ta_p7b, _tb_p7b;
 	  /* _p7b_kind and the _st059_* stage-timing vars are declared up at the
 	   * enclosing if(! cp9b_valid) scope (brief 26_0628-059) so they stay in
@@ -1331,24 +1310,6 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 		/* status stays eslOK, p7_ncells stays 0 -> falls through to the
 		 * native cp9_Seq2Bands fallback below. Do nothing else here. */
 	      }
-	    }
-	  } else if (cm->p7_use_pinbridge) {
-	    _p7b_kind = "pinbridge";
-	    status = p7_Seq2BandsPinBridgeWrap(cm, errbuf, gm_p7b, bg_p7b, tr_p7b,
-					       sq->dsq, sq->L, cm->p7bpad,
-					       local_nodepad,
-					       0, 0, /* hopback=0, vitend=0 */
-					       om_holder,
-					       &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
-	    /* If pinbridge couldn't produce a trace (rare; band missed the trace
-	     * entirely), fall back to full unbanded Viterbi for this sequence. */
-	    if (status == eslOK && p7_ncells == 0) {
-	      if (gx_p7b == NULL) gx_p7b = p7_gmx_Create(cm->fp7->M, sq->L);
-	      status = p7_Seq2BandsVit(errbuf, gm_p7b, gx_p7b, bg_p7b, tr_p7b,
-				       sq->dsq, sq->L, cm->p7bpad,
-				       local_nodepad,
-				       0, 0,
-				       &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
 	    }
 	  } else {
 	    _p7b_kind = "vitband";
@@ -1488,7 +1449,6 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	    if(status == eslENORESULT && cp9fb_Mb > mxsize) {
 	      const char *np_src = (_p7b_kind == NULL)                    ? "p7"                       :
 	                           (strcmp(_p7b_kind, "kmerchain") == 0)  ? "--p7kmerchain"            :
-	                           (strcmp(_p7b_kind, "pinbridge") == 0)  ? "--p7pinbridge"            :
 	                           "default p7 Viterbi-trace";
 	      if(cm->p7_use_ibv || (_p7b_kind != NULL && strcmp(_p7b_kind, "kmerchain->p7ibv") == 0)) {
 	        if(cm_StageVerbose()) /* brief 26_0821-133: the error below carries the cause */
@@ -2848,7 +2808,7 @@ elr_consider(CM_t *cm, ESL_SQ *sq, int status2, CM_ALNDATA **data2, CM_ALNDATA *
 int
 DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsize, char mode, int pass_idx,
 		    int cp9b_valid, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r,
-		    CM_P7_OM_HOLDER *om_holder, CM_ALNDATA **ret_data)
+		    CM_ALNDATA **ret_data)
 {
   int          status, status2;
   int          L     = sq->L;
@@ -2869,13 +2829,13 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
    * would bias the sample) or a sub-CM one (its parse comes from another CM;
    * --sub requires -g anyway). */
   if(idx == -1 || ! (cm->flags & CMH_LOCAL_END) || (cm->align_opts & (CM_ALIGN_SAMPLE | CM_ALIGN_SUB)))
-    return dispatch_sq_alignment_core(cm, errbuf, sq, idx, mxsize, mode, pass_idx, cp9b_valid, w, w_tot, r, om_holder, NULL, ret_data);
+    return dispatch_sq_alignment_core(cm, errbuf, sq, idx, mxsize, mode, pass_idx, cp9b_valid, w, w_tot, r, NULL, ret_data);
 
   memset(&eb, 0, sizeof(ELR_BAND));
   memset(&rq, 0, sizeof(ELR_BAND));
   eb.mode    = ELR_MODE_NONE;
   eb.capture = TRUE;
-  status = dispatch_sq_alignment_core(cm, errbuf, sq, idx, mxsize, mode, pass_idx, cp9b_valid, w, w_tot, r, om_holder, &eb, ret_data);
+  status = dispatch_sq_alignment_core(cm, errbuf, sq, idx, mxsize, mode, pass_idx, cp9b_valid, w, w_tot, r, &eb, ret_data);
   if(eb.raw == NULL || eb.L != L) { elr_band_release(&eb); return status; }   /* the band did not come from kmerchain */
 
   /* a refusal (eslERANGE): one retry with the tail rule T. It is not applied
@@ -2891,7 +2851,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
     if(cm_StageVerbose()) fprintf(stderr, "#ELRETRY seq=%s L=%d refused arm=T K=%d rows=%d\n", sq->name, L, K, nrow);
     if(nrow > 0) {
       rq.mode = ELR_MODE_EDIT; rq.L = L; rq.i2k = eb.i2k; rq.kmin = eb.kmin; rq.kmax = eb.kmax; rq.klo = klo;
-      status2 = dispatch_sq_alignment_core(cm, errbuf2, sq, idx, mxsize, mode, pass_idx, cp9b_valid, w, w_tot, r, om_holder, &rq, &data2);
+      status2 = dispatch_sq_alignment_core(cm, errbuf2, sq, idx, mxsize, mode, pass_idx, cp9b_valid, w, w_tot, r, &rq, &data2);
       if(cm_StageVerbose()) fprintf(stderr, "#ELRETRY seq=%s arm=T status=%d\n", sq->name, status2);
       if(status2 == eslOK) {
         data2->secs_tot += t_first;
@@ -2946,7 +2906,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   }
   if(nrow > 0) {
     rq.mode = ELR_MODE_EDIT; rq.L = L; rq.i2k = eb.i2k; rq.kmin = eb.kmin; rq.kmax = eb.kmax; rq.klo = klo;
-    status2 = dispatch_sq_alignment_core(cm, errbuf2, sq, idx, mxsize, mode, pass_idx, cp9b_valid, w, w_tot, r, om_holder, &rq, &data2);
+    status2 = dispatch_sq_alignment_core(cm, errbuf2, sq, idx, mxsize, mode, pass_idx, cp9b_valid, w, w_tot, r, &rq, &data2);
     nretry++;
     if(elr_consider(cm, sq, status2, &data2, &best, &best_psc, sum, &psc2)) nkept++;
     if(cm_StageVerbose()) fprintf(stderr, "#ELRETRY seq=%s arm=R1 Ka=%d Kb=%d rows=%d status=%d psc=%.2f kept=%d\n",
@@ -2957,7 +2917,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
    * rejected it: then the first parse's EL placement stands. */
   if(nkept == 0 && ! (gate && ncand > 0 && npos == 0)) {
     rq.mode = ELR_MODE_NATIVE; rq.L = 0; rq.i2k = rq.kmin = rq.kmax = rq.klo = NULL;
-    status2 = dispatch_sq_alignment_core(cm, errbuf2, sq, idx, mxsize, mode, pass_idx, cp9b_valid, w, w_tot, r, om_holder, &rq, &data2);
+    status2 = dispatch_sq_alignment_core(cm, errbuf2, sq, idx, mxsize, mode, pass_idx, cp9b_valid, w, w_tot, r, &rq, &data2);
     nretry++;
     if(elr_consider(cm, sq, status2, &data2, &best, &best_psc, sum, &psc2)) nkept++;
     if(cm_StageVerbose()) fprintf(stderr, "#ELRETRY seq=%s arm=R2 status=%d psc=%.2f kept=%d\n", sq->name, status2, psc2, nkept);

@@ -142,16 +142,13 @@ static ESL_OPTIONS options[] = {
   { "--nonbanded",   eslARG_NONE,       FALSE, NULL,        NULL,    ACCOPTS,        NULL,                     NULL, "do not use HMM bands for faster alignment",                  3 },
   { "--p7band",      eslARG_NONE,       FALSE, NULL,        NULL,    ACCOPTS,        NULL,                     NULL, "use p7 Viterbi-derived bands for faster alignment",          3 },
   { "--p7padplus",    eslARG_INT,        "10", NULL,      "n>=0",       NULL,        NULL,                     NULL, "add <n> to every per-node p7 band pad (w/--p7band or --hmm) [default 10]", 3 },
-  { "--p7pinbridge", eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--p7band",                    NULL, "SW-pinbridge prefilter + banded p7 Viterbi (--p7band)", 3 },
-  { "--p7pbpad",      eslARG_INT,        "20", NULL,      "n>=0",       NULL, "--p7pinbridge",                 NULL, "diagonal pad for SW-pinbridge prefilter [default 20]",  3 },
-  { "--p7pinbridge-vitgaps", eslARG_NONE, FALSE, NULL,     NULL,       NULL, "--p7pinbridge",                 NULL, "exact mini-Viterbi gap costs in gap-aware LSIS (Opt 3)", 3 },
-  { "--p7ibv",       eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,  "--p7pinbridge", "use F+B direct-band derivation (w/--p7band or --hmm)",        3 },
+  { "--p7ibv",       eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,            NULL, "use F+B direct-band derivation (w/--p7band or --hmm)",        3 },
   { "--p7ibv-delta",  eslARG_INT,     "20000", NULL,      "n>=0",       NULL,     "--p7ibv",              NULL, "F+B band score margin, in milli-bits",                                       3 },
   { "--p7ibv-mode",  eslARG_STRING, "delta", NULL,        NULL,       NULL,     "--p7ibv",              NULL, "IBV band mode: delta|fixed|hybrid",             3 },
   { "--p7ibv-width", eslARG_INT,       "20", NULL,      "n>=0",       NULL,     "--p7ibv",              NULL, "fixed-width pad W around argmax-k pin (fixed/hybrid)",       3 },
   { "--p7ibv-mem",   eslARG_NONE,       FALSE, NULL,        NULL,       NULL,     "--p7ibv",              NULL, "use D&C O(M*logL) band deriver",                 3 },
   { "--p7ibv-base-slab", eslARG_INT,      "0", NULL,      "n>=0",       NULL, "--p7ibv-mem",              NULL, "D&C base-case slab size; 0=auto (mem-capped)",               3 },
-  { "--p7kmerchain", eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL, "--p7ibv,--p7pinbridge", "k-mer seed+chain bands, w/--p7band or --hmm [default: CLEN>4000]", 3 },
+  { "--p7kmerchain", eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL, "--p7ibv", "k-mer seed+chain bands, w/--p7band or --hmm [default: CLEN>4000]", 3 },
   { "--p7kmerchain-ramp",  eslARG_NONE,  FALSE, NULL,        NULL,       NULL, "--p7kmerchain",                   NULL, "kmerchain: interpolated ramp between anchors, not flat band", 3 },
   { "--p7kmerchain-alpha", eslARG_REAL, "0.75", NULL,      "x>=0",       NULL, "--p7kmerchain-ramp",              NULL, "kmerchain ramp-slack alpha [default 0.75]",       3 },
   { "--p7kmerchain-mink", eslARG_INT,      "0", NULL,      "n>=0",       NULL,        NULL,                     NULL, "gate kmerchain if no exact match is >= <n> nt [default 0=off]", 3 },
@@ -761,8 +758,8 @@ maybe_hmm_autoswitch(ESL_GETOPTS *go, CM_t *cm)
  *
  * The forced combinations pass every option check in
  * process_commandline(): --p7kmerchain requires --p7band or --hmm and is
- * incompatible with --p7ibv, --p7pinbridge, --hmmvit and --hmmnoband,
- * all of which are excluded above (--p7pinbridge requires --p7band).
+ * incompatible with --p7ibv, --hmmvit and --hmmnoband, all of which are
+ * excluded above.
  */
 /* TRUE once maybe_kmerchain_default() has chosen kmerchain; output_header()
  * reads it to say the band builder was auto-selected. */
@@ -2090,18 +2087,16 @@ serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block, ESL_RANDOMN
   int status;
   int i;  /* counter over sequences */
   ESL_SQ  *sqp = NULL; /* ptr to a ESL_SQ, only used if there's an error */
-  CM_P7_OM_HOLDER om_holder; /* reusable --p7pinbridge LOCAL profile/OPROFILE (brief 26_0430-090) */
 
   /* allocate dataA */
   info->n = sq_block->count;
   ESL_ALLOC(info->dataA, sizeof(CM_ALNDATA *) * info->n);
   for(i = 0; i < info->n; i++) info->dataA[i] = NULL;
 
-  cm_p7_om_holder_Init(&om_holder);
   for(i = 0; i < info->n; i++) {
     status = DispatchSqAlignment(info->cm, errbuf, sq_block->list + i, sq_block->first_seqidx + i, info->mxsize,
 				 TRMODE_UNKNOWN, info->pass_idx, FALSE, /* FALSE: info->cm->cp9b not valid */
-				 info->w, info->w_tot, r, &om_holder, &(info->dataA[i]));
+				 info->w, info->w_tot, r, &(info->dataA[i]));
     /* If alignment failed: potentially retry alignment in HMM banded
      * std (non-truncated) mode. We will only possibly do this if our
      * initial try was HMM banded truncated alignment (if not,
@@ -2112,7 +2107,7 @@ serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block, ESL_RANDOMN
       info->cm->align_opts &= ~CM_ALIGN_TRUNC; /* lower truncated alignment flag, just for this sequence */
       status = DispatchSqAlignment(info->cm, errbuf, sq_block->list + i, sq_block->first_seqidx + i, info->mxsize,
 				   TRMODE_UNKNOWN, PLI_PASS_STD_ANY, FALSE, /* USE PLI_PASS_STD_ANY; FALSE: info->cm->cp9b not valid */
-				   info->w, info->w_tot, r, &om_holder, &(info->dataA[i]));
+				   info->w, info->w_tot, r, &(info->dataA[i]));
       info->cm->align_opts |= CM_ALIGN_TRUNC; /* reraise truncated alignment flag */
     }
     if(status != eslOK) {
@@ -2121,7 +2116,6 @@ serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block, ESL_RANDOMN
       cm_Fail(errbuf);
     }
   }
-  cm_p7_om_holder_Reset(&om_holder);
   return eslOK;
   
  ERROR: 
@@ -2220,7 +2214,6 @@ pipeline_thread(void *arg)
   char          errbuf[eslERRBUFSIZE];
   int           nalloc    = 0;
   int           allocsize = 1000;
-  CM_P7_OM_HOLDER om_holder; /* reusable --p7pinbridge LOCAL profile/OPROFILE, per worker thread (brief 26_0430-090) */
 #ifdef HAVE_FLUSH_ZERO_MODE
   /* In order to avoid the performance penalty dealing with sub-normal
    * values in the floating point calculations, set the processor flag
@@ -2253,7 +2246,6 @@ pipeline_thread(void *arg)
   /* loop until all sequences have been processed */
   sq = (ESL_SQ *) new_sq;
   i = 0;
-  cm_p7_om_holder_Init(&om_holder);
   while (sq->L != -1) {
     /* reallocate info->dataA if necessary */
     if(info->n == nalloc) { 
@@ -2263,7 +2255,7 @@ pipeline_thread(void *arg)
     }
     status = DispatchSqAlignment(info->cm, errbuf, sq, sq->W, info->mxsize,
 				 TRMODE_UNKNOWN, info->pass_idx, FALSE, /* FALSE: info->cm->cp9b not valid */
-				 info->w, info->w_tot, NULL, &om_holder, &(info->dataA[i]));
+				 info->w, info->w_tot, NULL, &(info->dataA[i]));
     /* sq->W has been overloaded (its original value is irrelevant in this context).
      * It is now the sequence index, defined in thread_loop() 
      */
@@ -2278,7 +2270,7 @@ pipeline_thread(void *arg)
       info->cm->align_opts &= ~CM_ALIGN_TRUNC; /* lower truncated alignment flag, just for this sequence */
       status = DispatchSqAlignment(info->cm, errbuf, sq, sq->W, info->mxsize,
 				   TRMODE_UNKNOWN, PLI_PASS_STD_ANY, FALSE, /* USE PLI_PASS_STD_ANY; FALSE: info->cm->cp9b not valid */
-				   info->w, info->w_tot, NULL, &om_holder, &(info->dataA[i]));
+				   info->w, info->w_tot, NULL, &(info->dataA[i]));
       info->cm->align_opts |= CM_ALIGN_TRUNC; /* reraise truncated alignment flag */
     }
     if(status != eslOK) { 
@@ -2297,7 +2289,6 @@ pipeline_thread(void *arg)
     printf("internal update %d sq->L: %" PRId64 "\n", workeridx, sq->L);
 #endif
   }
-  cm_p7_om_holder_Reset(&om_holder);
 
   status = esl_workqueue_WorkerUpdate(info->queue, sq, NULL);
   if (status != eslOK) cm_Fail("Work queue worker failed");
@@ -3241,7 +3232,6 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   int             mpibuf_size = 0;        /* size of the mpibuf                    */
   int             blocks_remain_in_file;  /* set to FALSE to break outer loop over blocks */
   int             seqs_remain_in_block;   /* set to FALSE to break inner loop over seqs  */
-  CM_P7_OM_HOLDER om_holder;              /* reusable --p7pinbridge LOCAL profile/OPROFILE, per MPI worker (brief 26_0430-090) */
 
   if ((status = init_shared_cfg(go, cfg, errbuf)) != eslOK) mpi_failure(errbuf);
   if(esl_opt_GetBoolean(go, "--sample")) mpi_failure("--sample does not work with in MPI mode (b/c results would not be exactly reproducible)");
@@ -3546,7 +3536,6 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
    * we'll exit the inner loop over sequences, and if we immediately
    * receive another NULL dsq we'll exit the outer loop over blocks.
    */
-  cm_p7_om_holder_Init(&om_holder);
   blocks_remain_in_file = TRUE;
   while(blocks_remain_in_file) {
     /* inform the master that we're ready for our first seq of the block */
@@ -3585,7 +3574,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
       
       /* align the sequence */
       status = DispatchSqAlignment(info.cm, errbuf, sq, idx, info.mxsize, TRMODE_UNKNOWN, info.pass_idx, FALSE, /* FALSE: cm->cp9b not valid */
-				   info.w, info.w_tot, NULL, &om_holder, &data);
+				   info.w, info.w_tot, NULL, &data);
       
       /* If alignment failed: potentially retry alignment in HMM banded
        * std (non-truncated) mode. We will only possibly do this if our
@@ -3597,7 +3586,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	info.cm->align_opts &= ~CM_ALIGN_TRUNC; /* lower truncated alignment flag, just for this sequence */
 	status = DispatchSqAlignment(info.cm, errbuf, sq, idx, info.mxsize,
 				     TRMODE_UNKNOWN, PLI_PASS_STD_ANY, FALSE, /* USE PLI_PASS_STD_ANY; FALSE: info->cm->cp9b not valid */
-				     info.w, info.w_tot, NULL, &om_holder, &data);
+				     info.w, info.w_tot, NULL, &data);
 	info.cm->align_opts |= CM_ALIGN_TRUNC; /* reraise truncated alignment flag */
       }
       if(status != eslOK) { 
@@ -3626,7 +3615,6 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
       
     } /* end of 'while(seqs_remain_in_block)' */
   } /* end of 'while(blocks_remain_in_file)' */
-  cm_p7_om_holder_Reset(&om_holder);
 
   if(info.cm    != NULL) FreeCM(info.cm);
   if(info.dataA != NULL) free(info.dataA);
@@ -3945,7 +3933,6 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *sqfile, CM_t
                                                                 (! kmerchain_autoselected) ? "" :
                                                                 (in_hmm ? " [auto-selected for CLEN > 4000; --hmm --p7ibv for IBV bands]" :
                                                                           " [auto-selected for CLEN > 4000; --hbanded for CP9 HMM bands]"));
-    else if (! in_hmm && esl_opt_GetBoolean(go, "--p7pinbridge")) snprintf(bdesc, sizeof(bdesc), "pin-bridge prefilter + banded p7 Viterbi trace");
     else                                               snprintf(bdesc, sizeof(bdesc), "p7 Viterbi trace (default)");
     fprintf(ofp, "# p7 band method:                              %s\n", bdesc);
   }
@@ -4220,11 +4207,6 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
    * built-in p7bpad (10). */
   if(esl_opt_GetBoolean(go, "--p7band") || esl_opt_GetBoolean(go, "--hmm"))
     cm->p7bpad = esl_opt_GetInteger(go, "--p7padplus");
-  if(esl_opt_GetBoolean(go, "--p7pinbridge")) {
-    cm->p7_use_pinbridge = TRUE;
-    cm->p7_pinbridge_pad = esl_opt_GetInteger(go, "--p7pbpad");
-    if(esl_opt_GetBoolean(go, "--p7pinbridge-vitgaps")) cm->p7_pinbridge_vit_gaps = TRUE;
-  }
   if(esl_opt_GetBoolean(go, "--p7ibv")) {
     cm->p7_use_ibv   = TRUE;
     cm->p7_ibv_delta = esl_opt_GetInteger(go, "--p7ibv-delta");

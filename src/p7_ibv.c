@@ -683,7 +683,7 @@ cm_p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_
   /* Brief 26_0430-171: Tgm begin-anywhere vector.  begin_milli[k] = milli-bit log2 of
    * the local entry probability into M_k (occ[k] / sum_i occ[i]*(M-i+1)), the
    * same occupancy-weighted local begin HMMER's p7_ProfileConfig(p7_LOCAL) sets
-   * (and the vitband/pinbridge Tgm reference uses via cm_alndata.c:459-461).
+   * (and the vitband Tgm reference uses via cm_alndata.c:459-461).
    * Only used at the global begin row (row 1). */
   if (do_trunc) {
     float *occ = NULL;

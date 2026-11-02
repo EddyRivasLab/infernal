@@ -1192,7 +1192,6 @@ cp9_chk_band_deriver_name(CM_t *cm)
 {
   if(cm->p7_use_kmerchain) return "--p7kmerchain";
   if(cm->p7_use_ibv)       return "--p7ibv";
-  if(cm->p7_use_pinbridge) return "--p7pinbridge";
   return "default p7 Viterbi-trace";
 }
 

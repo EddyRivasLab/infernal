@@ -122,9 +122,6 @@ CreateCMShell(void)
   cm->tau          = DEFAULT_TAU;        /* 1E-7 the default tau  (tail loss for HMM banding) */
   cm->maxtau       = DEFAULT_MAXTAU;     /* 0.1  the default max tau during HMM band tightening */
   cm->p7bpad       = 10;                 /* default p7 band pad for p7_Seq2BandsVit */
-  cm->p7_use_pinbridge = FALSE;          /* default: full p7_GViterbi (set TRUE by --p7pinbridge) */
-  cm->p7_pinbridge_pad = 20;             /* SW-pinbridge prefilter band pad; brief recommends 20 */
-  cm->p7_pinbridge_vit_gaps = FALSE;     /* default: closed-form gap-aware LSIS (set TRUE by --p7pinbridge-vitgaps) */
   cm->p7_use_cykbands  = FALSE;          /* default: no CYK pre-pass (set TRUE by --cykbands) */
   cm->p7_cykbands_pad  = 5;             /* per-state pad for parsetree-derived band tightening */
   cm->p7_cykbands_no_dnc = FALSE;        /* default: size-conditional D&C-CYK fallback ON (brief 26_0430-273; set TRUE by --no-cykbands-dnc) */
@@ -3301,9 +3298,6 @@ cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm)
   new->tau         = cm->tau;
   new->maxtau      = cm->maxtau;
   new->p7bpad           = cm->p7bpad;
-  new->p7_use_pinbridge = cm->p7_use_pinbridge;
-  new->p7_pinbridge_pad = cm->p7_pinbridge_pad;
-  new->p7_pinbridge_vit_gaps = cm->p7_pinbridge_vit_gaps;
   new->p7_use_cykbands  = cm->p7_use_cykbands;
   new->p7_cykbands_pad  = cm->p7_cykbands_pad;
   new->p7_cykbands_no_dnc = cm->p7_cykbands_no_dnc;

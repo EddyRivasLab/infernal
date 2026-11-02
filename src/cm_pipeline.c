@@ -6443,7 +6443,7 @@ pli_align_hit(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, CM_HIT *hit)
     /* compute the HMM banded alignment */
     status = DispatchSqAlignment(cm, pli->errbuf, sq2aln, -1, mxsize_limit, hit->mode, pli->cur_pass_idx,
 				 TRUE, /* TRUE: cp9b bands are valid, don't recalc them */
-				 NULL, NULL, NULL, NULL, &adata); /* NULL om_holder: build-own per call (single seq) */
+				 NULL, NULL, NULL, &adata);
     if(status != eslOK && status != eslERANGE) {
       goto ERROR;
     }
@@ -6465,7 +6465,7 @@ pli_align_hit(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, CM_HIT *hit)
        */
       status = DispatchSqAlignment(cm, pli->errbuf, sq2aln, -1, 2*mxsize_limit, hit->mode, pli->cur_pass_idx,
 				   TRUE, /* TRUE: cp9b bands are valid, don't recalc them */
-				   NULL, NULL, NULL, NULL, &adata); /* NULL om_holder: build-own per call (single seq) */
+				   NULL, NULL, NULL, &adata);
       if (status == eslERANGE) ESL_XFAIL(eslEINVAL, pli->errbuf, "pli_align_hit() alignment HB retry mx too big, this shouldn't happen");
       else if(status != eslOK) goto ERROR;
     }
@@ -6475,7 +6475,7 @@ pli_align_hit(CM_PIPELINE *pli, CM_t *cm, const ESL_SQ *sq, CM_HIT *hit)
   else { /* do non-HMM-banded alignment (! (cm->align_opts & CM_ALIGN_HBANDED)) */
     esl_stopwatch_Start(watch);
     if((status = DispatchSqAlignment(cm, pli->errbuf, sq2aln, -1, mxsize_limit, hit->mode, pli->cur_pass_idx,
-				     FALSE, NULL, NULL, NULL, NULL, &adata)) != eslOK) goto ERROR; /* NULL om_holder: build-own per call (single seq) */
+				     FALSE, NULL, NULL, NULL, &adata)) != eslOK) goto ERROR;
     pli->acct[pli->cur_pass_idx].n_aln_dccyk++;
     esl_stopwatch_Stop(watch);
   }

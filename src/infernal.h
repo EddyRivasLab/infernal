@@ -1956,9 +1956,6 @@ typedef struct cm_s {
   double  tau;          /* tail loss probability for HMM target dependent banding             */
   double  maxtau;       /* maximum allowed tau value for HMM band tightening                  */
   int     p7bpad;       /* p7 band pad for p7_Seq2BandsVit (CM_ALIGN_P7BANDED); default 10    */
-  int     p7_use_pinbridge; /* if TRUE, replace full p7_GViterbi with SW-pinbridge prefilter + banded p7 GViterbi (--p7pinbridge) */
-  int     p7_pinbridge_pad; /* diagonal pad for SW-pinbridge prefilter band; default 20            */
-  int     p7_pinbridge_vit_gaps; /* if TRUE, use exact mini-Viterbi gap costs in gap-aware LSIS (--p7pinbridge-vitgaps); default FALSE (closed-form) */
   int     p7_use_cykbands;  /* if TRUE, run CYK pre-pass then tighten bands before Inside/Outside (--cykbands) */
   int     p7_cykbands_pad;  /* per-state pad for parsetree-derived band tightening; default 5 */
   int     p7_cykbands_no_dnc; /* if TRUE, disable the size-conditional D&C-CYK fallback for the standalone
@@ -3089,38 +3086,6 @@ extern int   cm_alignment_bpcons_acc_Finalize(CM_t *cm, char *errbuf, CM_BPCONS_
 extern int   cm_alignment_bpcov_acc_Finalize (CM_t *cm, char *errbuf, CM_BPCONS_ACC *acc, const char *rf2print, char **ret_bpc);
 extern void  cm_alignment_bpcons_acc_Destroy (CM_BPCONS_ACC *acc);
 
-/* CM_PB_OM32: Infernal-side 32-bit striped emission table for the
- * --p7pinbridge SW prefilter scan (brief 26_0430-094). Parallels HMMER's 16-bit
- * P7_OPROFILE->rwv but with int32 lanes so the SW DP accumulation does not
- * saturate on highly-conserved / self-alignment-scale inputs (where the
- * 16-bit kernel pins everything at +32767, destroying score-based pin
- * ranking). Opaque here (contains __m128i); full definition + Create/Build/
- * Destroy live in cm_p7_band.c. We only READ from HMMER's P7_PROFILE to build
- * it; HMMER itself is never modified. */
-typedef struct cm_pb_om32_s CM_PB_OM32;
-
-/* CM_P7_OM_HOLDER: reusable LOCAL p7 profile + optimized profile for the
- * --p7pinbridge SW prefilter scan (brief 26_0430-090). The LOCAL config of cm->fp7
- * depends only on the model (not the residues), so it can be built once per
- * worker thread / per block and reused across all sequences, with only a
- * per-sequence p7_oprofile_ReconfigLength(). This eliminates the per-sequence
- * "om_build" cost (~40% of pinbridge band derivation at M=360).
- *
- * MUST NOT be shared across threads: p7_oprofile_ReconfigLength() mutates om,
- * so each worker thread needs its own holder. Pass NULL to
- * p7_Seq2BandsPinBridgeWrap() to get per-call build-and-free behavior (the
- * single-sequence search/scan callers do this). */
-typedef struct cm_p7_om_holder_s {
-  P7_PROFILE  *gm_local;  /* LOCAL config of cm->fp7 (Convert source only)    */
-  P7_OPROFILE *om;        /* optimized LOCAL profile used by the SW scan      */
-  CM_PB_OM32  *om32;      /* 32-bit emission table for the 32-bit SW scan (brief 26_0430-094) */
-  int          M;         /* model size the holder was built for (sanity)     */
-  int          built;     /* TRUE once gm_local/om/om32 are populated         */
-} CM_P7_OM_HOLDER;
-
-extern void  cm_p7_om_holder_Init (CM_P7_OM_HOLDER *h);
-extern void  cm_p7_om_holder_Reset(CM_P7_OM_HOLDER *h);
-
 /* CM_P7_DECSTATS (brief 26_0821-141): per-sequence counts from cmalign's
  * HMM-only banded posterior decode (cm_p7_band.c), for conditions that
  * the decode zeroes silently. On a correct band and correct F/B all are 0
@@ -3153,7 +3118,7 @@ void         cm_alndata_Destroy(CM_ALNDATA *data, int free_sq);
 int          DispatchSqBlockAlignment(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float mxsize, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r, CM_ALNDATA ***ret_dataA);
 int          DispatchSqAlignment     (CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsize, char mode, int pass_idx,
 				      int cp9b_valid, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r,
-				      CM_P7_OM_HOLDER *om_holder, CM_ALNDATA **ret_data);
+				      CM_ALNDATA **ret_data);
 
 /* from cm_dpalign.c */
 extern int   cm_AlignSizeNeeded   (CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post, float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_totmb);
@@ -3633,8 +3598,6 @@ extern int              cm_tr_penalties_IdxForPass(int pass_idx);
 #define p7_domaindef_GlocalByPosteriorHeuristics_Banded          cm_p7_domaindef_GlocalByPosteriorHeuristics_Banded
 #define p7_domaindef_GlocalByPosteriorHeuristics_Banded_Multihit cm_p7_domaindef_GlocalByPosteriorHeuristics_Banded_Multihit
 #define p7_GBackwardBanded                                       cm_p7_GBackwardBanded
-#define p7_GBandedTrace                                          cm_p7_GBandedTrace
-#define p7_GBandedViterbi                                        cm_p7_GBandedViterbi
 #define p7_GBands_FromKminKmax                                   cm_p7_GBands_FromKminKmax
 #define p7_GCheckptFBDecode_Banded                               cm_p7_GCheckptFBDecode_Banded
 #define p7_GCheckptFBDecodeOA_Banded                             cm_p7_GCheckptFBDecodeOA_Banded
@@ -3657,8 +3620,6 @@ extern int              cm_tr_penalties_IdxForPass(int pass_idx);
 #define p7_Seq2BandsIBV                                          cm_p7_Seq2BandsIBV
 #define p7_Seq2BandsIBV_dnc                                      cm_p7_Seq2BandsIBV_dnc
 #define p7_Seq2BandsKmerChain                                    cm_p7_Seq2BandsKmerChain
-#define p7_Seq2BandsPinBridge                                    cm_p7_Seq2BandsPinBridge
-#define p7_Seq2BandsPinBridgeWrap                                cm_p7_Seq2BandsPinBridgeWrap
 #define p7_Seq2BandsVit                                          cm_p7_Seq2BandsVit
 
 /* from cm_p7_band.c */
@@ -3742,18 +3703,6 @@ extern int          cm_p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_G
 				 int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 extern int          cm_p7_Seq2BandsVit(char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL_DSQ *dsq, int L,
 				 int pad, int *nodepad, int hopback, int vitend, int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
-/* SW-pinbridge prefilter + banded p7 Viterbi: drop-in replacement for p7_Seq2BandsVit
- * when cm->p7_use_pinbridge is TRUE. Same signature except no gx (allocates banded
- * matrix internally) and no bg/bg arg (uses bg passed in). Other declarations
- * (p7_GBandedViterbi, p7_GBandedTrace, p7_GBands_FromKminKmax, p7_Seq2BandsPinBridge)
- * have no callers outside cm_p7_band.c and stay file-local there -- that is why
- * p7_Seq2BandsPinBridgeWrap is declared here while its four siblings are not.  */
-extern int          cm_p7_Seq2BandsPinBridgeWrap(CM_t *cm, char *errbuf, P7_PROFILE *gm,
-                                              P7_BG *bg, P7_TRACE *p7_tr,
-                                              ESL_DSQ *dsq, int L, int pad, int *nodepad,
-                                              int hopback, int vitend,
-                                              CM_P7_OM_HOLDER *om_holder,
-                                              int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 extern int          cm_p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad, int hopback, double alpha, int **ret_kmin, int **ret_kmax, int *ret_ncells);
 extern void         cm_p7_bands_ReachModelEnd(int *kmax, int L, int M);
 /* Brief 26_0628-027: genome-scale k-mer seed-and-chain guide-deriver (--p7kmerchain, opt-in).
