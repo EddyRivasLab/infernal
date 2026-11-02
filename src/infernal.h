@@ -1965,8 +1965,6 @@ typedef struct cm_s {
                                 * --cykbands pre-pass (brief 26_0430-273); legacy behavior: pre-pass always
                                 * uses the banded full-matrix CYK engine and silently skips tightening if it
                                 * doesn't fit --mxsize. Default FALSE (fallback ON). (--no-cykbands-dnc) */
-  int     p7_cykskip_unvisited; /* if TRUE, skip CM states not visited by CYK parsetree (Fix D, brief 26_0430-068);
-                                 * bands for unvisited states set empty so DP loops iterate zero cells     */
   char   *p7_dump_bands_file;  /* if non-NULL, dump per-(v,j) band TSV to this path before cm_AlignHB (--dump-bands) */
   int     p7_use_kmerchain;    /* if TRUE, derive bands from a genome-wide k-mer seed-and-chain (--p7kmerchain, brief 26_0628-027) */
   int     p7_kmerchain_ramp;   /* if TRUE, kmerchain's inter-anchor band is the interpolated ramp, else the flat band (default FALSE; --p7kmerchain-ramp, brief 26_0821-096) */
