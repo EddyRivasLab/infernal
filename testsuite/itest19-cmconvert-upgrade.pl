@@ -16,6 +16,9 @@
 #    it, default and --hmmonly; upgrading the result changes nothing.
 # 4. HP7 values written only by development versions (a2, a1) are
 #    rejected: formats that were never released aren't supported.
+# 5. A v1.0 file converts to INFERNAL1/e without --upgrade, as with it;
+#    --cp9ascm writes INFERNAL1/e (no stored filter HMM), with no
+#    cmcalibrate E-value parameters. (brief 26_0821-171)
 #
 # Usage:    ./itest19-cmconvert-upgrade.pl <builddir> <srcdir> <tmpfile prefix>
 # Example:  ./itest19-cmconvert-upgrade.pl ..         ..       tmpfoo
@@ -38,9 +41,11 @@ for my $prog ("cmbuild", "cmconvert", "cmsearch") {
 }
 my $ali   = "$srcdir/testsuite/tRNA.sto";
 my $oldcm = "$srcdir/testsuite/4.c.cm";
+my $v1p0cm = "$srcdir/testsuite/4.1p0.cm";
 my $seqs  = "$srcdir/testsuite/1k-4.fa";
 if (! -e $ali)   { die "FAIL: didn't find $ali\n"; }
 if (! -e $oldcm) { die "FAIL: didn't find $oldcm\n"; }
+if (! -e $v1p0cm) { die "FAIL: didn't find $v1p0cm\n"; }
 if (! -e $seqs)  { die "FAIL: didn't find $seqs\n"; }
 
 my @tmpfiles = ();
@@ -103,6 +108,23 @@ if ($? == 0) { die "FAIL: subtest 4: HP7 a2 file not rejected\n"; }
 write_lines($a1, map { s/^HP7(\s+)h3pri/HP7$1a1/r } grep { ! /^HP7A / } read_lines($direct));
 `$builddir/src/cmconvert $a1 > /dev/null 2>&1`;
 if ($? == 0) { die "FAIL: subtest 4: HP7 a1 file not rejected\n"; }
+
+# 5.
+my $v1     = tmp("v1p0.cm");
+my $v1up   = tmp("v1p0.up.cm");
+my $cp9    = tmp("cp9.cm");
+`$builddir/src/cmconvert $v1p0cm > $v1 2> /dev/null`;
+if ($? != 0) { die "FAIL: subtest 5: cmconvert of a v1.0 file failed\n"; }
+`$builddir/src/cmconvert --upgrade $v1p0cm > $v1up 2> /dev/null`;
+if ($? != 0) { die "FAIL: subtest 5: cmconvert --upgrade of a v1.0 file failed\n"; }
+if (grep { /^INFERNAL1/ && ! /^INFERNAL1\/e/ } read_lines($v1)) { die "FAIL: subtest 5: v1.0 file not converted to INFERNAL1/e\n"; }
+if (stripped($v1) ne stripped($v1up)) { die "FAIL: subtest 5: v1.0 conversion differs from --upgrade\n"; }
+`$builddir/src/cmconvert --cp9ascm $oldcm > $cp9 2> /dev/null`;
+if ($? != 0) { die "FAIL: subtest 5: cmconvert --cp9ascm failed\n"; }
+if (grep { /^INFERNAL1/ && ! /^INFERNAL1\/e/ } read_lines($cp9)) { die "FAIL: subtest 5: --cp9ascm didn't write INFERNAL1/e\n"; }
+if (grep { /^ECM/ } read_lines($cp9)) { die "FAIL: subtest 5: --cp9ascm CM has cmcalibrate E-value parameters\n"; }
+`$builddir/src/cmsearch --cpu 0 --hmmonly $cp9 $seqs > /dev/null 2>&1`;
+if ($? != 0) { die "FAIL: subtest 5: cmsearch --hmmonly on the --cp9ascm CMs failed\n"; }
 
 foreach my $f (@tmpfiles) { unlink $f if -e $f; }
 print "ok\n";

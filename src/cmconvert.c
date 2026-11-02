@@ -174,7 +174,13 @@ main(int argc, char **argv)
         }
       }
 
-      int   do_upgrade  = (esl_opt_GetBoolean(go, "--upgrade") && ! (cm->flags & CMH_FP7_DERIVED)) ? TRUE : FALSE; /* 1/e models are already current */
+      /* --upgrade, or a v1.0-format CM written in the default format:
+       * give it derived, calibrated filter HMMs (current format) instead
+       * of storing its calibrated ML p7 HMM as a filter HMM block (brief
+       * 26_0821-171). 1/e models are already current. */
+      int   is_v1p0_default = (cmfp->format == CM_FILE_1 && fmtcode == -1 &&
+                               (esl_opt_GetBoolean(go, "-a") || esl_opt_GetBoolean(go, "-b"))) ? TRUE : FALSE;
+      int   do_upgrade  = ((esl_opt_GetBoolean(go, "--upgrade") || is_v1p0_default) && ! (cm->flags & CMH_FP7_DERIVED)) ? TRUE : FALSE;
 
       if(cmfp->format == CM_FILE_1 || esl_opt_GetBoolean(go, "--mlhmm") || esl_opt_GetBoolean(go, "--cp9ascm")) {
 	/* if format == CM_FILE_1, we need to calculate QDBs
@@ -183,11 +189,12 @@ main(int argc, char **argv)
 	 * need E-value params for the ML p7 HMM, we calc those
 	 * in configure_model(). If --cp9ascm, we need cm->cp9 to be
 	 * built (globally, i.e. without CM_CONFIG_LOCAL), which
-	 * configure_model() also does as a side effect of cm_Configure().
-	 * With --upgrade, the filter HMMs are derived and calibrated
-	 * below instead.
+	 * configure_model() also does as a side effect of cm_Configure()
+	 * (CP9_2_CM() gives the new CM its own filter HMMs, so the input
+	 * CM's filter isn't needed). With --upgrade, the filter HMMs are
+	 * derived and calibrated below instead.
 	 */
-	if ((status = configure_model(cm, errbuf, ! do_upgrade)) != eslOK) cm_Fail(errbuf);
+	if ((status = configure_model(cm, errbuf, ! do_upgrade && ! esl_opt_GetBoolean(go, "--cp9ascm"))) != eslOK) cm_Fail(errbuf);
       }
 
       /* --upgrade: replace the filter HMM stored in an older-format CM

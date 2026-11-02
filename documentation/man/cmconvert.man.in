@@ -27,12 +27,14 @@ CM files written by Infernal versions before 1.2 store a separately
 built filter HMM after each CM. Infernal 1.2 reads them and uses that
 stored filter HMM, and by default
 .B cmconvert
-writes such a CM in an older format again (INFERNAL1/b, or
-INFERNAL1/d for a CM with pseudoknot annotation), keeping its filter
-HMM. Use
+writes such a CM in an older format again, keeping its filter HMM: a
+CM read from an INFERNAL1/a file (the format of Infernal 1.1) stays
+INFERNAL1/a, so Infernal 1.1 can still read it. Use
 .B --upgrade
 to convert such CMs to the current format (INFERNAL1/e), which stores
-no filter HMM.
+no filter HMM. CMs read from an Infernal v1.0 file, which has no
+filter HMM, are always converted to the current format, as with
+.B --upgrade.
 
 .PP
 .I <cmfile> 
@@ -106,7 +108,10 @@ that it can be aligned or searched against with
 .B cmalign
 or
 .B cmsearch
-like any other (unstructured) CM. Only CMs configured in global mode
+like any other (unstructured) CM. The new CM is written in the
+current format, with its filter HMM calibrated, but without
+.B cmcalibrate
+E-value parameters. Only CMs configured in global mode
 are currently supported (this is the default state of a freshly-read
 CM file).
 

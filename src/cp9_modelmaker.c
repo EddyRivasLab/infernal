@@ -3108,34 +3108,17 @@ CP9_2_CM(CM_t *cm, char *errbuf, CM_t **ret_cm)
    * cm->consensus/cm->rf to be non-NULL). */
   if ((status = cm_SetConsensus(newcm, newcm->cmcons, NULL)) != eslOK) { FreeCM(newcm); ESL_FAIL(status, errbuf, "CP9_2_CM(): failed to calculate consensus sequence"); }
 
-  /* The v1.1 CM file format unconditionally requires a filter p7 HMM
-   * (CMH_FP7 "should always be true" per cm_file.c) -- cm_file_Read()
-   * fails without an EFP7GF line. cm_Configure() already built
-   * newcm->mlp7 (via cm_cp9_to_p7()); calibrate it and (as there's no
-   * separately-built filter HMM here) reuse it as the filter HMM too,
-   * same as cmconvert.c's configure_model() already does for CM_FILE_1
-   * / --mlhmm conversions (see cmbuild.c::build_and_calibrate_p7_filter()
-   * for the origin of these default calibration lengths/counts). */
+  /* Give the new CM the filter HMMs cmbuild gives a CM: derived from
+   * the CM (its ML p7 HMM) and calibrated with cmbuild's default
+   * settings, so it is written in the current format (1/e) rather than
+   * with a stored filter HMM block (brief 26_0821-171). It has no base
+   * pairs and no build prior, so its HMM-only search HMM is the filter
+   * HMM (HP7 ml, newcm->hp7_xform's default). The CM itself stays
+   * uncalibrated (no cmcalibrate E-value parameters). */
   {
-    int    lmsvL, lvitL, lfwdL, gfwdL;
-    int    lmsvN, lvitN, lfwdN, gfwdN;
-    float  lftailp, gftailp;
-    double fil_gfmu, fil_gflambda;
-
-    lmsvL = lvitL = 200;
-    lfwdL = 100;
-    gfwdL = ESL_MAX(100, 2.*newcm->clen);
-    lmsvN = lvitN = lfwdN = gfwdN = 200;
-    lftailp = 0.055;
-    gftailp = 0.065;
-    if ((status = cm_p7_Calibrate(newcm->mlp7, errbuf,
-                                   lmsvL, lvitL, lfwdL, gfwdL,
-                                   lmsvN, lvitN, lfwdN, gfwdN,
-                                   lftailp, gftailp, 42, 0,
-                                   cm_p7_UseP7mlPredictor(newcm, TRUE), /* filter is the ML HMM (brief 26_0824-085) */
-                                   FALSE,                               /* do_sim: predict glocal Fwd stats (brief 26_0824-087) */
-                                   &fil_gfmu, &fil_gflambda)) != eslOK) { FreeCM(newcm); return status; }
-    if ((status = cm_SetFilterHMM(newcm, newcm->mlp7, fil_gfmu, fil_gflambda)) != eslOK) { FreeCM(newcm); ESL_FAIL(status, errbuf, "CP9_2_CM(): unable to set the HMM filter for the CM"); }
+    CM_P7_CALOPTS co;
+    cm_p7_CalOptsSetDefaults(&co, newcm->clen, FALSE); /* FALSE: predict glocal Forward stats, as cmbuild does by default */
+    if ((status = cm_p7_CalibrateDerivedFilterHMMs(newcm, &co, 0, errbuf)) != eslOK) { FreeCM(newcm); return status; }
   }
 
   *ret_cm = newcm;
