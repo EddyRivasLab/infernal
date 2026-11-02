@@ -34,6 +34,7 @@ static ESL_OPTIONS options[] = {
   /* name               type  default   env  range   toggles        reqs      incomp  help                                                         docgroup */
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,       NULL, "show brief help and exit",                                         0 },
   { "--version", eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,       NULL, "show version info and exit",                                       0 },
+  { "--devhelp", eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,       NULL, "show list of otherwise hidden developer/expert options",           1 },
   { "-a",        eslARG_NONE,"default",NULL, NULL,   OUTOPTS,       NULL,       NULL, "ascii:  output models in INFERNAL 1.1 ASCII format",               1 },
   { "-b",        eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "binary: output models in INFERNAL 1.1 binary format",              1 },
   { "-1",        eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "output backward-compatible v0.7-v1.0.2 ASCII format",   1 },
@@ -46,7 +47,7 @@ static ESL_OPTIONS options[] = {
   { "--upgrade", eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,"-1,--mlhmm,--fhmm,--cp9ascm,--outfmt", "convert older-format CMs to the current format", 1 },
   { "--prior",   eslARG_INFILE, NULL,  NULL, NULL,      NULL,"--upgrade",       NULL, "with --upgrade: CMs were built with prior file <f>",      1 },
   { "--cpu",     eslARG_INT,  CMNCPU,"INFERNAL_NCPU","n>=0",NULL,       NULL,  CPUOPTS, "with --upgrade: number of CPUs for calibration",  1 },
-  /* options for controlling p7 per-node band pad computation */
+  /* options for controlling p7 per-node band pad computation: shown only by --devhelp */
   { "--p7pad",      eslARG_NONE,    FALSE, NULL, NULL,    NULL,  NULL,    "--no-p7pad", "compute p7 per-node band pads (O(M^2) memory)",   2 },
   { "--no-p7pad",   eslARG_NONE,    FALSE, NULL, NULL,    NULL,  NULL,       "--p7pad", "don't compute p7 per-node band pads (default)",   2 },
   { "--p7pad-N",    eslARG_INT,    "1000", NULL, "n>0",   NULL,  "--p7pad",       NULL, "number of samples for p7 pad simulation",        2 },
@@ -86,14 +87,16 @@ main(int argc, char **argv)
       printf("\nTo see more help on available options, do %s -h\n\n", argv[0]);
       exit(1);
     }
-  if (esl_opt_GetBoolean(go, "-h"))
+  if (esl_opt_GetBoolean(go, "-h") || esl_opt_GetBoolean(go, "--devhelp"))
     {
       cm_banner(stdout, argv[0], banner);
       esl_usage(stdout, argv[0], usage);
       puts("\nOptions:");
       esl_opt_DisplayHelp(stdout, go, 1, 2, 80);
-      puts("\nOptions for p7 per-node band pad computation:");
-      esl_opt_DisplayHelp(stdout, go, 2, 2, 80);
+      if (esl_opt_GetBoolean(go, "--devhelp")) {
+        puts("\nOptions for p7 per-node band pad computation:");
+        esl_opt_DisplayHelp(stdout, go, 2, 2, 80);
+      }
       exit(0);
     }
   if (esl_opt_GetBoolean(go, "--version"))

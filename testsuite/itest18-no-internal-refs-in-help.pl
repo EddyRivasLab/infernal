@@ -17,7 +17,7 @@ BEGIN {
 }
 
 @progs    = ("cmalign", "cmbuild", "cmcalibrate", "cmconvert", "cmemit", "cmfetch", "cmpress", "cmscan", "cmsearch", "cmstat");
-@devprogs = ("cmbuild", "cmscan", "cmsearch");    # programs with a --devhelp option
+@devprogs = ("cmalign", "cmbuild", "cmconvert", "cmscan", "cmsearch");    # programs with a --devhelp option
 
 foreach $prog (@progs) { if (! -x "$builddir/src/$prog") { die "FAIL: didn't find $prog executable in $builddir/src\n"; } }
 

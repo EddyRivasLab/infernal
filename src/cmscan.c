@@ -241,8 +241,8 @@ static ESL_OPTIONS options[] = {
   /* Options for terminating after individual pipeline stages, currently only works for F3 */
   /* name           type          default env   range toggles reqs                             incomp  help                                                         docgroup*/
   { "--msvband",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL, "MSV-derived bands (not Viterbi) for F4/F5 (experimental)", 106 },
-  { "--vitband",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--novitband,--msvband", "banded Viterbi env def for F4/F5 (experimental)",           6 },
-  { "--novitband", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL, "no-op: F4/F5 are unbanded by default",                                   6 },
+  { "--vitband",   eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--novitband,--msvband", "banded Viterbi env def for F4/F5 (experimental)",           103 },
+  { "--novitband", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, NULL, "no-op: F4/F5 are unbanded by default",                                   103 },
   { "--vitblocal", eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL, "--novitband,--msvband", "with --vitband, use local Viterbi instead of glocal",                  106 },
   { "--nop7post_cp9b", eslARG_NONE, FALSE, NULL, NULL,   NULL,  NULL, NULL, "disable default p7post_cp9b (CP9 bands from p7 post)",                                     106 },
   { "--p7deltrigger", eslARG_NONE, FALSE, NULL, NULL,   NULL,  NULL, NULL, "re-run F7 Inside without CP9 bands when gFwd delta > 0.5 nats and F6 P < 1e-8",             106 },
