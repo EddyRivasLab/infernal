@@ -1995,11 +1995,6 @@ typedef struct cm_s {
   int     p7_ibv_wv;           /* if TRUE, windowed-Viterbi band: i2k +/- F+B-halfwidth pad (--p7ibv-wv, brief 26_0430-169) */
   int    *p7_wv_nodepad;       /* [0..M] WV per-node pad (F+B-halfwidth p95), computed align-time; NULL until set */
   int     p7_wv_nodepad_M;     /* length of p7_wv_nodepad (= fp7->M); 0 if not set */
-  int     p215_mode;           /* P215 Viterbi-tighten CLI mode: P215_MODE_{OFF,PIN,CLOUD}; set by
-                                 * --p7vittighten/--p7vitcloud (brief 26_0430-262); default OFF, in which
-                                 * case the P215/P216/P248 env-var family (cm_alndata.c) is read as before */
-  int     p215_tighten_n;      /* pin half-width N when p215_mode==P215_MODE_PIN (--p7vittighten <n>) */
-  int     p215_cloud_delta;    /* cloud delta (milli-bits) when p215_mode==P215_MODE_CLOUD (--p7vitcloud <n>) */
 
   int         config_opts;/* model configuration options                                        */
   int         align_opts; /* alignment options                                                  */
@@ -3666,8 +3661,6 @@ extern int              cm_tr_penalties_IdxForPass(int pass_idx);
 #define p7_Seq2Bands                                             cm_p7_Seq2Bands
 #define p7_Seq2BandsIBV                                          cm_p7_Seq2BandsIBV
 #define p7_Seq2BandsIBV_dnc                                      cm_p7_Seq2BandsIBV_dnc
-#define p7_Seq2BandsIBV_extband                                  cm_p7_Seq2BandsIBV_extband
-#define p7_Seq2BandsIBV_extband_compact                          cm_p7_Seq2BandsIBV_extband_compact
 #define p7_Seq2BandsKmerChain                                    cm_p7_Seq2BandsKmerChain
 #define p7_Seq2BandsPinBridge                                    cm_p7_Seq2BandsPinBridge
 #define p7_Seq2BandsPinBridgeWrap                                cm_p7_Seq2BandsPinBridgeWrap
@@ -3782,11 +3775,6 @@ extern int          cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *ds
 #define P7IBV_MODE_DELTA  0
 #define P7IBV_MODE_FIXED  1
 #define P7IBV_MODE_HYBRID 2
-/* Brief 26_0430-262: P215 Viterbi-band-tightening CLI mode (--p7vittighten/--p7vitcloud).
- * OFF (default) leaves the P215/P216/P248 getenv() family (cm_alndata.c) as the sole control. */
-#define P215_MODE_OFF     0
-#define P215_MODE_PIN     1
-#define P215_MODE_CLOUD   2
 extern int          cm_p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_milli,
                                     int do_trunc,
                                     int ibv_mode, int ibv_width,
@@ -3805,16 +3793,6 @@ extern int          cm_p7_IBVPins2Trace(const P7_PROFILE *gm, const ESL_DSQ *dsq
 extern int          cm_p7_Seq2BandsWV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int *nodepad,
                                     int do_trunc,
                                     int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
-/* brief 26_0430-248: optional delta-CLOUD band outputs (ret_kmin/ret_kmax); pass
- * NULL for those (and delta_milli ignored) to get the original pin-only behavior. */
-extern int          cm_p7_Seq2BandsIBV_extband(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
-                                    int do_trunc, const int *ext_kmin, const int *ext_kmax,
-                                    int delta_milli, int **ret_i2k, int **ret_kmin, int **ret_kmax);
-/* brief 26_0430-216: compact O(L*bandwidth) storage version of the above (same semantics,
- * same signature); i2k must match p7_Seq2BandsIBV_extband() byte-for-byte. */
-extern int          cm_p7_Seq2BandsIBV_extband_compact(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
-                                    int do_trunc, const int *ext_kmin, const int *ext_kmax,
-                                    int delta_milli, int **ret_i2k, int **ret_kmin, int **ret_kmax);
 extern int          cm_ComputeP7WVNodePad(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, int nsamples,
                                     double quantile, int delta_milli, int floorpad, int **ret_nodepad);
 extern int          cm_ComputeP7CMNodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, int ncpu, char *errbuf);
