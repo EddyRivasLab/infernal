@@ -2047,7 +2047,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
 
       esl_printf("\nBasic options:\n");                                                      esl_opt_DisplayHelp(stdout, go, 1, 2, 100); /* 1= group; 2 = indentation; 100=textwidth*/
       esl_printf("\nOptions directing output:\n");                                           esl_opt_DisplayHelp(stdout, go, 2, 2, 100);
-      esl_printf("\nOptions controlling reporting thresholds:");                             esl_opt_DisplayHelp(stdout, go, 3, 2, 100);
+      esl_printf("\nOptions controlling reporting thresholds:\n");                           esl_opt_DisplayHelp(stdout, go, 3, 2, 100);
       esl_printf("\nOptions controlling inclusion (significance) thresholds:\n");            esl_opt_DisplayHelp(stdout, go, 4, 2, 100);
       esl_printf("\nOptions controlling model-specific reporting thresholds:\n");            esl_opt_DisplayHelp(stdout, go, 5, 2, 100);
       esl_printf("\nOptions controlling acceleration heuristics:%s\n", do_dev ? "":devnote); esl_opt_DisplayHelp(stdout, go, 6, 2, 100);
@@ -2064,9 +2064,9 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
 
       esl_printf("\nOther options%s:\n", do_dev ? "" : devnote); esl_opt_DisplayHelp(stdout, go, 7, 2, 100);
       if (do_dev) {
-        esl_printf("\nOther expert options%s:\n");               esl_opt_DisplayHelp(stdout, go, 108, 2, 100);
+        esl_printf("\nOther expert options:\n");                 esl_opt_DisplayHelp(stdout, go, 108, 2, 100);
       } else
-        esl_printf("\n(*) Use --devhelp to show additional expert options.");
+        esl_printf("\n(*) Use --devhelp to show additional expert options.\n");
       exit(0);
     }
 
