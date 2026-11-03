@@ -551,28 +551,8 @@ CYKDivideAndConquerHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Pars
       sc =  cm->beginsc[r];
     }
 
-  /* brief 26_0430-225: DNC_MEM_VERBOSE ground-truth peak-memory diagnostic,
-   * mirroring INFERNAL_CKPT_VERBOSE's (cm_dpalign.c) env-gated fprintf style.
-   * Reuses the existing (previously dormant -- no caller anywhere before this
-   * brief) high-water-mark instrumentation built for brief 26_0610-007/008/050
-   * (CYKDeckTrackReset/MaxMb/VjdAtPeakMb/VjiAtPeakMb + the shadow tracker
-   * above): that infrastructure already accounts every live banded-vjd deck,
-   * class-2 (V-problem) vji deck, and shadow deck byte-for-byte at alloc/free
-   * time, so no new byte-counting is added here -- just the env gate + report. */
-  int dnc_mem_verbose = (getenv("DNC_MEM_VERBOSE") != NULL) ? TRUE : FALSE;
-  if (dnc_mem_verbose) { CYKDeckTrackReset(); CYKShadowTrackReset(); }
-
   /* Start the banded divide and conquer recursion. */
   sc += generic_splitter_hb(cm, dsq, L, tr, r, z, i0, j0, cp9b);
-
-  if (dnc_mem_verbose) {
-    double peak_mb = CYKDeckTrackMaxMb();  /* NOTE: this call also sets cyk_dnc_track = FALSE */
-    double vjd_mb  = CYKDeckTrackVjdAtPeakMb();
-    double vji_mb  = CYKDeckTrackVjiAtPeakMb();
-    double shad_mb = CYKShadowTrackMaxMb();
-    fprintf(stderr, "# CYKDivideAndConquerHB (D&C) engaged: M=%d L=%d sc=%.5f  DnC-DP peak=%.2f Mb (vjd=%.2f Mb vji=%.2f Mb)  shadow-peak=%.2f Mb\n",
-            cm->M, L, sc, peak_mb, vjd_mb, vji_mb, shad_mb);
-  }
 
   if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
   ESL_DPRINTF1(("#DEBUG: returning from CYKDivideAndConquerHB() sc : %f\n", sc));
@@ -4959,34 +4939,6 @@ wedge_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, 
   if (r==0 && (cm->flags & CMH_LOCAL_BEGIN)) {
     if (bsc > best_sc) { best_sc = bsc; best_v = -2; best_j = j0; best_d = W; }
   }
-
-#ifdef HBDNC_DEBUG
-  if (! NOT_IMPOSSIBLE(best_sc)) {
-    fprintf(stderr, "## WEDGE_HB no split: r=%d z=%d i0=%d j0=%d W=%d  splitset w=%d y=%d\n",
-	    r, z, i0, j0, W, w, y);
-    { int vv; for (vv=w; vv<=y; vv++) {
-        int na=0, nb=0, jj, dd; int ajlo=99999,ajhi=-1,bjlo=99999,bjhi=-1; int both=0;
-        for (jj=ESL_MAX(i0-1,jmin[vv]); jj<=ESL_MIN(j0,jmax[vv]); jj++) {
-          int jpv=jj-jmin[vv], jpp=jj-(i0-1);
-          for (dd=hd_min(cp9b, vv, jpv); dd<=hd_max(cp9b, vv, jpv) && dd<=jpp; dd++) {
-            int ddp=dd-hd_min(cp9b, vv, jpv);
-            int va=NOT_IMPOSSIBLE(alpha[vv][jj][ddp]), vb=NOT_IMPOSSIBLE(beta[vv][jj][ddp]);
-            if(va){na++; if(jj<ajlo)ajlo=jj; if(jj>ajhi)ajhi=jj;}
-            if(vb){nb++; if(jj<bjlo)bjlo=jj; if(jj>bjhi)bjhi=jj;}
-            if(va&&vb)both++;
-          } }
-        fprintf(stderr, "##   v=%d type=%d jband[%d..%d]: alpha-valid=%d(j%d..%d) beta-valid=%d(j%d..%d) both=%d\n",
-                vv, cm->sttype[vv], jmin[vv], jmax[vv], na,ajlo,ajhi, nb,bjlo,bjhi, both);
-        { int jj2=j0, jpv=jj2-jmin[vv], jpp=jj2-(i0-1); int adlo=99999,adhi=-1,bdlo=99999,bdhi=-1;
-          for (dd=hd_min(cp9b, vv, jpv); dd<=hd_max(cp9b, vv, jpv) && dd<=jpp; dd++) {
-            int ddp=dd-hd_min(cp9b, vv, jpv);
-            if(NOT_IMPOSSIBLE(alpha[vv][jj2][ddp])){if(dd<adlo)adlo=dd;if(dd>adhi)adhi=dd;}
-            if(NOT_IMPOSSIBLE(beta[vv][jj2][ddp])){if(dd<bdlo)bdlo=dd;if(dd>bdhi)bdhi=dd;} }
-          fprintf(stderr, "##      @j=j0=%d band-d[%d..%d](cap jp=%d): alpha-d[%d..%d] beta-d[%d..%d]\n",
-                  jj2, hd_min(cp9b, vv, jpv), hd_max(cp9b, vv, jpv), jpp, adlo,adhi, bdlo,bdhi); } } }
-    cm_Fail("wedge_splitter_hb: band-infeasible subproblem (see stderr dump)");
-  }
-#endif
 
   free_banded_hb_vjd_matrix(alpha, cm, i0, j0, cp9b);
   /* brief 26_0430-227: free the banded EL deck explicitly (eldmax-driven width,
@@ -10021,25 +9973,7 @@ TrCYKDivideAndConquerHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, in
    * standard split landing on the same marginal-end cell (oracle forces the
    * marginal-end at d<2). T is OFF (R4.4c). Driver-only entry (rung-3/4 not yet in
    * the cmalign dispatch on this branch). */
-  /* brief 26_0430-225: DNC_MEM_VERBOSE ground-truth peak-memory diagnostic,
-   * truncated D&C entry -- same reused CYKDeckTrack + CYKShadowTrack
-   * instrumentation as CYKDivideAndConquerHB() above (that infra already
-   * covers this trunc code path too: tr_inside_hb/tr_outside_hb/
-   * tr_generic_splitter_hb allocate via the same alloc_banded_hb_vjd_deck-
-   * family calls, already instrumented). */
-  int dnc_mem_verbose = (getenv("DNC_MEM_VERBOSE") != NULL) ? TRUE : FALSE;
-  if (dnc_mem_verbose) { CYKDeckTrackReset(); CYKShadowTrackReset(); }
-
   sc = tr_generic_splitter_hb(cm, dsq, L, tr, 0, z, i0, j0, r_allow_J, r_allow_L, r_allow_R, r_allow_T, cp9b);
-
-  if (dnc_mem_verbose) {
-    double peak_mb = CYKDeckTrackMaxMb();
-    double vjd_mb  = CYKDeckTrackVjdAtPeakMb();
-    double vji_mb  = CYKDeckTrackVjiAtPeakMb();
-    double shad_mb = CYKShadowTrackMaxMb();
-    fprintf(stderr, "# TrCYKDivideAndConquerHB (D&C, trunc) engaged: M=%d L=%d mode=%c sc=%.5f  DnC-DP peak=%.2f Mb (vjd=%.2f Mb vji=%.2f Mb)  shadow-peak=%.2f Mb\n",
-            cm->M, L, preset_mode, sc, peak_mb, vjd_mb, vji_mb, shad_mb);
-  }
 
   /* the truncated-begin entry state is the first state attached below ROOT_S */
   b = (tr->n > 1) ? tr->state[1] : 0;
@@ -10071,7 +10005,7 @@ TrCYKDivideAndConquerHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, in
  * bifurcations.  This is the right kind of estimate for an --mxsize gate
  * (which must not under-promise), but is expected to overestimate,
  * possibly by a lot, on deeply unbalanced trees -- brief 226's job is to
- * measure the actual overestimation factor via DNC_MEM_VERBOSE.
+ * measure the actual overestimation factor with the CYKDeckTrack* byte tracker.
  *
  * KNOWN GAP (verified, not assumed -- flagged for brief 226): beta[v] (the
  * bifurcation-state Outside deck, cm_dpsmall.c:4719/4737) is allocated by
@@ -10081,7 +10015,7 @@ TrCYKDivideAndConquerHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, in
  * This means beta[v] decks accumulate, unfreed, across EVERY bifurcation
  * visited over the WHOLE recursion -- not just the single widest live
  * sub-problem this estimator bounds.  For a CM with many bifurcations
- * (e.g. an rRNA model), the true peak measured by DNC_MEM_VERBOSE could
+ * (e.g. an rRNA model), the true peak measured by CYKDeckTrack* could
  * exceed this bound by O(#bifurcations-visited x avg-beta-deck-size),
  * which is NOT captured below (beta[v] is a single-state deck, individually
  * small, but the accumulation is unbounded across a long alignment run).
@@ -10094,7 +10028,7 @@ TrCYKDivideAndConquerHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, in
  * (v_splitter()'s EXACT unbanded triangular decks, tracked separately by
  * the existing cyk_dnc_vji_bytes counter) -- computing its size requires
  * modeling insideT_size()'s RAMLIMIT cutoff and the V-problem's own d-range,
- * which this estimator does not attempt.  DNC_MEM_VERBOSE's vji=... report
+ * which this estimator does not attempt.  CYKDeckTrackVjiAtPeakMb()
  * captures it in the ground truth; this estimator's vjd-only bound may
  * therefore UNDERESTIMATE on CMs/sequences where the V-problem dominates.
  *****************************************************************/
