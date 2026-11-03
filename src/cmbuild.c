@@ -177,7 +177,6 @@ static ESL_OPTIONS options[] = {
   { "--notrunc",   eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine",           NULL, "w/--refine, do not use truncated alignment algorithm",              8 },
   { "--miss",      eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine",           NULL, "w/--refine, mark seqs w/terminal gaps as fragments",                8 },
   /* below are only shown with --devhelp */
-  { "--sub",       eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine", "--notrunc,-l", "w/--refine, use sub CM for columns b/t HMM start/end points",     108 },
   { "--nonbanded", eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine",           NULL, "do not use bands to accelerate alignment with --refine",          108 },
   { "--indi",      eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine",           NULL, "print individual sequence scores during MSA refinement",          108 },
   { "--fins",      eslARG_NONE,     FALSE, NULL, NULL,    NULL, "--refine",           NULL, "w/--refine, flush inserts left/right in alignments",              108 },
@@ -830,7 +829,6 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *alifile)
   }
   if (esl_opt_IsUsed(go, "--notrunc"))     { fprintf(ofp, "# use truncated aln algorithms for aln refinement:    no\n"); }
   if (esl_opt_IsUsed(go, "--cyk"))         { fprintf(ofp, "# use the CYK algorithm instead of optimal accuracy:  yes\n"); }
-  if (esl_opt_IsUsed(go, "--sub"))         { fprintf(ofp, "# alternative truncated seq alignment 'sub' mode:     on\n"); }
   if (esl_opt_IsUsed(go, "--nonbanded"))   { fprintf(ofp, "# use HMM bands for accelerating aln refinement:      no\n"); }
   if (esl_opt_IsUsed(go, "--indi"))        { fprintf(ofp, "# print individual seq scores during aln refinement:  yes\n"); }
   if (esl_opt_IsUsed(go, "--fins"))        { fprintf(ofp, "# flush inserts left/rigth during aln refinement:     yes\n"); }
@@ -1169,7 +1167,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *alifile)
    Parsetree_t    **tmp_trpA    = NULL; /* array of pointers to parsetrees, don't free individual parsetrees */
    CM_ALNDATA     **dataA       = NULL; /* alignment data filled in AlignSequenceBlock(): parsetrees, scores, etc. */
    int              v, nd;              /* state and node counters, only used if -l */
-   int              do_trunc    = (esl_opt_GetBoolean(go, "--notrunc") || esl_opt_GetBoolean(go, "--sub")) ? FALSE : TRUE;
+   int              do_trunc    = esl_opt_GetBoolean(go, "--notrunc") ? FALSE : TRUE;
 
    /* check contract */
    if(input_msa       == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "refine_msa(), input_msa passed in as NULL");
@@ -1210,7 +1208,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *alifile)
    /* print header for tabular output */
    print_refine_column_headings(go, cfg);
    /* Only print initial score (parsetree scores) if we're not doing
-    * truncated alignment (--notrunc or --sub enabled). If we are doing
+    * truncated alignment (--notrunc enabled). If we are doing
     * truncated alignment the parsetree scores will be far higher than
     * the scores after the first iteration of truncated realignment
     * since we'll use truncation penalties for those. This is a sloppy
@@ -2594,8 +2592,7 @@ configure_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM
     if     (esl_opt_GetBoolean(go, "--gibbs"))     { cm->align_opts |= CM_ALIGN_SAMPLE; }
     else if(esl_opt_GetBoolean(go, "--cyk"))       { cm->align_opts |= CM_ALIGN_CYK;    }
     else                                           { cm->align_opts |= CM_ALIGN_OPTACC; }
-    if     (  esl_opt_GetBoolean(go, "--sub"))     { cm->align_opts |= CM_ALIGN_SUB;    }
-    else if(! esl_opt_GetBoolean(go, "--notrunc")) { cm->align_opts |= CM_ALIGN_TRUNC;  }
+    if(! esl_opt_GetBoolean(go, "--notrunc")) { cm->align_opts |= CM_ALIGN_TRUNC; }
 
     if(esl_opt_GetBoolean(go, "--nonbanded"))   { 
       cm->align_opts |=  CM_ALIGN_SMALL; 
@@ -2608,8 +2605,7 @@ configure_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM
     if(esl_opt_GetBoolean(go, "--fins")) cm->align_opts  |= CM_ALIGN_FLUSHINSERTS;
 
     /* update cm->config_opts */
-    if     (  esl_opt_GetBoolean(go, "--sub"))     { cm->config_opts |= CM_CONFIG_SUB; }
-    else if(! esl_opt_GetBoolean(go, "--notrunc")) { cm->config_opts |= CM_CONFIG_TRUNC; }
+    if(! esl_opt_GetBoolean(go, "--notrunc")) { cm->config_opts |= CM_CONFIG_TRUNC; }
     if(esl_opt_GetBoolean(go, "--nonbanded")) cm->config_opts |= CM_CONFIG_NONBANDEDMX;
 
     if(esl_opt_GetBoolean(go, "-l")) { 

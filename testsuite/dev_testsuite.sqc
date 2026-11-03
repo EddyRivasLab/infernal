@@ -605,7 +605,6 @@
 2  exercise  build:vault/cyk     @src/cmbuild@ -F --cyk --refine %TMPOUT% %VAULT.CM% !testsuite/Vault.sto! 
 1  exercise  build:se/nt         @src/cmbuild@ -F --notrunc --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/miss       @src/cmbuild@ -F --miss --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
-1  exercise  build:se/sub        @src/cmbuild@ -F --sub --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/nb         @src/cmbuild@ -F --nonbanded --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/nbnt       @src/cmbuild@ -F --nonbanded --notrunc --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/nb/gbs     @src/cmbuild@ -F --gibbs --seed 33 --nonbanded --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
@@ -614,7 +613,6 @@
 1  exercise  build:se/nbnt/cyk   @src/cmbuild@ -F --cyk --nonbanded --notrunc --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/ndi        @src/cmbuild@ -F --refine %TMPOUT% --indi %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/fins       @src/cmbuild@ -F --fins --refine %TMPOUT% %SE.CM% !testsuite/se.sto!
-1  exercise  build:se/sub/gbs    @src/cmbuild@ -F --sub --gibbs --seed 33 --refine %TMPOUT% %SE.CM% !testsuite/se.sto! 
 1  exercise  build:se/tau        @src/cmbuild@ -F --tau 1E-3 --refine %TMPOUT% %SE.CM% !testsuite/se.sto!
 1  exercise  build:vault/tau     @src/cmbuild@ -F --tau 1E-3 --refine %TMPOUT% %VAULT.CM% !testsuite/Vault.sto!
 1  exercise  build:se/mxsize     @src/cmbuild@ -F --mxsize 32 --refine %TMPOUT% %SE.CM% !testsuite/se.sto!
