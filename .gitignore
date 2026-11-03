@@ -36,7 +36,6 @@ src/cmsearch
 src/cmstat
 src/trcyk
 src/cp9-test
-src/sub_cm-test
 src/truncyk_check
 src/bandcyk-montecarlo-test
 src/bandcyk-truncation-test

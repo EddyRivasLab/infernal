@@ -392,11 +392,6 @@
 1  exercise  cp9/rp              @src/cp9-test@ --psionly %RP.CM%
 2  exercise  cp9/ssu             @src/cp9-test@ --psionly %SSU.CM%
 
-# sub_cm-test exercises (sub CM construction validation) 
-1  exercise  sub/trna1           @src/sub_cm-test@ %TRNA.CM%
-1  exercise  sub/rp              @src/sub_cm-test@ %RP.CM%
-2  exercise  sub/ssu             @src/sub_cm-test@ %SSU.CM%
-1  exercise  sub/trna2           @src/sub_cm-test@ --exhaust %TRNA.CM%
 
 ##################################################################
 ##################################################################

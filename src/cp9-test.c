@@ -98,7 +98,7 @@ main(int argc, char **argv)
     if ( esl_opt_IsOn(go, "-s")) r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"));
     else                         r = esl_randomness_CreateTimeseeded();
     
-    if((status = CP9_check_by_sampling(cm, hmm, errbuf, r, NULL, 1, hmm->M, chi_thresh, nsamples, debug_level)) != eslOK) cm_Fail(errbuf);
+    if((status = CP9_check_by_sampling(cm, hmm, errbuf, r, 1, hmm->M, chi_thresh, nsamples, debug_level)) != eslOK) cm_Fail(errbuf);
     printf("CP9 HMM passed sampling check.\n");
       
     esl_stopwatch_Stop(w);

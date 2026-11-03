@@ -31,7 +31,6 @@
  * estimate of the CM's (log-odds scores per residue are a few bits). */
 #define CM_CENTER_MAXSHIFT 20.
 
-static int sub_alignment_prep(CM_t *orig_cm, char *errbuf, ESL_SQ *sq, CMSubMap_t **ret_submap, CM_t **ret_sub_cm);
 static int  plain_cp9_engine(CM_t *cm, char *errbuf, ESL_SQ *sq, float mxsize, int nmx, int do_iterate, int *ret_use_ckpt);
 static void shrink_cp9_matrices(CM_t *cm);
 
@@ -531,69 +530,6 @@ cm_alndata_Destroy(CM_ALNDATA *data, int free_sq)
  * 2. Alignment workunit processing functions
  *****************************************************************/
 
-/* Function: sub_alignment_prep()
- * Date:     EPN, Mon Jan  9 05:25:26 2012
- *
- * Purpose:  Prepare for an alignment workunit in sub-mode.
- *
- * Args:     orig_cm    - the covariance model
- *           errbuf     - char buffer for reporting errors
- *           sq         - the sequence we're creating the sub CM for
- *           ret_submap - RETURN: the sub CM to original CM map, created here
- *           ret_sub_cm - RETURN: the sub CM, created here
- *
- * Returns:  eslOK on success;
- *           eslEMEM if we run out of memory;
- *           eslEINVAL on other error, errbuf is filled;
- *           <ret_dataA> is alloc'ed and filled with sq_block->count CM_ALNDATA objects.
- */
-int
-sub_alignment_prep(CM_t *orig_cm, char *errbuf, ESL_SQ *sq, CMSubMap_t **ret_submap, CM_t **ret_sub_cm)
-{
-  int          status;            /* easel status */
-  CM_t        *sub_cm  = NULL;    /* the sub CM */
-  CMSubMap_t  *submap  = NULL;    /* map from mother CM to sub CM, and vice versa */
-  int          spos;              /* HMM node most likely to have emitted posn 1 of target seq */
-  int          spos_state;        /* HMM state type for curr spos 0=match or 1=insert */
-  int          epos;              /* HMM node most likely to have emitted posn L of target seq */
-  int          epos_state;        /* HMM state type for curr epos 0=match or 1=insert */
-
-  /* step 1. predict start and end positions (HMM nodes) from posterior matrix */
-  if((status = cp9_Seq2Posteriors(orig_cm, errbuf, orig_cm->cp9_mx, orig_cm->cp9_bmx, orig_cm->cp9_bmx, sq->dsq, 1, sq->L, 0)) != eslOK) return status; 
-  CP9NodeForPosn(orig_cm->cp9, 1, sq->L,     1, orig_cm->cp9_bmx, &spos, &spos_state, 0., TRUE,  0);
-  CP9NodeForPosn(orig_cm->cp9, 1, sq->L, sq->L, orig_cm->cp9_bmx, &epos, &epos_state, 0., FALSE, 0);
-  /* Deal with special cases for sub-CM alignment: If the most
-   * likely state to have emitted the first or last residue is the
-   * insert state in node 0, it only makes sense to start modeling
-   * at consensus column 1. */
-  if(spos == 0 && spos_state == 1) spos = 1;
-  if(epos == 0 && epos_state == 1) epos = 1;
-  /* If most-likely HMM node to emit final position comes BEFORE or
-   * EQUALS the most-likely HMM node to emit first position, our HMM
-   * alignment is crap, default to using the full CM. (note: If
-   * EQUALS we could be right, but we can't build a CM from a single
-   * consensus column (see notes in cm_modelmaker.c::cm_from_guide),
-   * and I would argue we don't really care about getting single
-   * residue alignments correct anyway. 
-   */
-  if(epos <= spos) { spos = 1; epos = orig_cm->cp9->M; } 
-  
-  /* step 2. build the sub_cm from the original CM. */
-  if((status = build_sub_cm(orig_cm, errbuf, &sub_cm, 
-			    spos, epos,                /* first and last col of structure kept in the sub_cm  */
-			    &submap,                   /* this maps from the sub_cm to cm and vice versa      */
-			    0)) != eslOK)              /* don't print debugging info */
-    return status;
-
-  /* step 3. configure the sub_cm */
-  if((status = cm_ConfigureSub(sub_cm, errbuf, -1, orig_cm, submap)) != eslOK) return status; 
-
-  *ret_sub_cm = sub_cm;
-  *ret_submap = submap;
-
-  return eslOK;
-}
-
 /* Function: DispatchSqBlockAlignment()
  * Date:     EPN, Fri Dec 30 14:59:43 2011
  *
@@ -977,7 +913,7 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
   float         save_thresh2 = (cm->cp9b == NULL) ? -1. : cm->cp9b->thresh2;
   float         center_c     = 0.;   /* per-residue score shift for the CM DP (see Purpose) */
   float        *center_save  = NULL; /* saved emission scores while centered, else NULL */
-  CM_t         *center_cm    = NULL; /* the CM whose scores are centered (cm or the sub CM) */
+  CM_t         *center_cm    = NULL; /* the CM whose scores are centered */
 
   /* alignment options */
   int do_nonbanded = (cm->align_opts & CM_ALIGN_NONBANDED) ? TRUE  : FALSE;
@@ -986,7 +922,6 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
   int do_optacc    = (cm->align_opts & CM_ALIGN_OPTACC)    ? TRUE  : FALSE;
   int do_sample    = (cm->align_opts & CM_ALIGN_SAMPLE)    ? TRUE  : FALSE;
   int do_post      = (cm->align_opts & CM_ALIGN_POST)      ? TRUE  : FALSE;
-  int do_sub       = (cm->align_opts & CM_ALIGN_SUB)       ? TRUE  : FALSE;
   int do_small     = (cm->align_opts & CM_ALIGN_SMALL)     ? TRUE  : FALSE;
   int do_trunc     = (cm->align_opts & CM_ALIGN_TRUNC)     ? TRUE  : FALSE;
   int do_xtau      = (cm->align_opts & CM_ALIGN_XTAU)      ? TRUE  : FALSE;
@@ -1000,12 +935,12 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
    * set, cleared by --no-mxesc) AND the user did NOT force an engine, pick the cheapest
    * engine whose estimated CM-DP peak fits --mxsize: tier (a) standard free-OptAcc,
    * else (b) checkpointed sqrt(M) pinned-OptAcc, else (c) the CYK floor (D&C).  Applies
-   * only to the HB free-OptAcc path (--ckpt/--small/--nonbanded/--sample/--sub each keep
+   * only to the HB free-OptAcc path (--ckpt/--small/--nonbanded/--sample each keep
    * their own engine).  See the tier-selection block just before the HB align dispatch. */
   int do_mxesc     = ((cm->align_opts & CM_ALIGN_MXESC)    &&
                       (! (cm->align_opts & CM_ALIGN_CHECKPT)) &&
                       do_optacc && (! do_sample) && (! do_small) &&
-                      (! do_nonbanded) && (! do_qdb) && (! do_sub)) ? TRUE : FALSE;
+                      (! do_nonbanded) && (! do_qdb)) ? TRUE : FALSE;
   int mxesc_tier   = 0;    /* 0=none/not-decided, 'a'/'b'/'c' once decided (per seq) */
   int eff_checkpt  = (cm->align_opts & CM_ALIGN_CHECKPT) ? TRUE : FALSE; /* effective ckpt engine choice; do_mxesc may raise it per seq */
   /* brief 26_0821-014: WILL the checkpointed engine actually run for this sequence?
@@ -1042,26 +977,17 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
   printf("#DEBUG: \tdo_optacc:    %d\n", do_optacc);
   printf("#DEBUG: \tdo_sample:    %d\n", do_sample);
   printf("#DEBUG: \tdo_post:      %d\n", do_post);
-  printf("#DEBUG: \tdo_sub:       %d\n", do_sub);
   printf("#DEBUG: \tdo_small:     %d\n", do_small);
   printf("#DEBUG: \tdo_trunc:     %d\n", do_trunc);
   printf("#DEBUG: \tdo_qdb:       %d\n", do_qdb);
   printf("#DEBUG: \tdoing_search: %d\n", doing_search);
 #endif
   
-  /* sub-mode specific variables (wouldn't be needed if sub mode were not supported) */
-  CM_t        *orig_cm = cm;      /* pointer to the original CM */
-  CM_t        *sub_cm  = NULL;    /* the sub CM */
-  CMSubMap_t  *submap  = NULL;    /* map from mother CM to sub CM, and vice versa */
-  Parsetree_t *full_tr = NULL;    /* converted parsetree to full CM */
-
   /* contract check */
   if(do_small  && do_hbanded)       ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to do small and HMM banded alignment");
   if(do_small  && do_optacc)        ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to do small and opt acc alignment");
   if(do_post   && do_small)         ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to do PP and small alignment");
   if(do_optacc && do_sample)        ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to sample and do optacc alignment");
-  if(do_sub    && do_small)         ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to do sub and small alignment");
-  if(do_sub    && do_trunc)         ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to do sub and truncated alignment");
   if(do_sample && r == NULL)        ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to sample but RNG r == NULL");
   if(do_xtau   && ! do_hbanded)     ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to multiply tau without HMM banded alignment");
   if(do_xtau   && cp9b_valid)       ESL_XFAIL(eslEINCOMPAT, errbuf, "DispatchSqAlignment() trying to multiply tau but HMM bands already valid");
@@ -1086,17 +1012,11 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
   /* brief 26_0821-014: resolve ckpt_will_run now that every engine-selecting option
    * boolean above is known (see its declaration for why this matters). */
   ckpt_will_run = (eff_checkpt && do_optacc && (! do_sample) && do_hbanded &&
-                   (! do_small) && (! do_sub) &&
+                   (! do_small) &&
                    (do_trunc ? (cm_CheckptTrAlignHB_Qualifies(cm) || cm_CheckptTrOptAccAlignHB_Qualifies(cm))
                              : (cm_CheckptAlignHB_Qualifies(cm)   || cm_CheckptOptAccAlignHB_Qualifies(cm)))) ? TRUE : FALSE;
 
   if(w_tot != NULL) esl_stopwatch_Start(w_tot);
-
-  /* do sub-mode specific pre-alignment steps, if nec */
-  if(do_sub) { 
-    if((status = sub_alignment_prep(cm, errbuf, sq, &submap, &sub_cm)) != eslOK) goto ERROR;
-    cm = sub_cm;
-  }
 
   if(w != NULL) esl_stopwatch_Start(w);
   /* do small D&C alignment, if nec */
@@ -1582,9 +1502,8 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	}
 
 	/* brief 26_0821-116: band calculation is done; free its CP9 matrices before
-	 * the CM DP, so peak memory is the larger of the two stages, not their sum.
-	 * Not in sub mode, where the original CM's are reported below. */
-	if(! do_sub) shrink_cp9_matrices(cm);
+	 * the CM DP, so peak memory is the larger of the two stages, not their sum. */
+	shrink_cp9_matrices(cm);
       }
 
       /* DIAGNOSTIC: CP9 banded matrix cell count (whether cykbands is on
@@ -2281,23 +2200,9 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
     sc = (float) ((double) sc + (double) center_c * (double) sq->L);
   }
 
-  if(do_sub) { /* add size of original CM's CP9 matrices used for calculating start/end position */
-    mb_tot += orig_cm->cp9_mx->size_Mb;
-    mb_tot += orig_cm->cp9_bmx->size_Mb;
-  }
-
   if(w != NULL) esl_stopwatch_Stop(w);
   secs_aln = (w == NULL) ? 0. : w->elapsed;
 
-  if(do_sub) { 
-    /* convert sub cm parsetree to a full CM parsetree */
-    if((status = sub_cm2cm_parsetree(orig_cm, cm, &full_tr, tr, submap, 0)) != eslOK) ESL_XFAIL(status, errbuf, "out of memory, converting sub parsetree to full parsetree");
-    /* free sub data structures, we're done with them */
-    FreeParsetree(tr);   tr     = full_tr;
-    FreeCM(cm);          cm     = orig_cm;
-    FreeSubMap(submap);  submap = NULL;
-  }
-  
   /* determine start and end points of the parsetree, 
    * but only if we're not in a search/scan pipeline 
    */
@@ -2785,7 +2690,7 @@ elr_consider(CM_t *cm, ESL_SQ *sq, int status2, CM_ALNDATA **data2, CM_ALNDATA *
  *
  *           Local-mode EL detect-and-retry (briefs 26_0821-127/26_0821-128/
  *           26_0821-132): for a local alignment (CMH_LOCAL_END) in cmalign
- *           (idx != -1), not sampled (--sample) or sub-CM (--sub), whose p7
+ *           (idx != -1), not sampled (--sample), whose p7
  *           band came from --p7kmerchain itself, check
  *           each EL of the parse for a complete run of the chain's raw pins
  *           inside it. If one does, the band probably excluded the better EL
@@ -2826,9 +2731,8 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   int          ncand = 0, npos = 0, ncorr = 0, gate, nkept = 0, nretry = 0;
 
   /* Not for a sampled alignment (keeping the higher-scoring of two samples
-   * would bias the sample) or a sub-CM one (its parse comes from another CM;
-   * --sub requires -g anyway). */
-  if(idx == -1 || ! (cm->flags & CMH_LOCAL_END) || (cm->align_opts & (CM_ALIGN_SAMPLE | CM_ALIGN_SUB)))
+   * would bias the sample). */
+  if(idx == -1 || ! (cm->flags & CMH_LOCAL_END) || (cm->align_opts & CM_ALIGN_SAMPLE))
     return dispatch_sq_alignment_core(cm, errbuf, sq, idx, mxsize, mode, pass_idx, cp9b_valid, w, w_tot, r, NULL, ret_data);
 
   memset(&eb, 0, sizeof(ELR_BAND));

@@ -66,7 +66,6 @@ PROGS = cmalign\
 	bandcyk-montecarlo-test\
 	bandcyk-truncation-test\
 	cp9-test\
-	sub_cm-test\
 	truncyk_check\
 	p7band-test\
 	p7bandsim\
@@ -106,7 +105,6 @@ PROGOBJS = \
 	bandcyk-montecarlo-test.o\
 	bandcyk-truncation-test.o\
 	cp9-test.o\
-	sub_cm-test.o\
 	truncyk_check.o\
 	p7band-test.o\
 	p7bandsim.o\
@@ -155,7 +153,6 @@ OBJS  = cm.o\
 	cm_parsetree.o\
 	cm_pipeline.o\
 	cm_qdband.o\
-	cm_submodel.o\
 	cm_tophits.o\
 	cm_trunc.o\
 	cm_p7_band.o\

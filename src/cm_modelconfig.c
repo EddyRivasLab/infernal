@@ -2,8 +2,8 @@
  * SRE, Wed May  8 14:30:38 2002 [St. Louis]
  * 
  * Configuring a covariance model. The desideratum is for a CM to be
- * configured exactly once. This is done via the cm_Configure() or
- * cm_ConfigureSub() function. Configuration consists of initializing
+ * configured exactly once. This is done via the cm_Configure()
+ * function. Configuration consists of initializing
  * the matrices and data structures that are considered always valid
  * in a CM, but are not read during CM input from a file, and putting
  * the model into local mode if necessary (CMs are always read in from
@@ -14,13 +14,12 @@
  * All functions that aid in the configuration process (and actually
  * modify the CM, thus removing its 'non-configured' status) are
  * static local functions in this file. This is by design - we want
- * the only way to configure a CM to be through cm_Configure() or
- * cm_ConfigureSub(), which, again, will happen exactly once per
- * model. By doing this we are limiting the possible execution paths
- * for model configuration to try and avoid the case that some
- * execution paths (of which there could be many due to the various
- * command-line options of Infernal applications) may screw something
- * up in the model.
+ * the only way to configure a CM to be through cm_Configure(), which,
+ * again, will happen exactly once per model. By doing this we are
+ * limiting the possible execution paths for model configuration to
+ * try and avoid the case that some execution paths (of which there
+ * could be many due to the various command-line options of Infernal
+ * applications) may screw something up in the model.
  *
  */
 
@@ -93,67 +92,19 @@ static void  cp9_renormalize_exits(CP9_t *hmm);
  * Returns:   <eslOK> on success.
  *            <eslEINVAL> on contract violation.
  *            <eslEMEM> on memory allocation error.
+ *            <eslFAIL> on other failure (errbuf filled)
  */
 int 
 cm_Configure(CM_t *cm, char *errbuf, int W_from_cmdline)
 {
-  return cm_ConfigureSub(cm, errbuf, W_from_cmdline, NULL, NULL);
-}
-
-/* Function: cm_ConfigureSub() 
- * Date:     EPN, Thu Jan  4 06:36:09 2007
- *           EPN, Fri Dec  9 15:27:29 2011 [updated prior to 1.1 release]
- *
- * Purpose:  See cm_Configure()'s Purpose above. This function
- *           actually does the work for cm_Configure(). Both functions
- *           exist so we can take two additional parameters in the
- *           rare case that we're configuring a model that is a
- *           sub-model of another CM. If <sub_mother_cm> and
- *           <sub_mother_map> are non-NULL, <cm> is a sub CM
- *           constructed from <sub_mother_cm>. In this case, we're
- *           doing alignment and are constructing a new sub CM for
- *           each target sequence so running time should be
- *           minimized. Special functions for building the CP9 HMMs
- *           and for logoddsifying the model are called that are
- *           faster than the normal versions b/c they can just copy
- *           some of the parameters of the mother model instead of
- *           calc'ing them.
- *          
- * Args:     cm             - the covariance model
- *           errbuf         - for error messages
- *           W_from_cmdline - W set on cmdline, -1 if W not set on cmdline (usually -1)
- *           mother_cm      - if non-NULL, <cm> is a sub CM construced from 
- *                            <mother_cm>. In this case we use <mother_map>
- *                            to help streamline the two steps that dominate the 
- *                            running time of this function (b/c speed is an issue):
- *                            building a cp9 HMM, and logoddsifying the model.
- *           mother_map     - must be non-NULL iff <mother_cm> is non-NULL, the 
- *                            map from <cm> to <mother_cm>.
- *
- * Returns:   <eslOK> on success.
- *            <eslEINVAL> on contract violation.
- *            <eslEMEM> on memory allocation error.
- *            <eslFAIL> on other failure (errbuf filled)
- */
-int 
-cm_ConfigureSub(CM_t *cm, char *errbuf, int W_from_cmdline, CM_t *mother_cm, CMSubMap_t *mother_map)
-{
   int   status;
   float swentry, swexit;
-  int   have_mother;
-
-  have_mother = (mother_cm != NULL && mother_map != NULL) ? TRUE : FALSE;
 
   /* contract check */
-  if(mother_cm != NULL && mother_map == NULL)            ESL_FAIL(eslEINCOMPAT, errbuf, "Configuring CM, mother_cm != NULL but mother_map == NULL (both must be NULL or both non-NULL).");
-  if(mother_cm == NULL && mother_map != NULL)            ESL_FAIL(eslEINCOMPAT, errbuf, "Configuring CM, mother_cm == NULL but mother_map != NULL (both must be NULL or both non-NULL).");
-  if(have_mother && (cm->config_opts & CM_CONFIG_LOCAL)) ESL_FAIL(eslEINCOMPAT, errbuf, "Configuring CM, configuring a sub CM, but CM_CONFIG_LOCAL config flag up.");
   if((  cm->config_opts & CM_CONFIG_HMMLOCAL) && 
      (! (cm->config_opts & CM_CONFIG_LOCAL)))    ESL_FAIL(eslEINCOMPAT, errbuf, "Configuring CM, cp9 is to be configured locally, but CM is not");
   if((  cm->config_opts & CM_CONFIG_HMMEL) && 
      (! (cm->config_opts & CM_CONFIG_HMMLOCAL))) ESL_FAIL(eslEINCOMPAT, errbuf, "Configuring CM, cp9 is to be configured without local entries exists but with ELs on");
-  if((cm->config_opts & CM_CONFIG_TRUNC) && (cm->config_opts & CM_CONFIG_SUB)) ESL_FAIL(eslEINCOMPAT, errbuf, "Configuring CM, incompatible configuration options: CM_CONFIG_TRUNC and CM_CONFIG_SUB");
-  if((cm->config_opts & CM_CONFIG_LOCAL) && (cm->config_opts & CM_CONFIG_SUB)) ESL_FAIL(eslEINCOMPAT, errbuf, "Configuring CM, incompatible configuration options: CM_CONFIG_LOCAL and CM_CONFIG_SUB");
 
   /* validate the CM */
   if((status = cm_Validate(cm, 0.0001, errbuf)) != eslOK) return status;
@@ -259,12 +210,7 @@ cm_ConfigureSub(CM_t *cm, char *errbuf, int W_from_cmdline, CM_t *mother_cm, CMS
   /* Build the CP9 HMM and associated data. It's important
    * to do this before setting up CM for local mode.
    */
-  if(have_mother) { 
-    if((status = sub_build_cp9_hmm_from_mother(cm, errbuf, mother_cm, mother_map, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0)) != eslOK) return status;
-  }
-  else { 
-    if((status = build_cp9_hmm(cm, errbuf, FALSE, 0.0001, 0, &(cm->cp9), &(cm->cp9map))) != eslOK) return status;
-  }
+  if((status = build_cp9_hmm(cm, errbuf, FALSE, 0.0001, 0, &(cm->cp9), &(cm->cp9map))) != eslOK) return status;
   cm->cp9b = AllocCP9Bands(cm->M, cm->cp9->M);
   /* create the CP9 matrices, we init to 1 row, which is tiny so it's okay
    * that we have two of them, we only grow them as needed, cp9_bmx is 
@@ -338,15 +284,6 @@ cm_ConfigureSub(CM_t *cm, char *errbuf, int W_from_cmdline, CM_t *mother_cm, CMS
     }
   }
 
-  /* Possibly configure cm->cp9 for submodel alignment (contract
-     enforced that if CM_CONFIG_SUB, CM_CONFIG_LOCAL and
-     CM_CONFIG_TRUNC must both be FALSE) */
-  if(cm->config_opts & CM_CONFIG_SUB) { 
-    swentry= ((cm->cp9->M)-1.)/cm->cp9->M; /* all start pts equiprobable, including 1 */
-    swexit = ((cm->cp9->M)-1.)/cm->cp9->M; /* all end   pts equiprobable, including M */
-    cp9_sw_config(cm->cp9, swentry, swexit, FALSE, cm->ndtype[1]); /* FALSE: let I_0, D_1, I_M be reachable */
-  }
-
   /* We need to ensure that cm->el_selfsc * W >= IMPOSSIBLE
    * (cm->el_selfsc is the score for an EL self transition) This is
    * done because we potentially multiply cm->el_selfsc * W, and add
@@ -358,12 +295,7 @@ cm_ConfigureSub(CM_t *cm, char *errbuf, int W_from_cmdline, CM_t *mother_cm, CMS
   }
 
   /* Compute log odds scores. This will create cm->cmcons as well, which requires scores. */
-  if(have_mother) { 
-    if((status = SubCMLogoddsify(cm, errbuf, mother_cm, mother_map)) != eslOK) return status; 
-  }
-  else { 
-    if((status = CMLogoddsify(cm)) != eslOK) ESL_FAIL(status, errbuf, "problem logodisfying CM");
-  }
+  if((status = CMLogoddsify(cm)) != eslOK) ESL_FAIL(status, errbuf, "problem logodisfying CM");
   CP9Logoddsify(cm->cp9);
   if(cm->flags & CMH_CP9_TRUNC) { 
     CP9Logoddsify(cm->Lcp9);
@@ -465,8 +397,8 @@ cm_CalculateLocalBeginProbs(CM_t *cm, float p_internal_start, float **t, float *
  *           from which local ends are permitted (see code). 
  *
  *           We exploit the fact that we know we are a local static
- *           function called only by cm_ConfigureSub() and don't do
- *           any checking of the CM because cm_ConfigureSub() already
+ *           function called only by cm_Configure() and don't do
+ *           any checking of the CM because cm_Configure() already
  *           has done that. If we were callable by other functions
  *           we'd want to make sure the CM wasn't already in local
  *           mode, at least.
@@ -588,11 +520,8 @@ cm_localize(CM_t *cm, float p_internal_start, float p_internal_exit)
  *            are always match states>). Also we disallow a M_0->D_1 transition
  *           because these would be impossible in a locally configured CM.
  *
- *           <do_match_local_cm> is usually TRUE, unless we're configuring
- *           the CP9 specifically for eventual sub CM alignment, where
- *           the goal is simply find the most likely start/end point
- *           of the alignment with this CP9 (in that case we want
- *           I_0 and I_M reachable).
+ *           Every current caller passes <do_match_local_cm> as FALSE,
+ *           leaving I_0, D_1 and I_M reachable.
  *           
  *           HMM probabilities are modified, but HMM is only
  *           logoddsified to get valid bit scores before leaving the

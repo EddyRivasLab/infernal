@@ -3660,7 +3660,6 @@ DumpCMFlags(FILE *fp, CM_t *cm)
   if(cm->flags & CMH_MLP7)                 fprintf(fp, "\tCMH_MLP7\n");
   if(cm->flags & CMH_FP7)                  fprintf(fp, "\tCMH_FP7\n");
 
-  if(cm->flags & CM_IS_SUB)               fprintf(fp, "\tCM_IS_SUB\n");
   if(cm->flags & CM_IS_RSEARCH)           fprintf(fp, "\tCM_IS_RSEARCH\n");
   if(cm->flags & CM_RSEARCHTRANS)         fprintf(fp, "\tCM_RSEARCHTRANS\n");
   if(cm->flags & CM_RSEARCHEMIT)          fprintf(fp, "\tCM_RSEARCHEMIT\n");
@@ -3669,6 +3668,99 @@ DumpCMFlags(FILE *fp, CM_t *cm)
 
   fprintf(fp, "Finished dumping CM flags.\n");
   return;
+}
+
+/**************************************************************************
+ * EPN 09.01.06
+ * debug_print_cm_params()
+ *
+ * Purpose:  Print out emission and transition probabilities and scores
+ *           for a CM.
+ *
+ * Args:    
+ * fp        stdout often
+ * CM_t *cm     
+ * Returns: (void) 
+ */
+void
+debug_print_cm_params(FILE *fp, CM_t *cm)
+{
+  int status;
+  int v, i;
+  int yoffset;
+
+  char **nodetypes;
+  char **sttypes;
+
+  ESL_ALLOC(nodetypes, sizeof(char *) * 8);
+  nodetypes[0] = "BIF";
+  nodetypes[1] = "MATP";
+  nodetypes[2] = "MATL";
+  nodetypes[3] = "MATR";
+  nodetypes[4] = "BEGL";
+  nodetypes[5] = "BEGR";
+  nodetypes[6] = "ROOT";
+  nodetypes[7] = "END";
+
+  ESL_ALLOC(sttypes, sizeof(char *) * 10);
+  sttypes[0] = "D";
+  sttypes[1] = "MP";
+  sttypes[2] = "ML";
+  sttypes[3] = "MR";
+  sttypes[4] = "IL";
+  sttypes[5] = "IR";
+  sttypes[6] = "S";
+  sttypes[7] = "E";
+  sttypes[8] = "B";
+  sttypes[9] = "EL";
+
+  fprintf(fp, "cm->nodes: %d\n", cm->nodes);
+  fprintf(fp, "cm->M:     %d\n", cm->M);
+  for(v = 0; v < cm->M; v++)
+    {
+      fprintf(fp, "v:%4d:%4d %4s %2s\n", v, cm->ndidx[v], nodetypes[(int) cm->ndtype[cm->ndidx[v]]], sttypes[(int) cm->sttype[v]]);
+      if(cm->nodemap[cm->ndidx[v]] == v)
+	fprintf(fp, "beg: %0.6f (%.6f %10d)| end %0.6f (%.6f %10d)\n", 
+		cm->begin[v], cm->beginsc[v], cm->ibeginsc[v],
+		cm->end[v], cm->endsc[v], cm->iendsc[v]);
+      if(cm->sttype[v] == MP_st)
+	{
+	  fprintf(fp, "\tE: ");
+	  for(i = 0; i < cm->abc->K*cm->abc->K; i++)
+	    fprintf(fp, "%0.6f (%.6f %6d) ", cm->e[v][i], cm->esc[v][i], cm->iesc[v][i]);
+	  fprintf(fp, "\n");
+	}
+      else if(cm->sttype[v] == ML_st ||
+	      cm->sttype[v] == MR_st ||
+	      cm->sttype[v] == IL_st ||
+	      cm->sttype[v] == IR_st)
+	{	   
+	  fprintf(fp, "\tE: ");
+	  for(i = 0; i < cm->abc->K; i++)
+	    fprintf(fp, "%0.6f (%0.6f %10d) ", cm->e[v][i], cm->esc[v][i], cm->iesc[v][i]);
+	  fprintf(fp, "\n");
+	}
+      if(cm->sttype[v] != B_st && cm->sttype[v] != E_st)
+	{
+	  fprintf(fp, "\tT: ");
+	  for(yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
+	    fprintf(fp, "%0.6f (%0.6f %10d) ", cm->t[v][yoffset], cm->tsc[v][yoffset], cm->itsc[v][yoffset]);
+	  fprintf(fp, "\n");
+	}	    
+      else if(cm->sttype[v] == B_st)
+	{
+	  fprintf(fp, "\tL: %d | R: %d\n", cm->cfirst[v], cm->cnum[v]);
+	}
+      else if(cm->sttype[v] == E_st)
+	fprintf(fp, "\n\n");
+    }
+  fprintf(fp, "\n\n");
+  free(nodetypes);
+  free(sttypes);
+  return;
+
+ ERROR:
+  cm_Fail("Memory allocation error.");
 }
 
 

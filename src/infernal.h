@@ -17,35 +17,33 @@
  *   12. CP9Bands_t:         sequence and CM specific HMM bands
  *   13. CP9trace_t:         traceback structure for CP9 HMMs
  *   14. CP9Map_t:           map from a CM to a CP9 HMM and vice versa
- *   15. CMSubMap_t:         map of a template CM to a sub CM and vice versa
- *   16. CMSubInfo_t:        sub CM information, used for validating the sub CM construction procedure
- *   17. RSEARCH constants
- *   18. CM_MX:              CM dynamic programming matrix; non-banded, non-truncated
- *   19. CM_TR_MX:           CM dynamic programming matrix; non-banded, truncated
- *   20. CM_HB_MX:           CM dynamic programming matrix; HMM banded, non-truncated
- *   21. CM_TR_HB_MX:        CM dynamic programming matrix; HMM banded, truncated
- *   22. CM_SHADOW_MX:       CM shadow matrix, for DP tracebacks; non-banded, non-truncated
- *   23. CM_TR_SHADOW_MX:    CM shadow matrix, for DP tracebacks; non-banded, truncated
- *   24. CM_HB_SHADOW_MX:    CM shadow matrix, for DP tracebacks; HMM banded, non-truncated
- *   25. CM_TR_HB_SHADOW_MX: CM shadow matrix, for DP tracebacks; HMM banded, truncated
- *   26. CM_EMIT_MX:         CM emit matrix, info on PP of emitted residues; non-banded, non-truncated
- *   27. CM_TR_EMIT_MX:      CM emit matrix, info on PP of emitted residues; non-banded, truncated
- *   28. CM_HB_EMIT_MX:      CM emit matrix, info on PP of emitted residues; HMM banded, non-truncated
- *   29. CM_TR_HB_EMIT_MX:   CM emit matrix, info on PP of emitted residues; HMM banded, truncated
- *   30. CM_QDBINFO:         model specific QDB information, including 2 sets of bands
- *   31. CM_SCAN_MX:         matrices used for scanning CM DP algorithms; non-truncated
- *   32. CM_TR_SCAN_MX:      matrices used for scanning CM DP algorithms; truncated
- *   33. CM_TR_PENALTIES:    pass, state and locality-specific truncated alignment penalties
- *   34. CM_t:               a covariance model
- *   35. CM_FILE:            a CM save file or database, open for reading
- *   36. CM_PLI_ACCT:        pass specific statistics for a search/scan pipeline
- *   37. CM_PIPELINE:        the accelerated seq/profile comparison pipeline 
- *   38. CM_ALIDISPLAY:      an alignment formatted for printing (replaces FancyAli_t)
- *   39. CM_HIT:             a hit between a CM and a sequence
- *   40. CM_TOPHITS:         ranked list of top-scoring hits
- *   41. CM_P7_OM_BLOCK:     block of P7_OPROFILEs and related info, for cmscan
- *   42. CM_ALNDATA:         information for alignment of a sequence to a CM
- *   43. Routines in Infernal's exposed API
+ *   15. RSEARCH constants
+ *   16. CM_MX:              CM dynamic programming matrix; non-banded, non-truncated
+ *   17. CM_TR_MX:           CM dynamic programming matrix; non-banded, truncated
+ *   18. CM_HB_MX:           CM dynamic programming matrix; HMM banded, non-truncated
+ *   19. CM_TR_HB_MX:        CM dynamic programming matrix; HMM banded, truncated
+ *   20. CM_SHADOW_MX:       CM shadow matrix, for DP tracebacks; non-banded, non-truncated
+ *   21. CM_TR_SHADOW_MX:    CM shadow matrix, for DP tracebacks; non-banded, truncated
+ *   22. CM_HB_SHADOW_MX:    CM shadow matrix, for DP tracebacks; HMM banded, non-truncated
+ *   23. CM_TR_HB_SHADOW_MX: CM shadow matrix, for DP tracebacks; HMM banded, truncated
+ *   24. CM_EMIT_MX:         CM emit matrix, info on PP of emitted residues; non-banded, non-truncated
+ *   25. CM_TR_EMIT_MX:      CM emit matrix, info on PP of emitted residues; non-banded, truncated
+ *   26. CM_HB_EMIT_MX:      CM emit matrix, info on PP of emitted residues; HMM banded, non-truncated
+ *   27. CM_TR_HB_EMIT_MX:   CM emit matrix, info on PP of emitted residues; HMM banded, truncated
+ *   28. CM_QDBINFO:         model specific QDB information, including 2 sets of bands
+ *   29. CM_SCAN_MX:         matrices used for scanning CM DP algorithms; non-truncated
+ *   30. CM_TR_SCAN_MX:      matrices used for scanning CM DP algorithms; truncated
+ *   31. CM_TR_PENALTIES:    pass, state and locality-specific truncated alignment penalties
+ *   32. CM_t:               a covariance model
+ *   33. CM_FILE:            a CM save file or database, open for reading
+ *   34. CM_PLI_ACCT:        pass specific statistics for a search/scan pipeline
+ *   35. CM_PIPELINE:        the accelerated seq/profile comparison pipeline 
+ *   36. CM_ALIDISPLAY:      an alignment formatted for printing (replaces FancyAli_t)
+ *   37. CM_HIT:             a hit between a CM and a sequence
+ *   38. CM_TOPHITS:         ranked list of top-scoring hits
+ *   39. CM_P7_OM_BLOCK:     block of P7_OPROFILEs and related info, for cmscan
+ *   40. CM_ALNDATA:         information for alignment of a sequence to a CM
+ *   41. Routines in Infernal's exposed API
  *   
  * Also, see impl_{sse,vmx}/impl_{sse,vmx}.h for additional API
  * specific to the acceleration layer.
@@ -985,74 +983,7 @@ typedef struct cp9map_s {
 
 
 /*************************************************************************************
- * 15. CMSubMap_t: map of a template CM to a sub CM and vice versa.
- *************************************************************************************/
-
-/* Structure: CMSubMap_t
- * Incept:    EPN, 10.23.06
- *
- * Maps a template CM to a sub CM and vice versa. 
- *    Consensus positions are indexed 1..clen.
- *
- * The *node_cc_left and *node_cc_right arrays are redundant with CMEmitMap_t.
- * See emitmap.c for implementation and more documentation.
- */
-typedef struct submap_s {
-  int spos;            /* first consensus column this sub_cm models */
-  int epos;            /* final consensus column this sub_cm models */
-  int sstruct;         /* first consensus column this sub_cm models structure of */
-  int estruct;         /* final consensus column this sub_cm models structure of */
-
-  int **s2o_smap;      /* v = [0..sub_M-1] [0..1], orig_cm state(s) that maps to v */
-  int **o2s_smap;      /* v = [0..orig_M-1][0..1], sub_cm  state(s) that maps to v */
-  int  *s2o_id;        /* v = [0..sub_M-1] TRUE if sub_cm state v maps identically *
-                        * to a orig_cm state (this will be s2o_smap[v][0])         */
-
-  int  sub_clen;       /* consensus length orig_cm */
-  int  orig_clen;      /* consensus length sub_cm  */
-
-  int sub_M;           /* number of states in the sub CM */
-  int orig_M;          /* number of states in the original CM */
-} CMSubMap_t;
-
-
-/*************************************************************************************
- * 16. CMSubInfo_t: sub CM information, used for validating the sub CM construction procedure.
- *************************************************************************************/
-
-/* Structure: CMSubInfo_t
- * Incept:    EPN, 10.23.06
- *
- * Information on a sub CM, used for checking the sub CM 
- * construction procedure works.
- *    Consensus positions are indexed 1..clen.
- *
- */
-typedef struct subinfo_s {
-  int  *imp_cc;         /* [0..(epos-spos+1)] ret_imp_cc[k] != 0 if it is 
-			* impossible for CP9 node (consensus column) k to be
-			* calculated in the sub_cm to have distros to match the
-			* corresponding CP9 node in the original CM - due to
-			* topological differences in the architecture of the
-			* sub_cm and orig_cm.
-			*/
-  int  *apredict_ct;   /* For an analytical test, the number of times we 
-			* predict we'll fail the test for an HMM node for each 
-			* of 6 cases - 6 different reasons we predict we'll fail.
-			*/
-  int  *spredict_ct;   /* For as sampling test, the number of times we 
-			* predict we'll fail the test for an HMM node for each 
-			* of 6 cases - 6 different reasons we predict we'll fail.
-			*/
-  int  *awrong_ct;     /* Subset of cases in apredict_ct that were incorrectly 
-			* predicted. */
-  int  *swrong_ct;     /* Subset of cases in spredict_ct that were incorrectly 
-			* predicted. */
-} CMSubInfo_t;
-
-
-/*************************************************************************************
- * 17. RSEARCH constants.
+ * 15. RSEARCH constants.
  *************************************************************************************/
 
 /* RSEARCH defaults defined here */
@@ -1122,7 +1053,7 @@ typedef struct _fullmat_t {
 } fullmat_t;
 
 /***********************************************************************************
- * 18. CM_MX: CM dynamic programming matrix; non-banded, non-truncated.
+ * 16. CM_MX: CM dynamic programming matrix; non-banded, non-truncated.
  ***********************************************************************************/
 
 /* Declaration of CM dynamic programming matrices for alignment.
@@ -1158,7 +1089,7 @@ typedef struct cm_mx_s {
 } CM_MX;
 
 /***********************************************************************************
- * 19. CM_TR_MX: CM dynamic programming matrix; non-banded, truncated.
+ * 17. CM_TR_MX: CM dynamic programming matrix; non-banded, truncated.
  ***********************************************************************************/
 
 typedef struct cm_tr_mx_s {
@@ -1187,7 +1118,7 @@ typedef struct cm_tr_mx_s {
 } CM_TR_MX;
 
 /***********************************************************************************
- * 20. CM_HB_MX: CM dynamic programming matrix; HMM banded, non-truncated.
+ * 18. CM_HB_MX: CM dynamic programming matrix; HMM banded, non-truncated.
  ***********************************************************************************/
 
 typedef struct cm_hb_mx_s {
@@ -1215,7 +1146,7 @@ typedef struct cm_hb_mx_s {
 } CM_HB_MX;
 
 /***********************************************************************************
- * 21. CM_TR_HB_MX: CM dynamic programming matrix; HMM banded, truncated.
+ * 19. CM_TR_HB_MX: CM dynamic programming matrix; HMM banded, truncated.
  ***********************************************************************************/
 
 typedef struct cm_tr_hb_mx_s {
@@ -1260,7 +1191,7 @@ typedef struct cm_tr_hb_mx_s {
 
 
 /***********************************************************************************
- * 22. CM_SHADOW_MX: CM shadow matrix, for DP tracebacks; non-banded, non-truncated.
+ * 20. CM_SHADOW_MX: CM shadow matrix, for DP tracebacks; non-banded, non-truncated.
  ***********************************************************************************/
 
 typedef struct cm_shadow_mx_s {
@@ -1286,7 +1217,7 @@ typedef struct cm_shadow_mx_s {
 
 
 /***********************************************************************************
- * 23. CM_TR_SHADOW_MX: CM shadow matrix, for DP tracebacks; non-banded, truncated.
+ * 21. CM_TR_SHADOW_MX: CM shadow matrix, for DP tracebacks; non-banded, truncated.
  ***********************************************************************************/
 
 typedef struct cm_tr_shadow_mx_s {
@@ -1340,7 +1271,7 @@ typedef struct cm_tr_shadow_mx_s {
 } CM_TR_SHADOW_MX;
 
 /***********************************************************************************
- * 24. CM_HB_SHADOW_MX: CM shadow matrix, for DP tracebacks; HMM banded, non-truncated.
+ * 22. CM_HB_SHADOW_MX: CM shadow matrix, for DP tracebacks; HMM banded, non-truncated.
  ***********************************************************************************/
 
 typedef struct cm_hb_shadow_mx_s {
@@ -1372,7 +1303,7 @@ typedef struct cm_hb_shadow_mx_s {
 
 
 /***********************************************************************************
- * 25. CM_TR_HB_SHADOW_MX: CM shadow matrix, for DP tracebacks; HMM banded, truncated.
+ * 23. CM_TR_HB_SHADOW_MX: CM shadow matrix, for DP tracebacks; HMM banded, truncated.
  ***********************************************************************************/
 
 typedef struct cm_tr_hb_shadow_mx_s {
@@ -1436,7 +1367,7 @@ typedef struct cm_tr_hb_shadow_mx_s {
 } CM_TR_HB_SHADOW_MX;
 
 /***********************************************************************************
- * 26. CM_EMIT_MX: CM emit matrix, info on PP of emitted residues; non-banded, non-truncated.
+ * 24. CM_EMIT_MX: CM emit matrix, info on PP of emitted residues; non-banded, non-truncated.
  ***********************************************************************************/
 
 /* CM_EMIT_MX: Two 2-dimensional matrices <l_pp> and <r_pp>
@@ -1496,7 +1427,7 @@ typedef struct cm_emit_mx_s {
 
 
 /***********************************************************************************
- * 27. CM_TR_EMIT_MX: CM emit matrix, info on PP of emitted residues; non-banded, truncated.
+ * 25. CM_TR_EMIT_MX: CM emit matrix, info on PP of emitted residues; non-banded, truncated.
  ***********************************************************************************/
 
 /* CM_TR_EMIT_MX: Same as CM_EMIT_MX except extended for truncated 
@@ -1561,7 +1492,7 @@ typedef struct cm_tr_emit_mx_s {
 
 
 /***********************************************************************************
- * 28. CM_HB_EMIT_MX: CM emit matrix, info on PP of emitted residues; HMM banded, non-truncated.
+ * 26. CM_HB_EMIT_MX: CM emit matrix, info on PP of emitted residues; HMM banded, non-truncated.
  ***********************************************************************************/
 
 /* CM_HB_EMIT_MX: HMM-banded version of CM_EMIT_MX (see the
@@ -1609,7 +1540,7 @@ typedef struct cm_hb_emit_mx_s {
 
 
 /***********************************************************************************
- * 29. CM_TR_HB_EMIT_MX: CM emit matrix, info on PP of emitted residues; HMM banded, truncated.
+ * 27. CM_TR_HB_EMIT_MX: CM emit matrix, info on PP of emitted residues; HMM banded, truncated.
  ***********************************************************************************/
 
 /* CM_TR_HB_EMIT_MX: HMM-banded version of CM_TR_EMIT_MX (see the
@@ -1656,7 +1587,7 @@ typedef struct cm_tr_hb_emit_mx_s {
 
 
 /***********************************************************************************
- * 30. CM_QDBINFO: model specific QDB information, including 2 sets of bands.
+ * 28. CM_QDBINFO: model specific QDB information, including 2 sets of bands.
  ***********************************************************************************/
 
 enum cm_qdbinfo_setby_e    { CM_QDBINFO_SETBY_INIT = 0, CM_QDBINFO_SETBY_CMFILE = 1, CM_QDBINFO_SETBY_BANDCALC = 2, CM_QDBINFO_SETBY_SUBINIT };
@@ -1680,7 +1611,7 @@ typedef struct cm_qdbinfo_s {
 } CM_QDBINFO;
 
 /***********************************************************************************
- * 31. CM_SCAN_MX: matrices used for scanning CM DP algorithms; non-truncated.
+ * 29. CM_SCAN_MX: matrices used for scanning CM DP algorithms; non-truncated.
  ***********************************************************************************/
 
 /* Structure CM_SCAN_MX: 
@@ -1753,7 +1684,7 @@ typedef struct cm_scan_mx_s {
 
 
 /***********************************************************************************
- * 32. CM_TR_SCAN_MX: matrices used for scanning CM DP algorithms; truncated.
+ * 30. CM_TR_SCAN_MX: matrices used for scanning CM DP algorithms; truncated.
  ***********************************************************************************/
 
 /* Structure CM_TR_SCAN_MX: 
@@ -1826,7 +1757,7 @@ typedef struct cm_tr_scan_mx_s {
 
 
 /*************************************************************************************
- * 33. CM_TR_PENALTIES: pass, state and locality-specific truncated alignment penalties.
+ * 31. CM_TR_PENALTIES: pass, state and locality-specific truncated alignment penalties.
  *************************************************************************************/
 
 /* Truncation penalty parameters, we either allow 5' truncation, 3' truncation or both.
@@ -1854,7 +1785,7 @@ typedef struct cm_tr_penalties_s {
 
 
 /*****************************************************************
- * 34. CM_t: a covariance model
+ * 32. CM_t: a covariance model
  *****************************************************************/
 
 /* Structure: CM_t
@@ -2131,7 +2062,6 @@ typedef struct cm_s {
 #define CMH_CP9_TRUNC           (1<<14) /* cm->Lcp9, cm->Rcp9, cm->Tcp9 are valid   */
 #define CMH_MLP7                (1<<15) /* 'maximum likelihood' cm->mlp7 is valid   */
 #define CMH_FP7                 (1<<16) /* filter p7 is valid in cm->fp7            */
-#define CM_IS_SUB               (1<<17) /* the CM is a sub CM                       */
 #define CM_IS_RSEARCH           (1<<18) /* the CM was parameterized a la RSEARCH    */
 #define CM_RSEARCHTRANS         (1<<19) /* CM has/will have RSEARCH transitions     */
 #define CM_RSEARCHEMIT          (1<<20) /* CM has/will have RSEARCH emissions       */
@@ -2179,7 +2109,6 @@ typedef struct cm_p7_calopts_s {
 #define CM_CONFIG_TRUNC         (1<<5)  /* set up for truncated alignment (cm->{L,R,T}cp9 will be built */
 #define CM_CONFIG_SCANMX        (1<<6)  /* create a CM_SCAN_MX in cm->smx          */
 #define CM_CONFIG_TRSCANMX      (1<<7)  /* create a CM_TR_SCAN_MX in cm->trsmx     */
-#define CM_CONFIG_SUB           (1<<8)  /* set up for submodel alignment (cm->cp9 gets equiprobable begin/ends) */
 #define CM_CONFIG_NONBANDEDMX   (1<<9)  /* set up for non-banded alignment (cm->*nb*mx will be created) */
 #define CM_CONFIG_NOQDB         (1<<10) /* skip the query-dependent band calculation entirely; caller
                                         * guarantees nothing downstream reads cm->qdbinfo's bands or
@@ -2198,7 +2127,6 @@ typedef struct cm_p7_calopts_s {
 #define CM_ALIGN_POST          (1<<6)  /* do inside/outside and append posteriors  */
 #define CM_ALIGN_SMALL         (1<<7)  /* use small CYK D&C                        */
 #define CM_ALIGN_SUMS          (1<<8)  /* if using HMM bands, use posterior sums   */
-#define CM_ALIGN_SUB           (1<<9)  /* build a sub CM for each seq to align     */
 #define CM_ALIGN_HMMVITERBI    (1<<10) /* use a CP9 HMM only to align, w/viterbi   */
 #define CM_ALIGN_CHECKINOUT    (1<<11) /* check inside/outside calculations        */
 #define CM_ALIGN_CHECKPARSESC  (1<<12) /* check parsetree score against aln alg sc */
@@ -2235,7 +2163,7 @@ typedef struct cm_p7_calopts_s {
 #define CM_SEARCH_NULL3        (1<<11) /* use NULL3 score correction               */
 
 /*****************************************************************
- * 35. CM_FILE:  a CM save file or database, open for reading.
+ * 33. CM_FILE:  a CM save file or database, open for reading.
  *****************************************************************/
 /* These tags need to be in temporal order, so we can do tests
  * like "if (format >= CM_FILE_1a) ..."
@@ -2299,7 +2227,7 @@ typedef struct cm_file_s {
 
 
 /***********************************************************************************
- * 36. CM_PLI_ACCT: pass specific statistics for a search/scan pipeline.
+ * 34. CM_PLI_ACCT: pass specific statistics for a search/scan pipeline.
  ***********************************************************************************/
 
 /* Pipeline pass indices. The pipeline potentially does multiple
@@ -2398,7 +2326,7 @@ typedef struct cm_pipeline_accounting_s {
 
 
 /***********************************************************************************
- * 37. CM_PIPELINE: the accelerated seq/profile comparison pipeline 
+ * 35. CM_PIPELINE: the accelerated seq/profile comparison pipeline 
  ***********************************************************************************/
 
 enum cm_pipemodes_e     { CM_SEARCH_SEQS = 0, CM_SCAN_MODELS = 1 };
@@ -2726,7 +2654,7 @@ typedef struct cm_pipeline_s {
 
 
 /***********************************************************************************
- * 38. CM_ALIDISPLAY: an alignment formatted for printing (replaces FancyAli_t)
+ * 36. CM_ALIDISPLAY: an alignment formatted for printing (replaces FancyAli_t)
  ***********************************************************************************/
 
 /* Structure: CM_ALIDISPLAY
@@ -2794,7 +2722,7 @@ typedef struct cm_alidisplay_s {
 
 
 /***********************************************************************************
- * 39. CM_HIT: a hit between a CM and a sequence
+ * 37. CM_HIT: a hit between a CM and a sequence
  ***********************************************************************************/
 
 #define CM_HIT_FLAGS_DEFAULT 0
@@ -2850,7 +2778,7 @@ typedef struct cm_hit_s {
 
 
 /***********************************************************************************
- * 40. CM_TOPHITS: ranked list of top-scoring hits
+ * 38. CM_TOPHITS: ranked list of top-scoring hits
  ***********************************************************************************/
 
 /* Structure: CM_TOPHITS: Collection of hits that can be sorted by
@@ -2875,7 +2803,7 @@ typedef struct cm_tophits_s {
 
 
 /***********************************************************************************
- * 41. CM_P7_OM_BLOCK: block of P7_OPROFILEs and related info, for cmscan.
+ * 39. CM_P7_OM_BLOCK: block of P7_OPROFILEs and related info, for cmscan.
  ***********************************************************************************/
 
 typedef struct {
@@ -2895,7 +2823,7 @@ typedef struct {
 
 
 /***********************************************************************************
- * 42. CM_ALNDATA: information for alignment of a sequence to a CM.
+ * 40. CM_ALNDATA: information for alignment of a sequence to a CM.
  ***********************************************************************************/
 
 /* Structure CM_ALNDATA: Per-sequence information relevant to the
@@ -2923,7 +2851,7 @@ typedef struct {
 } CM_ALNDATA;
 
 /*****************************************************************
- * 43. Routines in Infernal's exposed API.
+ * 41. Routines in Infernal's exposed API.
  *****************************************************************/
 
 /* from cm.c */
@@ -2999,6 +2927,7 @@ extern int   IntDigits(int i);
 extern int        cm_GetAvgHitLen(CM_t *cm, char *errbuf, float *ret_avgL_loc, float *ret_avgL_glb);
 extern int        CompareCMGuideTrees(CM_t *cm1, CM_t *cm2);
 extern void       DumpCMFlags(FILE *fp, CM_t *cm);
+extern void       debug_print_cm_params(FILE *fp, CM_t *cm);
 extern ESL_GETOPTS *cm_CreateDefaultApp(char *progname, ESL_OPTIONS *options, int nargs, int argc, char **argv, char *banner, char *usage);
 extern CM_P7_OM_BLOCK *cm_p7_oprofile_CreateBlock(int size);
 extern void            cm_p7_oprofile_DestroyBlock(CM_P7_OM_BLOCK *block);
@@ -3303,15 +3232,13 @@ extern int     cm_file_Write1p0ASCII(FILE *fp, CM_t *cm);
 
 /* from cm_modelconfig.c */
 extern int   cm_Configure   (CM_t *cm, char *errbuf, int W_from_cmdline);
-extern int   cm_ConfigureSub(CM_t *cm, char *errbuf, int W_from_cmdline, CM_t *mother_cm, CMSubMap_t *mother_map);
 extern int   cm_CalculateLocalBeginProbs(CM_t *cm, float p_internal_start, float **t, float *begin);
 
 /* from cm_modelmaker.c */
 extern int  HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_el, int use_wts, float symfrac, CM_t **ret_cm, Parsetree_t **ret_mtr);
 extern int  AssignMatchColumnsForMsa(ESL_MSA *msa, char *errbuf, int use_rf, int use_wts, float symfrac, int **ret_matassign);
-extern int  ConsensusModelmaker(const ESL_ALPHABET *abc, char *errbuf, char *ss_cons, int clen, int building_sub_model, CM_t **ret_cm, Parsetree_t **ret_gtr);
 extern int  Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el, int alen, Parsetree_t **ret_tr);
-extern int  cm_from_guide(CM_t *cm, char *errbuf, Parsetree_t *gtr, int will_never_localize);
+extern int  cm_from_guide(CM_t *cm, char *errbuf, Parsetree_t *gtr);
 extern int  cm_find_and_detach_dual_inserts(CM_t *cm, int do_check, int do_detach);
 extern int  cm_check_before_detaching(CM_t *cm, int insert1, int insert2);
 extern int  cm_detach_state(CM_t *cm, int insert1, int insert2);
@@ -3498,24 +3425,6 @@ extern int          CopyCMQDBInfo(const CM_QDBINFO *src, CM_QDBINFO *dst, char *
 extern void         DumpCMQDBInfo(FILE *fp, CM_t *cm, CM_QDBINFO *qdbinfo);
 extern int          CheckCMQDBInfo(CM_QDBINFO *qdbinfo, double beta1, int do_check1, double beta2, int do_check2);
 
-/* from cm_submodel.c */
-extern int  build_sub_cm(CM_t *orig_cm, char *errbuf, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t **ret_submap, int print_flag);
-extern void CP9NodeForPosn(CP9_t *hmm, int i0, int j0, int x, CP9_MX *post, int *ret_node, int *ret_type, float pmass, int is_start, int print_flag);
-extern void StripWUSSGivenCC(ESL_MSA *msa, float gapthresh, int first_match, int last_match);
-extern int  check_orig_psi_vs_sub_psi(CM_t *orig_cm, CM_t *sub_cm, char *errbuf, CMSubMap_t *submap, double threshold, int print_flag);
-extern int  check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, char *errbuf, CMSubMap_t *submap, CMSubInfo_t *subinfo, float pthresh, int print_flag);
-extern int  check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, char *errbuf, ESL_RANDOMNESS *r, CMSubMap_t *submap, CMSubInfo_t *subinfo,
-				     float chi_thresh, int nsamples, int print_flag);
-extern int  sub_cm2cm_parsetree(CM_t *orig_cm, CM_t *sub_cm, Parsetree_t **ret_orig_tr, Parsetree_t *sub_tr, 
-				CMSubMap_t *submap, int print_flag);
-extern CMSubMap_t  *AllocSubMap(CM_t *sub_cm, CM_t *orig_cm, int sstruct, int estruct);
-extern void         FreeSubMap(CMSubMap_t *submap);
-extern CMSubInfo_t *AllocSubInfo(int clen);
-extern void         FreeSubInfo(CMSubInfo_t *subinfo);
-extern void  debug_print_cm_params(FILE *fp, CM_t *cm);
-extern int   SubCMLogoddsify(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_t *mother_map);
-extern float ** SubFCalcAndCopyOptimizedEmitScoresFromMother(CM_t *cm, CM_t *mother_cm, CMSubMap_t *mother_map);
-extern void  CP9_reconfig2sub(CP9_t *hmm, int spos, int epos, int spos_nd, int epos_nd, double **orig_phi);
 
 
 /* from cm_tophits.c */
@@ -3739,8 +3648,6 @@ extern int          cm_ComputeP7CMNodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamp
 extern int          cm_CalibrateFilterPvalCutoffs(CM_t *cm, ESL_RANDOMNESS *r, int N, char *errbuf);
 extern double       cm_filter_ceiling_factor_clen(int clen);
 
-extern int          CP9NodeForPosnP7B(CP9_t *hmm, char *errbuf, int x, CP9_MX *post, int kn, int kx, int *ret_node, int *ret_type, int print_flag);
-extern int          P7BandsAdjustForSubCM(int *kmin, int *kmax, int L, int spos, int epos);
 
 /* <ckpt_mode> selector for p7_CheckptBandedOAMemNeeded() (cm_p7_band.c):
  * which --hmm do_bandedoa engine the byte estimate should model. THREE
@@ -3845,12 +3752,10 @@ extern int   build_cp9_hmm(CM_t *cm, char *errbuf, int do_psi_test, float thresh
 extern void  CP9_map_cm2hmm(CM_t *cm, CP9Map_t *cp9map, int debug_level);
 extern void  fill_phi_cp9(CP9_t *hmm, double ***ret_phi, int spos, int entered_only);
 extern void  map_helper(CM_t *cm, CP9Map_t *cp9map, int k, int ks, int v);
-extern int   CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, char *errbuf, ESL_RANDOMNESS *r, CMSubInfo_t *subinfo, int spos, int epos, float chi_thresh, int nsamples, int print_flag);
+extern int   CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, char *errbuf, ESL_RANDOMNESS *r, int spos, int epos, float chi_thresh, int nsamples, int print_flag);
 extern void  debug_print_cp9_params(FILE *fp, CP9_t *hmm, int print_scores);
 extern void  debug_print_phi_cp9(CP9_t *hmm, double **phi);
 extern int   MakeDealignedString(const ESL_ALPHABET *abc, char *aseq, int alen, char *ss, char **ret_s);
-extern int   sub_build_cp9_hmm_from_mother(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_t *mother_map, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
-					  float psi_vs_phi_threshold, int debug_level);
 extern void  CPlan9InitEL(CP9_t *cp9, CM_t *cm);
 extern int   CP9_2_CM(CM_t *cm, char *errbuf, CM_t **ret_cm);
 
