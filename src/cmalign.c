@@ -1621,10 +1621,8 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	  int      ckpt_mode = P7B_OAMEM_CKPTPP;  /* brief 26_0628-081: engine picked by the preflight below */
 	  CM_P7_DECSTATS decst;                    /* brief 26_0821-141: decode counts for --devdiag */
 	  P7_GBANDS *bnd = NULL;
-	  CM_P7_GMXBD *bxf = NULL;   /* double OA matrix (brief 26_0821-151) */
 	  P7_GMXB *bxb   = NULL;
 	  P7_TRACE *vtr  = NULL;
-	  float    bwdsc = 0.;                                                    /* brief 26_0430-135b: capture backward total */
 	  int      p7ibv_delta = esl_opt_GetInteger(go, "--p7ibv-delta");        /* brief 26_0430-135b */
 	  const char *band_src = "default p7 Viterbi-trace";                      /* brief 26_0821-096: deriver of the band, for the no-parse fallback */
 	  int      band_is_ibv = FALSE;                                           /* brief 26_0821-096: band already from IBV => no further fallback */
@@ -1745,8 +1743,8 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	   * the plain Viterbi-trace band) since all of them converge on the same
 	   * ckpt/non-ckpt dispatch below. */
 	  {
-	    /* brief 26_0628-081: three engines now, not two, and the preflight is
-	     * what CHOOSES between the two checkpointed ones -- so it always models
+	    /* brief 26_0628-081: the preflight is
+	     * what CHOOSES between the two checkpointed engines -- so it always models
 	     * the engine that actually runs.
 	     *
 	     * Policy: keep the O(ncell) RESIDENT posterior while it fits in
@@ -1759,7 +1757,6 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	     * completely unaffected -- same engine, same speed, same bytes.
 	     * Output is byte-identical either way, so this is purely a
 	     * memory/wall-clock tradeoff, never an accuracy one.
-	     * (The non-checkpointed engine, P7B_OAMEM_NOCKPT, is not chosen here.)
 	     */
 	    double needed_bytes_pf, needed_mb_pf, mxsize_limit_pf, ckpt_bytes_pf;
 	    mxsize_limit_pf = esl_opt_GetReal(go, "--mxsize");
@@ -1782,7 +1779,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	    /* brief 26_0628-081: DOUBLE-checkpointed engine.  Same sqrt(nrow)
 	     * checkpointing as 26_0526-016 below, plus a checkpointed Backward
 	     * pass so the O(bnd->ncell) resident posterior is gone too: nothing
-	     * O(ncell) is allocated anywhere in this branch (bxf and bxb both stay
+	     * O(ncell) is allocated anywhere in this branch (bxb stays
 	     * NULL).  Byte-identical to the resident-posterior branch; selected by
 	     * the preflight above only when the resident posterior would not fit
 	     * in --mxsize. */
@@ -1790,11 +1787,11 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	    if ((status = p7_GCheckptFBDecodeOA_Banded(sq->dsq, sq->n, gm, bnd, tr[idx], &fwdsc, &oasc, &decst)) != eslOK)
 	      cm_Fail("p7_GCheckptFBDecodeOA_Banded() failed for sequence %s", sq->name);
 	  }
-	  else if (ckpt_mode == P7B_OAMEM_CKPT) {
+	  else { /* P7B_OAMEM_CKPT */
 	    /* brief 26_0526-016: sqrt(nrow)-checkpointed F/B/Decode/OA/traceback.
 	     * Byte-exact vs the full path at norovirus/dengue/sars/HSV.
 	     * bxb holds the resident posterior; no full F, B, or OA matrix
-	     * is ever materialized (bxf is not allocated). brief 26_0526-017: bxb uses
+	     * is ever materialized. brief 26_0526-017: bxb uses
 	     * the compact 2-cell (M,I) pp allocator, ~1/3 smaller than 3-cell. */
 	    bxb = p7b_pp_Create(bnd);
 	    if ((status = p7_GCheckptFBDecode_Banded(sq->dsq, sq->n, gm, bxb, &fwdsc, &decst)) != eslOK)
@@ -1803,26 +1800,9 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	    if ((status = p7_GCheckptOA_Banded(gm, bxb, tr[idx], &oasc)) != eslOK)
 	      cm_Fail("p7_GCheckptOA_Banded() failed for sequence %s", sq->name);
 	  }
-	  else {
-	  /* brief 26_0821-141: F/B/decode in double precision (the float
-	   * my_p7_GForwardBanded/p7_GBackwardBanded/p7_GDecodingBanded collapse
-	   * at genome scale). bxb receives the posterior; the double F/B are
-	   * freed inside, then bxf is allocated as the OA matrix. */
-	  bxb = p7_gmxb_Create(bnd);
-
-	  if ((status = cm_p7_GFBDecodeBandedDouble(sq->dsq, sq->n, gm, bxb, &fwdsc, &bwdsc, &decst)) != eslOK)
-	    cm_Fail("cm_p7_GFBDecodeBandedDouble() failed for sequence %s", sq->name);
-	  bxf = cm_p7_gmxbd_Create(bnd);
-	  if ((status = p7_GOptimalAccuracyBanded(gm, bxb, bxf, &oasc)) != eslOK)
-	    cm_Fail("p7_GOptimalAccuracyBanded() failed for sequence %s", sq->name);
-
-	  p7_trace_Reuse(tr[idx]);
-	  if ((status = p7_GOATraceBanded(gm, bxb, bxf, tr[idx])) != eslOK)
-	    cm_Fail("p7_GOATraceBanded() failed for sequence %s", sq->name);
-	  }
 
 	  /* brief 26_0821-096: a non-finite banded Forward total means the band holds
-	   * no complete parse, and the OA traceback above is garbage. All three
+	   * no complete parse, and the OA traceback above is garbage. Both
 	   * engines return eslOK in that case, so test the score here, after
 	   * whichever one ran. Retry once with --p7ibv-mem bands, else fail; see
 	   * hmm_noparse_fallback(). */
@@ -1835,7 +1815,6 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 				 band_is_ibv, band_src, &noparse_retried,
 				 &i2k, &kmin, &kmax, &ncells);
 	    p7_gbands_Destroy(bnd); bnd = NULL;
-	    if (bxf) { cm_p7_gmxbd_Destroy(bxf); bxf = NULL; }
 	    if (bxb) { p7_gmxb_Destroy(bxb); bxb = NULL; }
 	    goto HMM_NOPARSE_RETRY;
 	  }
@@ -1848,7 +1827,6 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	  free(kmax);
 	  if (vtr) p7_trace_Destroy(vtr);
 	  p7_gbands_Destroy(bnd);
-	  if (bxf) cm_p7_gmxbd_Destroy(bxf);
 	  p7_gmxb_Destroy(bxb);
 	}
 	hmm_set_stats(hstA + (size_t) idx * HMMST_N, hmm_score_bits(hst_raw, do_trunc, bg, sq->dsq, sq->n),
@@ -2312,10 +2290,8 @@ hmm_pipeline_thread(void *arg)
       int      ckpt_mode = P7B_OAMEM_CKPTPP;  /* brief 26_0628-081: engine picked by the preflight below */
       CM_P7_DECSTATS decst;                    /* brief 26_0821-141: decode counts for --devdiag */
       P7_GBANDS *bnd = NULL;
-      CM_P7_GMXBD *bxf = NULL;   /* double OA matrix (brief 26_0821-151) */
       P7_GMXB *bxb   = NULL;
       P7_TRACE *vtr  = NULL;
-      float    bwdsc = 0.;                                                    /* brief 26_0430-135b: capture backward total */
       int      p7ibv_delta = info->ibv_delta;                                 /* brief 26_0430-135b */
       const char *band_src = "default p7 Viterbi-trace";                      /* brief 26_0821-096: see hmm_alignment() */
       int      band_is_ibv = FALSE;                                           /* brief 26_0821-096 */
@@ -2433,35 +2409,21 @@ hmm_pipeline_thread(void *arg)
       if (ckpt_mode == P7B_OAMEM_CKPTPP) {
 	/* brief 26_0628-081: DOUBLE-checkpointed engine; mirrors the serial-path
 	 * gate in hmm_alignment().  Nothing O(bnd->ncell) is allocated in this
-	 * branch (bxf and bxb both stay NULL). */
+	 * branch (bxb stays NULL). */
 	p7_trace_Reuse(info->hmm_tr[idx]);
 	if ((status = p7_GCheckptFBDecodeOA_Banded(sq->dsq, sq->n, info->gm, bnd, info->hmm_tr[idx], &fwdsc, &oasc, &decst)) != eslOK)
 	  cm_Fail("p7_GCheckptFBDecodeOA_Banded() failed for sequence %s", sq->name);
       }
-      else if (ckpt_mode == P7B_OAMEM_CKPT) {
+      else { /* P7B_OAMEM_CKPT */
 	/* brief 26_0628-036: port of brief 26_0526-016's sqrt(nrow)-checkpointed F/B/Decode/OA/
 	 * traceback into the threaded worker (mirrors hmm_alignment()'s serial-path
-	 * gate above). bxb holds the resident posterior; bxf is never allocated. */
+	 * gate above). bxb holds the resident posterior. */
 	bxb = p7b_pp_Create(bnd);
 	if ((status = p7_GCheckptFBDecode_Banded(sq->dsq, sq->n, info->gm, bxb, &fwdsc, &decst)) != eslOK)
 	  cm_Fail("p7_GCheckptFBDecode_Banded() failed for sequence %s", sq->name);
 	p7_trace_Reuse(info->hmm_tr[idx]);
 	if ((status = p7_GCheckptOA_Banded(info->gm, bxb, info->hmm_tr[idx], &oasc)) != eslOK)
 	  cm_Fail("p7_GCheckptOA_Banded() failed for sequence %s", sq->name);
-      }
-      else {
-      /* brief 26_0821-141: double-precision F/B/decode; mirrors hmm_alignment(). */
-      bxb = p7_gmxb_Create(bnd);
-
-      if ((status = cm_p7_GFBDecodeBandedDouble(sq->dsq, sq->n, info->gm, bxb, &fwdsc, &bwdsc, &decst)) != eslOK)
-	cm_Fail("cm_p7_GFBDecodeBandedDouble() failed for sequence %s", sq->name);
-      bxf = cm_p7_gmxbd_Create(bnd);
-      if ((status = p7_GOptimalAccuracyBanded(info->gm, bxb, bxf, &oasc)) != eslOK)
-	cm_Fail("p7_GOptimalAccuracyBanded() failed for sequence %s", sq->name);
-
-      p7_trace_Reuse(info->hmm_tr[idx]);
-      if ((status = p7_GOATraceBanded(info->gm, bxb, bxf, info->hmm_tr[idx])) != eslOK)
-	cm_Fail("p7_GOATraceBanded() failed for sequence %s", sq->name);
       }
 
       /* brief 26_0821-096: no-parse band => retry once with --p7ibv-mem bands,
@@ -2472,7 +2434,6 @@ hmm_pipeline_thread(void *arg)
 			     band_is_ibv, band_src, &noparse_retried,
 			     &i2k, &kmin, &kmax, &ncells);
 	p7_gbands_Destroy(bnd); bnd = NULL;
-	if (bxf) { cm_p7_gmxbd_Destroy(bxf); bxf = NULL; }
 	if (bxb) { p7_gmxb_Destroy(bxb); bxb = NULL; }
 	goto HMM_NOPARSE_RETRY;
       }
@@ -2485,7 +2446,6 @@ hmm_pipeline_thread(void *arg)
       free(kmax);
       if (vtr) p7_trace_Destroy(vtr);
       p7_gbands_Destroy(bnd);
-      if (bxf) cm_p7_gmxbd_Destroy(bxf);
       p7_gmxb_Destroy(bxb);
     }
 
@@ -3179,7 +3139,6 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	int      ckpt_mode_w = P7B_OAMEM_CKPTPP;  /* brief 26_0628-083: engine picked by the preflight below */
 	CM_P7_DECSTATS decst_w;                  /* brief 26_0821-141: decode failure counts */
 	P7_GBANDS *bnd_w = NULL;
-	CM_P7_GMXBD *bxf_w = NULL;
 	P7_GMXB *bxb_w  = NULL;
 	P7_TRACE *vtr_w = NULL;
 	int       tpos_w;
@@ -3250,7 +3209,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	p7_kbands2gbands(i2k_w, kmin_w, kmax_w, L, hmm_w->M, &bnd_w);
 
 	/* brief 26_0628-083: post-band do_bandedoa_w preflight, ported from the
-	 * serial/threaded paths' three-way engine selection (brief 26_0628-081).
+	 * serial/threaded paths' engine selection (brief 26_0628-081).
 	 * This worker used to hardcode P7B_OAMEM_NOCKPT with no fallback, so a
 	 * band that would have auto-downgraded on --cpu 0/N instead hard-failed
 	 * here via mpi_failure() -- see serial-path site above for full
@@ -3272,7 +3231,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  }
 	}
 
-	/* brief 26_0628-083: three-way dispatch, mirroring the serial/threaded
+	/* brief 26_0628-083: engine dispatch, mirroring the serial/threaded
 	 * paths' brief 26_0628-081 block exactly (same engines, same byte
 	 * results -- ckpt_mode_w was chosen by the preflight above). */
 	hst_aln0 = hmm_now();
@@ -3281,22 +3240,13 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  if (p7_GCheckptFBDecodeOA_Banded(dsq, L, gm_w, bnd_w, wtr, &fwdsc_w, &oasc_w, &decst_w) != eslOK)
 	    mpi_failure("p7_GCheckptFBDecodeOA_Banded() failed");
 	}
-	else if (ckpt_mode_w == P7B_OAMEM_CKPT) {
+	else { /* P7B_OAMEM_CKPT */
 	  bxb_w = p7b_pp_Create(bnd_w);
 	  if (p7_GCheckptFBDecode_Banded(dsq, L, gm_w, bxb_w, &fwdsc_w, &decst_w) != eslOK)
 	    mpi_failure("p7_GCheckptFBDecode_Banded() failed");
 	  p7_trace_Reuse(wtr);
 	  if (p7_GCheckptOA_Banded(gm_w, bxb_w, wtr, &oasc_w) != eslOK)
 	    mpi_failure("p7_GCheckptOA_Banded() failed");
-	}
-	else {
-	  /* brief 26_0821-141: double-precision F/B/decode; mirrors hmm_alignment(). */
-	  bxb_w = p7_gmxb_Create(bnd_w);
-	  if (cm_p7_GFBDecodeBandedDouble(dsq, L, gm_w, bxb_w, &fwdsc_w, NULL, &decst_w) != eslOK)
-	    mpi_failure("cm_p7_GFBDecodeBandedDouble() failed");
-	  bxf_w = cm_p7_gmxbd_Create(bnd_w);
-	  p7_GOptimalAccuracyBanded(gm_w, bxb_w, bxf_w, &oasc_w);
-	  p7_GOATraceBanded(gm_w, bxb_w, bxf_w, wtr);
 	}
 	/* brief 26_0821-141: as in hmm_alignment(); this worker has no
 	 * no-parse retry, so test only a finite Forward total. */
@@ -3309,7 +3259,6 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	free(kmax_w);
 	p7_trace_Destroy(vtr_w);
 	p7_gbands_Destroy(bnd_w);
-	cm_p7_gmxbd_Destroy(bxf_w);
 	p7_gmxb_Destroy(bxb_w);
       }
 
