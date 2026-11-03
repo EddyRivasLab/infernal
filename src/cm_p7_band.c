@@ -1386,9 +1386,6 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
       r = s;
     }
   }
-  /* brief 26_0821-133: the #KMERCHAIN lines are developer diagnostics, printed
-   * only if INFERNAL_STAGE_VERBOSE is set; their format is unchanged. */
-
   /* brief 26_0628-046: per-query longest-exact-match signal gate (unvalidated,
    * default off -- see kmer_ngate_fires() header comment). Checked right after
    * the seed collection/merge above, independent of the M-gate above. */

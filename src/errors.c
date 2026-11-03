@@ -70,20 +70,18 @@ cm_Fail(char *format, ...)
 /* Function:  cm_StageVerbose()
  * Incept:    EPN, Sun Oct 11 2026 (w/Claude)
  *
- * Purpose:   Return TRUE if the INFERNAL_STAGE_VERBOSE environment
- *            variable is set (to any value), FALSE if not.
+ * Purpose:   Return TRUE if developer diagnostics are on (--devdiag;
+ *            see cm_SetStageVerbose()), FALSE if not.
  *
- *            Developer diagnostics -- per-stage timings, band sizes,
- *            and alignment engine choices, written to stderr as lines
- *            that begin with '#' -- are printed only when it is set.
- *            The environment is read once and the answer is cached.
+ *            Developer diagnostics -- which alignment engine or band
+ *            builder ran, and per-stage timings -- are printed only
+ *            when they are on.
  */
-static int stage_verbose = -1; /* -1: not yet read; see cm_StageVerbose(), cm_SetStageVerbose() */
+static int stage_verbose = FALSE; /* see cm_StageVerbose(), cm_SetStageVerbose() */
 
 int
 cm_StageVerbose(void)
 {
-  if(stage_verbose == -1) stage_verbose = (getenv("INFERNAL_STAGE_VERBOSE") != NULL) ? TRUE : FALSE;
   return stage_verbose;
 }
 
@@ -91,10 +89,10 @@ cm_StageVerbose(void)
  * Incept:    EPN, Tue Oct 20 2026 (w/Claude)
  *
  * Purpose:   Turn developer diagnostics on (<on> = TRUE) or off for the
- *            rest of the run, overriding INFERNAL_STAGE_VERBOSE. Programs
- *            call this right after option parsing when --devdiag is used,
- *            so the option and the environment variable do the same thing
- *            (brief 26_0821-135).
+ *            rest of the run. Programs call this right after option
+ *            parsing when --devdiag is used (brief 26_0821-135). The
+ *            INFERNAL_STAGE_VERBOSE environment variable that also did
+ *            this was removed in brief 26_0821-174.
  */
 void
 cm_SetStageVerbose(int on)

@@ -650,8 +650,7 @@ autoswitch_force_opt(ESL_GETOPTS *go, char *optname, char *strval)
  *
  * If the loaded CM has 0 basepairs and the user requested no explicit
  * alignment mode, force HMM-only mode (--hmm) by setting it in <go> as if
- * given on the command line, then emit a one-line note to stderr (only if
- * INFERNAL_STAGE_VERBOSE is set). The band builder is --p7ibv at CLEN <=
+ * given on the command line. The band builder is --p7ibv at CLEN <=
  * CM_KMERCHAIN_DEFAULT_MINM, with --p7ibv-delta's own default margin
  * (20000 milli-bits) or whatever the user gives. Above it,
  * maybe_kmerchain_default() picks --p7kmerchain, as for every other
@@ -3484,7 +3483,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
       exit(0);
     }
 
-  /* --devdiag does what the INFERNAL_STAGE_VERBOSE environment variable does */
+  /* --devdiag: developer diagnostics on */
   if (esl_opt_GetBoolean(go, "--devdiag")) cm_SetStageVerbose(TRUE);
 
   if (esl_opt_ArgNumber(go)                 != 2)     { esl_fprintf(stderr, "Incorrect number of command line arguments.\n");      goto ERROR; }

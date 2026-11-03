@@ -1249,8 +1249,7 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	     * Below genome scale the standard CP9 re-derivation further down
 	     * recovers; at genome scale (cp9fb_Mb > mxsize) that path cannot run,
 	     * and this used to be a hard error. Instead, unless the band already
-	     * came from IBV, print one stderr line (INFERNAL_STAGE_VERBOSE only),
-	     * re-derive the p7 band with the
+	     * came from IBV, re-derive the p7 band with the
 	     * memory-bounded IBV D&C deriver (the same call and settings as
 	     * kmerchain's --p7kmerchain-fbibv no-anchor fallback above, still
 	     * truncation-aware if do_trunc), and rerun the p7-banded CP9 band
@@ -2403,8 +2402,7 @@ elr_consider(CM_t *cm, ESL_SQ *sq, int status2, CM_ALNDATA **data2, CM_ALNDATA *
  *           If the first pass is refused (eslERANGE), the tail rule T
  *           (elr_tail_edit()) gets one retry.
  *           The returned data describe the kept alignment; its times include
- *           every pass. Nothing is printed, except developer trace lines with
- *           INFERNAL_STAGE_VERBOSE set.
+ *           every pass. Nothing is printed.
  */
 int
 DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsize, char mode, int pass_idx,

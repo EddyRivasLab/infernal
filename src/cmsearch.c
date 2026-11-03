@@ -1842,7 +1842,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
       exit(0);
     }
 
-  /* --devdiag does what the INFERNAL_STAGE_VERBOSE environment variable does */
+  /* --devdiag: developer diagnostics on */
   if (esl_opt_GetBoolean(go, "--devdiag")) cm_SetStageVerbose(TRUE);
 
   if (esl_opt_ArgNumber(go)                  != 2)     { esl_fprintf(stderr, "Incorrect number of command line arguments.\n");      goto ERROR; }
