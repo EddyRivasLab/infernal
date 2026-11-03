@@ -1706,7 +1706,7 @@ below so it will fit on the page):
 Cobalamin.1         ------------------------------GUAGGCAAAAGGAAGAGGAAGgAUGGUGGAAAUCCUUCACGGGCCCGGCCA
 #=GR Cobalamin.1 PP ..............................44455677788899******9899***************************
 #=GC SS_cons        :::::::::::::::[[[[[[<<<____________>>>,,,,,(((,,,<.<<<<_______>>>>>,,<<<____>>>,
-#=GC RF             uuaaauuauucuggugacGGUcccccuuaaagucagggguuAAaaGGGAAc.ccGGUGcaAauCCgggGCuGcCCCCgCaA
+#=GC RF             uuaaauuauucuggugacGGUcccccuuaaagucggggguuAAaaGGGAAc.ccGGUGcaAauCCgggGCuGcCCCCgCaA
 
 
 Cobalamin.1         CUGUAACCAG---------------------------------auuu----------------------------UUGGAA
@@ -1761,6 +1761,28 @@ result in different alignments. However, most of the time the
 alignments will be identical, and when they are different they will
 usually only be slightly different.
 
+\subsubsection{How cmalign chooses an alignment method}
+By default, \prog{cmalign} aligns each sequence to the CM with the
+optimal accuracy algorithm, within bands derived from a plan 9 HMM
+built from the CM, as in the examples above. Two kinds of models are
+treated differently. For models with a consensus length (CLEN) greater
+than 4000, such as models of whole viral genomes, the bands are instead
+derived from exact k-mer matches between the sequence and the model's
+consensus sequence, which is much faster at that scale; the
+\prog{--hbanded} option selects the plan 9 HMM bands for these models
+too. Models with zero basepairs are aligned with their profile HMM
+instead of the CM, which is faster and needs less memory;
+\prog{--nohmm} aligns them with the CM. When either of these applies,
+the output header says so.
+
+The memory \prog{cmalign} may use for each sequence is limited by the
+\prog{--mxsize} option (1024 Mb by default). When the default
+algorithm would need more, \prog{cmalign} switches automatically to
+versions of its algorithms that need less memory, so whole viral
+genomes can be aligned with default settings. The \prog{cmalign} man
+page describes these options and the others that control the
+alignment method.
+
 \subsection{Searching a sequence database for RNAs with unknown or no
  secondary structure}
 
@@ -1783,8 +1805,8 @@ predecessor COVE did with the \prog{covet} program, still available at
 \url{eddylab.org/software/cove/cove.tar.Z}.
 
 Infernal automatically detects when a model has zero basepairs and
-uses efficient profile HMM algorithms in \prog{cmsearch} and
-\prog{cmscan}. As an example, let's revisit the construction of our
+uses efficient profile HMM algorithms in \prog{cmsearch},
+\prog{cmscan} and \prog{cmalign}. As an example, let's revisit the construction of our
 tRNA model but pretend that we do not know the conserved cloverlear
 structure of tRNA. The file 
 \otext{tutorial/tRNA5-noss.sto} is identical to the file 
