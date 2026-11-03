@@ -240,23 +240,6 @@ struct cfg_s {
 				 * block, consumed/destroyed in create_and_output_final_msa(). */
 };
 
-/* brief 26_0628-035: temporary peak-RSS attribution instrumentation, gated by
- * BRIEF035_MEMPOINT. Reads /proc/self/status VmRSS. Revert before finishing
- * if not worth keeping (duplicated from cm_p7_band.c's static copy). */
-static long
-brief035_rss_kb(void)
-{
-  FILE *fp = fopen("/proc/self/status", "r");
-  char line[256];
-  long rss = -1;
-  if (fp == NULL) return -1;
-  while (fgets(line, sizeof(line), fp) != NULL) {
-    if (strncmp(line, "VmRSS:", 6) == 0) { sscanf(line+6, "%ld", &rss); break; }
-  }
-  fclose(fp);
-  return rss;
-}
-
 static char usage[]  = "[-options] <cmfile> <seqfile>";
 static char banner[] = "align sequences to a CM";
 
@@ -291,7 +274,7 @@ kmer_gate_p7ibv_fallback(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int 
   *ret_i2k = NULL; *ret_kmin = NULL; *ret_kmax = NULL; *ret_ncells = 0;
   if (cm->fp7 == NULL) return eslOK;   /* caller falls back further */
   return p7_Seq2BandsIBV_dnc(cm, errbuf, dsq, L, ibv_delta, ibv_base_slab,
-                              FALSE, /* do_boundary_widen: P135B_FORCE_WIDEN override, same default as --hmm --p7ibv */
+                              FALSE, /* do_boundary_widen: same as --hmm --p7ibv */
                               do_trunc, cm->p7_ibv_mode, cm->p7_ibv_width,
                               ret_i2k, ret_kmin, ret_kmax, ret_ncells);
 }
@@ -332,8 +315,7 @@ hmm_decode_failed(const CM_P7_DECSTATS *st)
  * meaningless (it used to be emitted anyway, exit 0, as a garbage alignment).
  *
  * The first time this happens for a sequence whose band did NOT come from IBV,
- * print one stderr line (INFERNAL_STAGE_VERBOSE only), free the failed band,
- * and re-derive it with the IBV
+ * free the failed band, and re-derive it with the IBV
  * D&C deriver via kmer_gate_p7ibv_fallback() (same delta/base-slab settings as
  * kmerchain's no-anchor fallback; still truncation-aware if <do_trunc>), so the
  * caller can retry once. IBV D&C is used because it is memory-bounded at genome
@@ -364,8 +346,6 @@ hmm_noparse_fallback(CM_t *cm, const ESL_SQ *sq, int do_trunc, int ibv_base_slab
             "(banded HMM Forward total not finite), and no filter p7 HMM for a --p7ibv-mem retry.",
             band_src, sq->name);
 
-  if(cm_StageVerbose()) /* brief 26_0821-133: informational, developer-only */
-    fprintf(stderr, "# no-parse p7 band from %s for %s; retrying with --p7ibv-mem bands\n", band_src, sq->name);
   free(*ret_i2k);  *ret_i2k  = NULL;
   free(*ret_kmin); *ret_kmin = NULL;
   free(*ret_kmax); *ret_kmax = NULL;
@@ -715,14 +695,6 @@ maybe_hmm_autoswitch(ESL_GETOPTS *go, CM_t *cm)
   if (cm->clen <= CM_KMERCHAIN_DEFAULT_MINM && ! esl_opt_GetBoolean(go, "--p7ibv"))
     autoswitch_force_opt(go, "--p7ibv", NULL);
   hmm_autoswitched = TRUE;
-
-  if(cm_StageVerbose()) { /* brief 26_0821-133: informational, developer-only */
-    if (esl_opt_GetBoolean(go, "--p7ibv"))
-      fprintf(stderr, "# 0-basepair CM: auto-switched to HMM mode (--p7ibv --p7ibv-delta %d); use --nohmm to force CM DP\n",
-              esl_opt_GetInteger(go, "--p7ibv-delta"));
-    else
-      fprintf(stderr, "# 0-basepair CM: auto-switched to HMM mode; use --nohmm to force CM DP\n");
-  }
 }
 
 /* maybe_kmerchain_default()
@@ -1657,27 +1629,8 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	  const char *band_src = "default p7 Viterbi-trace";                      /* brief 26_0821-096: deriver of the band, for the no-parse fallback */
 	  int      band_is_ibv = FALSE;                                           /* brief 26_0821-096: band already from IBV => no further fallback */
 	  int      noparse_retried = FALSE;                                       /* brief 26_0821-096 */
-	  int      do_widen = (getenv("P135B_FORCE_WIDEN") != NULL) ? TRUE : FALSE; /* brief 26_0430-135b widen override */
-	  /* brief 26_0628-061: optional 4-stage per-sequence timing for this --hmm-mode
-	   * banded-OA path, reusing brief 059's BRIEF059_STAGETIME env var and
-	   * #STAGETIME line format/semantics (059 instrumented DispatchSqAlignment()'s
-	   * separate --p7band CM-alignment path; this is the distinct --hmm-only
-	   * code path). Stage (a)/(b) reuse the same deriver-internal a/b split as
-	   * 059 (p7_Seq2BandsKmerChain's ret_a_s/ret_b_s out-params);
-	   * stage (c) = p7_kbands2gbands() (uniform band conversion for this mode,
-	   * unlike 059's cp9_IterateSeq2BandsP7B()); stage (d) = the HMM-only
-	   * alignment DP (checkpointed or non-checkpointed F/B/Decode/OA/traceback). */
-	  int             _st061_on   = (getenv("BRIEF059_STAGETIME") != NULL);
-	  struct timespec _st061_tab0, _st061_tab1, _st061_tc0, _st061_tc1, _st061_td0, _st061_td1;
-	  double          _st061_a_s = 0., _st061_b_s = 0., _st061_c_s = 0., _st061_d_s = 0., _st061_ab_s = 0.;
-	  int             _st061_ab_split = FALSE;
-	  int             _st061_used_p7ibv_fb = FALSE;
-	  const char     *_st061_kind = NULL;
-
-	  if (_st061_on) clock_gettime(CLOCK_MONOTONIC, &_st061_tab0);
 
 	  if (do_p7ibv) {
-	    if (_st061_on) _st061_kind = "p7ibv";
 	    band_src = "--p7ibv"; band_is_ibv = TRUE;
 	    /* IBV D&C deriver: bands straight from cm->fp7, no full P7_GMX. */
 	    if (cm->fp7 == NULL || cm->fp7->M != hmm->M)
@@ -1689,7 +1642,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 					      (esl_opt_IsDefault(go, "--p7ibv-base-slab")
 					       ? HMM_P7IBV_KNEE_BASE_SLAB
 					       : esl_opt_GetInteger(go, "--p7ibv-base-slab")),
-					      do_widen, /* brief 26_0430-135b: P135B_FORCE_WIDEN override; default FALSE (non-truncated --hmm) */
+					      FALSE,    /* do_widen: no widening for --hmm */
 					      do_trunc, /* brief 26_0430-182 Part B: was hardcoded FALSE; --hmm defaults to truncated (CM_ALIGN_TRUNC set unless --notrunc), so this must track it like p7_ibv.c:1793 */
 					      cm->p7_ibv_mode, cm->p7_ibv_width, /* brief 26_0430-140 */
 					      &i2k, &kmin, &kmax, &ncells)) != eslOK)
@@ -1709,15 +1662,13 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	    }
 	    if (cm->p7_use_kmerchain) {
 	      did_kmer = TRUE;
-	      if (_st061_on) _st061_kind = "kmerchain";
 	      band_src = "--p7kmerchain";
 	      if ((status = p7_Seq2BandsKmerChain(cm, errbuf, sq->dsq, sq->n, local_nodepad,
 						  do_trunc, /* brief 26_0628-038: track CM_ALIGN_TRUNC like cm_alndata.c:558 */
 						  &i2k, &kmin, &kmax, &ncells,
-						  _st061_on ? &_st061_a_s : NULL, _st061_on ? &_st061_b_s : NULL,
+						  NULL, NULL,
 						  NULL, NULL)) != eslOK) /* 2026-07-11 (brief 190 follow-up): bd split not wired for this --hmm path, out of scope */
 		cm_Fail("p7_Seq2BandsKmerChain() failed for sequence %s: %s", sq->name, errbuf);
-	      if (_st061_on) _st061_ab_split = TRUE; /* brief 26_0628-061: provisional; cleared below if a fallback fires */
 	    }
 	    if (local_nodepad) free(local_nodepad);
 
@@ -1738,8 +1689,6 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	      int p7ibv_base_slab = (esl_opt_IsDefault(go, "--p7ibv-base-slab")
 				      ? HMM_P7IBV_KNEE_BASE_SLAB
 				      : esl_opt_GetInteger(go, "--p7ibv-base-slab"));
-	      if (_st061_on) { _st061_ab_split = FALSE; _st061_used_p7ibv_fb = TRUE; /* a_s/b_s only cover the failed kmer attempt */
-	                       _st061_kind = "kmerchain->p7ibv"; }
 	      band_src = "--p7kmerchain's --p7ibv-mem no-anchor fallback"; band_is_ibv = TRUE;
 	      if ((status = kmer_gate_p7ibv_fallback(cm, errbuf, sq->dsq, sq->n, do_trunc,
 						      cm->p7_ibv_delta, p7ibv_base_slab,
@@ -1752,12 +1701,6 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	       * the old behavior; and the safety net when the --p7ibv fallback
 	       * above itself also found nothing usable (mirrors cm_alndata.c's
 	       * kmerchain->vitband fallback shape). */
-	      if (_st061_on) {
-	        _st061_ab_split = FALSE;
-	        if (! did_kmer) _st061_kind = "vitband";
-	        else if (_st061_used_p7ibv_fb) _st061_kind = "kmerchain->p7ibv->vitband";
-	        else _st061_kind = "kmerchain->vitband";
-	      }
 	      band_src = "default p7 Viterbi-trace"; band_is_ibv = FALSE;
 	      vtr = p7_trace_Create();
 	      p7_gmx_GrowTo(gx, hmm->M, sq->n);
@@ -1786,13 +1729,6 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	      if ((status = p7_pins2bands(i2k, errbuf, sq->n, hmm->M, pad, &kmin, &kmax, &ncells)) != eslOK)
 		cm_Fail("p7_pins2bands() failed for sequence %s: %s", sq->name, errbuf);
 	    }
-	  }
-	  /* brief 26_0628-061: stage (a)/(b) derivation is complete (whichever branch
-	   * fired above); close out the combined-ab timer here before stage (c). */
-	  if (_st061_on) {
-	    clock_gettime(CLOCK_MONOTONIC, &_st061_tab1);
-	    _st061_ab_s = (_st061_tab1.tv_sec - _st061_tab0.tv_sec) + (_st061_tab1.tv_nsec - _st061_tab0.tv_nsec) / 1e9;
-	    clock_gettime(CLOCK_MONOTONIC, &_st061_tc0);
 	  }
 	HMM_NOPARSE_RETRY: /* brief 26_0821-096: re-entered once with --p7ibv-mem bands after a no-parse band */
 	  /* brief 26_0821-100: a glocal non-truncated profile can end only at node M,
@@ -1823,24 +1759,13 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	     * completely unaffected -- same engine, same speed, same bytes.
 	     * Output is byte-identical either way, so this is purely a
 	     * memory/wall-clock tradeoff, never an accuracy one.
-	     *
-	     * Overrides (both test only for PRESENCE, so `env VAR= cmalign ...`
-	     * with an empty value still counts as set):
-	     *   INFERNAL_HMM_CKPT_OFF    - non-checkpointed engine (as before)
-	     *   INFERNAL_HMM_PPCKPT_OFF  - never double-checkpoint (pre-081 behavior:
-	     *                              resident pp, and abort if it won't fit)
-	     *   INFERNAL_HMM_PPCKPT_ON   - always double-checkpoint (validation)
+	     * (The non-checkpointed engine, P7B_OAMEM_NOCKPT, is not chosen here.)
 	     */
 	    double needed_bytes_pf, needed_mb_pf, mxsize_limit_pf, ckpt_bytes_pf;
 	    mxsize_limit_pf = esl_opt_GetReal(go, "--mxsize");
-	    if      (getenv("INFERNAL_HMM_CKPT_OFF")   != NULL) ckpt_mode = P7B_OAMEM_NOCKPT;
-	    else if (getenv("INFERNAL_HMM_PPCKPT_ON")  != NULL) ckpt_mode = P7B_OAMEM_CKPTPP;
-	    else if (getenv("INFERNAL_HMM_PPCKPT_OFF") != NULL) ckpt_mode = P7B_OAMEM_CKPT;
-	    else {
-	      p7_CheckptBandedOAMemNeeded(bnd, P7B_OAMEM_CKPT, &ckpt_bytes_pf);
-	      ckpt_mode = (ckpt_bytes_pf / (1024.0 * 1024.0) <= mxsize_limit_pf)
-	                  ? P7B_OAMEM_CKPT : P7B_OAMEM_CKPTPP;
-	    }
+	    p7_CheckptBandedOAMemNeeded(bnd, P7B_OAMEM_CKPT, &ckpt_bytes_pf);
+	    ckpt_mode = (ckpt_bytes_pf / (1024.0 * 1024.0) <= mxsize_limit_pf)
+	                ? P7B_OAMEM_CKPT : P7B_OAMEM_CKPTPP;
 	    p7_CheckptBandedOAMemNeeded(bnd, ckpt_mode, &needed_bytes_pf);
 	    needed_mb_pf    = needed_bytes_pf / (1024.0 * 1024.0);
 	    hst_mb          = ESL_MAX(hst_mb, needed_mb_pf);
@@ -1849,28 +1774,8 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	      cm_Fail("HMM-only alignment mx needs %.2f Mb > %.2f Mb limit. Use --mxsize %d.",
 		      needed_mb_pf, mxsize_limit_pf, recommended_mxsize_pf);
 	    }
-	    if (getenv("INFERNAL_CKPT_VERBOSE"))
-	      fprintf(stderr, "# hmm-OA engine: mode=%d (0=nockpt 1=ckpt 2=ckptpp) needed=%.2f Mb mxsize=%.2f Mb ncell=%ld\n",
-		      ckpt_mode, needed_mb_pf, mxsize_limit_pf, (long) bnd->ncell);
 	  }
 
-	  if (_st061_on) {
-	    clock_gettime(CLOCK_MONOTONIC, &_st061_tc1);
-	    _st061_c_s = (_st061_tc1.tv_sec - _st061_tc0.tv_sec) + (_st061_tc1.tv_nsec - _st061_tc0.tv_nsec) / 1e9;
-	    clock_gettime(CLOCK_MONOTONIC, &_st061_td0);
-	  }
-	  /* brief 26_0628-058: outside-band-fraction diagnostic, proposed by 26_0526
-	   * (BAND-COVERAGE-METRIC-PROPOSAL-from-26_0526.md). bnd->ncell (total cells
-	   * inside the final band) and bnd->L/bnd->M are already set by
-	   * p7_kbands2gbands() as a side effect; env-gated, opt-in like the other
-	   * BRIEF0NN_* diagnostics in this thread. */
-	  if (getenv("BRIEF058_BANDCELLS") != NULL) {
-	    double outside_frac = 1.0 - (double) bnd->ncell / ((double) bnd->L * (double) bnd->M);
-	    fprintf(stderr, "#BANDCELLS L=%d M=%d ncell=%ld total=%ld outside_frac=%.4f\n",
-		    bnd->L, bnd->M, (long) bnd->ncell, (long) bnd->L * (long) bnd->M, outside_frac);
-	  }
-	  if (getenv("BRIEF035_MEMPOINT") != NULL)
-	    fprintf(stderr, "#MEMPOINT after_gbands seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
 
 	  hst_aln0 = hmm_now();
 	  if (ckpt_mode == P7B_OAMEM_CKPTPP) {
@@ -1880,23 +1785,18 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	     * O(ncell) is allocated anywhere in this branch (bxf and bxb both stay
 	     * NULL).  Byte-identical to the resident-posterior branch; selected by
 	     * the preflight above only when the resident posterior would not fit
-	     * in --mxsize (or forced with INFERNAL_HMM_PPCKPT_ON). */
-	    if (getenv("BRIEF035_MEMPOINT") != NULL)
-	      fprintf(stderr, "#MEMPOINT after_cp9alloc_ckptpp seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
+	     * in --mxsize. */
 	    p7_trace_Reuse(tr[idx]);
 	    if ((status = p7_GCheckptFBDecodeOA_Banded(sq->dsq, sq->n, gm, bnd, tr[idx], &fwdsc, &oasc, &decst)) != eslOK)
 	      cm_Fail("p7_GCheckptFBDecodeOA_Banded() failed for sequence %s", sq->name);
 	  }
 	  else if (ckpt_mode == P7B_OAMEM_CKPT) {
 	    /* brief 26_0526-016: sqrt(nrow)-checkpointed F/B/Decode/OA/traceback.
-	     * Byte-exact vs the full path at norovirus/dengue/sars/HSV; set
-	     * INFERNAL_HMM_CKPT_OFF to force the full path.
+	     * Byte-exact vs the full path at norovirus/dengue/sars/HSV.
 	     * bxb holds the resident posterior; no full F, B, or OA matrix
 	     * is ever materialized (bxf is not allocated). brief 26_0526-017: bxb uses
 	     * the compact 2-cell (M,I) pp allocator, ~1/3 smaller than 3-cell. */
 	    bxb = p7b_pp_Create(bnd);
-	    if (getenv("BRIEF035_MEMPOINT") != NULL)
-	      fprintf(stderr, "#MEMPOINT after_cp9alloc_ckpt seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
 	    if ((status = p7_GCheckptFBDecode_Banded(sq->dsq, sq->n, gm, bxb, &fwdsc, &decst)) != eslOK)
 	      cm_Fail("p7_GCheckptFBDecode_Banded() failed for sequence %s", sq->name);
 	    p7_trace_Reuse(tr[idx]);
@@ -1909,14 +1809,9 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	   * at genome scale). bxb receives the posterior; the double F/B are
 	   * freed inside, then bxf is allocated as the OA matrix. */
 	  bxb = p7_gmxb_Create(bnd);
-	  if (getenv("BRIEF035_MEMPOINT") != NULL)
-	    fprintf(stderr, "#MEMPOINT after_cp9alloc_nockpt seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
 
 	  if ((status = cm_p7_GFBDecodeBandedDouble(sq->dsq, sq->n, gm, bxb, &fwdsc, &bwdsc, &decst)) != eslOK)
 	    cm_Fail("cm_p7_GFBDecodeBandedDouble() failed for sequence %s", sq->name);
-	  if (getenv("P135B_FB_INSTRUMENT") != NULL)
-	    fprintf(stderr, "#P135B_FBTOTAL seq=%s M=%d L=%d delta=%d widen=%d ncells=%d fwd=%.6f bwd=%.6f gap=%.6f\n",
-		    sq->name, hmm->M, (int) sq->n, p7ibv_delta, do_widen, ncells, fwdsc, bwdsc, fwdsc - bwdsc);
 	  bxf = cm_p7_gmxbd_Create(bnd);
 	  if ((status = p7_GOptimalAccuracyBanded(gm, bxb, bxf, &oasc)) != eslOK)
 	    cm_Fail("p7_GOptimalAccuracyBanded() failed for sequence %s", sq->name);
@@ -1947,29 +1842,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 	  if (hmm_decode_failed(&decst))
 	    cm_Fail(HMM_DECODE_FAIL_FMT, sq->name, (long) decst.ndead, (long) decst.nnonfinite, decst.fb_incons);
 
-	  /* brief 26_0628-061: stage (d) alignment DP is complete (checkpointed or
-	   * non-checkpointed branch above); emit the per-sequence 4-stage line,
-	   * same #STAGETIME format/semantics as brief 059's --p7band path. */
-	  if (_st061_on) {
-	    clock_gettime(CLOCK_MONOTONIC, &_st061_td1);
-	    _st061_d_s = (_st061_td1.tv_sec - _st061_td0.tv_sec) + (_st061_td1.tv_nsec - _st061_td0.tv_nsec) / 1e9;
-	    if (_st061_kind != NULL) {
-	      if (_st061_ab_split)
-	        fprintf(stderr, "#STAGETIME seq=%s L=%d M=%d method=%s a_s=%.6f b_s=%.6f c_s=%.6f d_s=%.6f tot_s=%.6f\n",
-	                sq->name, (int)sq->n, hmm->M, _st061_kind,
-	                _st061_a_s, _st061_b_s, _st061_c_s, _st061_d_s,
-	                _st061_a_s + _st061_b_s + _st061_c_s + _st061_d_s);
-	      else
-	        fprintf(stderr, "#STAGETIME seq=%s L=%d M=%d method=%s ab_s=%.6f c_s=%.6f d_s=%.6f tot_s=%.6f\n",
-	                sq->name, (int)sq->n, hmm->M, _st061_kind,
-	                _st061_ab_s, _st061_c_s, _st061_d_s,
-	                _st061_ab_s + _st061_c_s + _st061_d_s);
-	    }
-	  }
-
 	  hst_raw = fwdsc;
-	  if (getenv("BRIEF035_MEMPOINT") != NULL)
-	    fprintf(stderr, "#MEMPOINT alignment_peak seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
 	  free(i2k);
 	  free(kmin);
 	  free(kmax);
@@ -2447,7 +2320,6 @@ hmm_pipeline_thread(void *arg)
       const char *band_src = "default p7 Viterbi-trace";                      /* brief 26_0821-096: see hmm_alignment() */
       int      band_is_ibv = FALSE;                                           /* brief 26_0821-096 */
       int      noparse_retried = FALSE;                                       /* brief 26_0821-096 */
-      int      do_widen = (getenv("P135B_FORCE_WIDEN") != NULL) ? TRUE : FALSE; /* brief 26_0430-135b widen override */
 
       if (info->do_p7ibv) {
 	/* IBV D&C deriver: bands straight from cm->fp7, no full P7_GMX. */
@@ -2456,7 +2328,7 @@ hmm_pipeline_thread(void *arg)
 	band_src = "--p7ibv"; band_is_ibv = TRUE;
 	if ((status = p7_Seq2BandsIBV_dnc(info->cm, errbuf, sq->dsq, sq->n,
 					  p7ibv_delta, info->ibv_base_slab,
-					  do_widen, /* brief 26_0430-135b: P135B_FORCE_WIDEN override; default FALSE (non-truncated --hmm) */
+					  FALSE,    /* do_widen: no widening for --hmm */
 					  info->do_trunc, /* brief 26_0430-182 Part B: was hardcoded FALSE; track CM_ALIGN_TRUNC like p7_ibv.c:1793 */
 					  info->cm->p7_ibv_mode, info->cm->p7_ibv_width, /* brief 26_0430-140 */
 					  &i2k, &kmin, &kmax, &ncells)) != eslOK)
@@ -2541,16 +2413,11 @@ hmm_pipeline_thread(void *arg)
        * site above for full reasoning). */
       {
 	/* brief 26_0628-081: mirrors the serial site's size-conditional engine
-	 * choice exactly (see there for the policy and the env overrides). */
+	 * choice exactly (see there for the policy). */
 	double needed_bytes_pf, needed_mb_pf, ckpt_bytes_pf;
-	if      (getenv("INFERNAL_HMM_CKPT_OFF")   != NULL) ckpt_mode = P7B_OAMEM_NOCKPT;
-	else if (getenv("INFERNAL_HMM_PPCKPT_ON")  != NULL) ckpt_mode = P7B_OAMEM_CKPTPP;
-	else if (getenv("INFERNAL_HMM_PPCKPT_OFF") != NULL) ckpt_mode = P7B_OAMEM_CKPT;
-	else {
-	  p7_CheckptBandedOAMemNeeded(bnd, P7B_OAMEM_CKPT, &ckpt_bytes_pf);
-	  ckpt_mode = (ckpt_bytes_pf / (1024.0 * 1024.0) <= (double) info->mxsize)
-	              ? P7B_OAMEM_CKPT : P7B_OAMEM_CKPTPP;
-	}
+	p7_CheckptBandedOAMemNeeded(bnd, P7B_OAMEM_CKPT, &ckpt_bytes_pf);
+	ckpt_mode = (ckpt_bytes_pf / (1024.0 * 1024.0) <= (double) info->mxsize)
+	            ? P7B_OAMEM_CKPT : P7B_OAMEM_CKPTPP;
 	p7_CheckptBandedOAMemNeeded(bnd, ckpt_mode, &needed_bytes_pf);
 	needed_mb_pf = needed_bytes_pf / (1024.0 * 1024.0);
 	hst_mb       = ESL_MAX(hst_mb, needed_mb_pf);
@@ -2559,28 +2426,14 @@ hmm_pipeline_thread(void *arg)
 	  cm_Fail("HMM-only alignment mx needs %.2f Mb > %.2f Mb limit. Use --mxsize %d.",
 		  needed_mb_pf, (double) info->mxsize, recommended_mxsize_pf);
 	}
-	if (getenv("INFERNAL_CKPT_VERBOSE"))
-	  fprintf(stderr, "# hmm-OA engine: mode=%d (0=nockpt 1=ckpt 2=ckptpp) needed=%.2f Mb mxsize=%.2f Mb ncell=%ld\n",
-		  ckpt_mode, needed_mb_pf, (double) info->mxsize, (long) bnd->ncell);
       }
 
-      /* brief 26_0628-058: outside-band-fraction diagnostic, proposed by 26_0526
-       * (BAND-COVERAGE-METRIC-PROPOSAL-from-26_0526.md); see serial-path site above. */
-      if (getenv("BRIEF058_BANDCELLS") != NULL) {
-	double outside_frac = 1.0 - (double) bnd->ncell / ((double) bnd->L * (double) bnd->M);
-	fprintf(stderr, "#BANDCELLS L=%d M=%d ncell=%ld total=%ld outside_frac=%.4f\n",
-		bnd->L, bnd->M, (long) bnd->ncell, (long) bnd->L * (long) bnd->M, outside_frac);
-      }
-      if (getenv("BRIEF035_MEMPOINT") != NULL)
-	fprintf(stderr, "#MEMPOINT after_gbands_threaded seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
 
       hst_aln0 = hmm_now();
       if (ckpt_mode == P7B_OAMEM_CKPTPP) {
 	/* brief 26_0628-081: DOUBLE-checkpointed engine; mirrors the serial-path
 	 * gate in hmm_alignment().  Nothing O(bnd->ncell) is allocated in this
 	 * branch (bxf and bxb both stay NULL). */
-	if (getenv("BRIEF035_MEMPOINT") != NULL)
-	  fprintf(stderr, "#MEMPOINT after_cp9alloc_ckptpp_threaded seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
 	p7_trace_Reuse(info->hmm_tr[idx]);
 	if ((status = p7_GCheckptFBDecodeOA_Banded(sq->dsq, sq->n, info->gm, bnd, info->hmm_tr[idx], &fwdsc, &oasc, &decst)) != eslOK)
 	  cm_Fail("p7_GCheckptFBDecodeOA_Banded() failed for sequence %s", sq->name);
@@ -2590,8 +2443,6 @@ hmm_pipeline_thread(void *arg)
 	 * traceback into the threaded worker (mirrors hmm_alignment()'s serial-path
 	 * gate above). bxb holds the resident posterior; bxf is never allocated. */
 	bxb = p7b_pp_Create(bnd);
-	if (getenv("BRIEF035_MEMPOINT") != NULL)
-	  fprintf(stderr, "#MEMPOINT after_cp9alloc_ckpt_threaded seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
 	if ((status = p7_GCheckptFBDecode_Banded(sq->dsq, sq->n, info->gm, bxb, &fwdsc, &decst)) != eslOK)
 	  cm_Fail("p7_GCheckptFBDecode_Banded() failed for sequence %s", sq->name);
 	p7_trace_Reuse(info->hmm_tr[idx]);
@@ -2601,14 +2452,9 @@ hmm_pipeline_thread(void *arg)
       else {
       /* brief 26_0821-141: double-precision F/B/decode; mirrors hmm_alignment(). */
       bxb = p7_gmxb_Create(bnd);
-      if (getenv("BRIEF035_MEMPOINT") != NULL)
-	fprintf(stderr, "#MEMPOINT after_cp9alloc_nockpt_threaded seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
 
       if ((status = cm_p7_GFBDecodeBandedDouble(sq->dsq, sq->n, info->gm, bxb, &fwdsc, &bwdsc, &decst)) != eslOK)
 	cm_Fail("cm_p7_GFBDecodeBandedDouble() failed for sequence %s", sq->name);
-      if (getenv("P135B_FB_INSTRUMENT") != NULL)
-	fprintf(stderr, "#P135B_FBTOTAL seq=%s M=%d L=%d delta=%d widen=%d ncells=%d fwd=%.6f bwd=%.6f gap=%.6f\n",
-		sq->name, info->hmm->M, (int) sq->n, p7ibv_delta, do_widen, ncells, fwdsc, bwdsc, fwdsc - bwdsc);
       bxf = cm_p7_gmxbd_Create(bnd);
       if ((status = p7_GOptimalAccuracyBanded(info->gm, bxb, bxf, &oasc)) != eslOK)
 	cm_Fail("p7_GOptimalAccuracyBanded() failed for sequence %s", sq->name);
@@ -2633,8 +2479,6 @@ hmm_pipeline_thread(void *arg)
       if (hmm_decode_failed(&decst))
 	cm_Fail(HMM_DECODE_FAIL_FMT, sq->name, (long) decst.ndead, (long) decst.nnonfinite, decst.fb_incons);
       hst_raw = fwdsc;
-      if (getenv("BRIEF035_MEMPOINT") != NULL)
-	fprintf(stderr, "#MEMPOINT alignment_peak_threaded seq=%s L=%d rss_kb=%ld\n", sq->name, (int) sq->n, brief035_rss_kb());
 
       free(i2k);
       free(kmin);
@@ -3410,19 +3254,14 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	 * This worker used to hardcode P7B_OAMEM_NOCKPT with no fallback, so a
 	 * band that would have auto-downgraded on --cpu 0/N instead hard-failed
 	 * here via mpi_failure() -- see serial-path site above for full
-	 * reasoning; same overrides, same policy: keep the resident posterior
+	 * reasoning; same policy: keep the resident posterior
 	 * while it fits --mxsize, else drop to the double-checkpointed engine. */
 	{
 	  double needed_bytes_pf, needed_mb_pf, mxsize_limit_pf, ckpt_bytes_pf;
 	  mxsize_limit_pf = esl_opt_GetReal(go, "--mxsize");
-	  if      (getenv("INFERNAL_HMM_CKPT_OFF")   != NULL) ckpt_mode_w = P7B_OAMEM_NOCKPT;
-	  else if (getenv("INFERNAL_HMM_PPCKPT_ON")  != NULL) ckpt_mode_w = P7B_OAMEM_CKPTPP;
-	  else if (getenv("INFERNAL_HMM_PPCKPT_OFF") != NULL) ckpt_mode_w = P7B_OAMEM_CKPT;
-	  else {
-	    p7_CheckptBandedOAMemNeeded(bnd_w, P7B_OAMEM_CKPT, &ckpt_bytes_pf);
-	    ckpt_mode_w = (ckpt_bytes_pf / (1024.0 * 1024.0) <= mxsize_limit_pf)
-	                  ? P7B_OAMEM_CKPT : P7B_OAMEM_CKPTPP;
-	  }
+	  p7_CheckptBandedOAMemNeeded(bnd_w, P7B_OAMEM_CKPT, &ckpt_bytes_pf);
+	  ckpt_mode_w = (ckpt_bytes_pf / (1024.0 * 1024.0) <= mxsize_limit_pf)
+	                ? P7B_OAMEM_CKPT : P7B_OAMEM_CKPTPP;
 	  p7_CheckptBandedOAMemNeeded(bnd_w, ckpt_mode_w, &needed_bytes_pf);
 	  needed_mb_pf    = needed_bytes_pf / (1024.0 * 1024.0);
 	  hst_mb          = ESL_MAX(hst_mb, needed_mb_pf);
@@ -3431,18 +3270,8 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	    mpi_failure("HMM-only alignment mx needs %.2f Mb > %.2f Mb limit. Use --mxsize %d.",
 			needed_mb_pf, mxsize_limit_pf, recommended_mxsize_pf);
 	  }
-	  if (getenv("INFERNAL_CKPT_VERBOSE"))
-	    fprintf(stderr, "# hmm-OA engine: mode=%d (0=nockpt 1=ckpt 2=ckptpp) needed=%.2f Mb mxsize=%.2f Mb ncell=%ld\n",
-		    ckpt_mode_w, needed_mb_pf, mxsize_limit_pf, (long) bnd_w->ncell);
 	}
 
-	/* brief 26_0628-058: outside-band-fraction diagnostic, proposed by 26_0526
-	 * (BAND-COVERAGE-METRIC-PROPOSAL-from-26_0526.md); see serial-path site above. */
-	if (getenv("BRIEF058_BANDCELLS") != NULL) {
-	  double outside_frac = 1.0 - (double) bnd_w->ncell / ((double) bnd_w->L * (double) bnd_w->M);
-	  fprintf(stderr, "#BANDCELLS L=%d M=%d ncell=%ld total=%ld outside_frac=%.4f\n",
-		  bnd_w->L, bnd_w->M, (long) bnd_w->ncell, (long) bnd_w->L * (long) bnd_w->M, outside_frac);
-	}
 	/* brief 26_0628-083: three-way dispatch, mirroring the serial/threaded
 	 * paths' brief 26_0628-081 block exactly (same engines, same byte
 	 * results -- ckpt_mode_w was chosen by the preflight above). */
