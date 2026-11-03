@@ -595,14 +595,11 @@ iterate_seq2bands_ex(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j
   int     do_fwd_scan, do_bck_scan;
   CP9_MX *pmx = NULL;    /* local pmx distinct from cm->cp9_bmx so FB2HMMBands does not clobber bmx across iterations */
   CP9_CKPTBANDS *cb = NULL; /* if use_ckpt_cp9: HMM bands for every tau the loop below can try */
-  double  tau0  = cm->tau; /* starting tau, for the INFERNAL_BANDS_VERBOSE report */
   int     niter = 0;       /* number of band derivations (1 = bands were not tightened) */
-  float   need0 = 0.;      /* hbmx_Mb at the starting tau */
   float   hbmx_prev = 0.;  /* hbmx_Mb of the previous iteration */
   double  tau_prev  = cm->tau; /* cm->tau of the previous iteration */
   float   need_tau_before = 0.; /* hbmx_Mb just before the last increase of tau (0. if none) */
   float   need_tau_after  = 0.; /* hbmx_Mb just after  the last increase of tau */
-  int     nup   = 0;       /* number of tightening steps that increased hbmx_Mb (diagnostic) */
 
   if(use_ckpt_cp9) {
     /* Checkpointed CP9 F/B, once: HMM bands for every tau this loop can try,
@@ -665,11 +662,7 @@ iterate_seq2bands_ex(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j
       if(status != eslOK && status != eslERANGE) goto ERROR;
     }
     niter++;
-    if(niter == 1) need0 = hbmx_Mb;
-    else {
-      if(hbmx_Mb > hbmx_prev) nup++;
-      if(cm->tau != tau_prev) { need_tau_before = hbmx_prev; need_tau_after = hbmx_Mb; }
-    }
+    if(niter > 1 && cm->tau != tau_prev) { need_tau_before = hbmx_prev; need_tau_after = hbmx_Mb; }
     hbmx_prev = hbmx_Mb;
     tau_prev  = cm->tau;
     /*printf("cm->tau: %10.2g thresh1: %4.2f thresh2: %4.2f mxsize: %.2f\n", cm->tau, cm->cp9b->thresh1, cm->cp9b->thresh2, hbmx_Mb);*/
@@ -699,11 +692,6 @@ iterate_seq2bands_ex(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j
   if(pmx != NULL) FreeCP9Matrix(pmx);
   if(cb  != NULL) cp9_CheckptBandsDestroy(cb);
 
-  /* developer diagnostic: how far the ratchet tightened the bands for this sequence */
-  if((! doing_search) && getenv("INFERNAL_BANDS_VERBOSE") != NULL)
-    fprintf(stderr, "#BANDS_RATCHET L=%d trunc=%d el_banded=%d tau0=%g tau=%g thresh1=%.2f thresh2=%.2f niter=%d nup=%d need0=%.1f need=%.1f limit=%.1f %s\n",
-            (int) (j0-i0+1), do_trunc, el_banded, tau0, cm->tau, cm->cp9b->thresh1, cm->cp9b->thresh2, niter, nup, need0, hbmx_Mb, size_limit,
-            (hbmx_Mb > size_limit) ? "over" : ((niter > 1) ? "tightened" : "untightened"));
 
   if(ret_Mb != NULL) *ret_Mb = hbmx_Mb;
   if(hbmx_Mb > size_limit && el_banded && do_iterate && (! doing_search) && (! do_checkpt) && errbuf != NULL) {
@@ -1923,8 +1911,6 @@ cp9_GrowHDBands(CP9Bands_t *cp9b, char *errbuf)
     cp9b->hd_needed += cp9b->jmax[v] - cp9b->jmin[v] + 1;
     /* printf("hd needed v: %4d bw: %4d total: %" PRId64 "\n", v, cp9b->jmax[v] - cp9b->jmin[v] + 1, cp9b->hd_needed);  */
   }
-  /* diagnostic for band index array size (brief 26_0316-097/098), for band expansion measurement */
-  if(cm_StageVerbose()) fprintf(stderr, "#HDBANDS cm_M=%d hd_needed=%" PRId64 " (%.4f GB for hdmin+hdmax)\n", cp9b->cm_M, cp9b->hd_needed, (2.0 * sizeof(int) * (double) cp9b->hd_needed) / 1.0e9);
   /* hdmin_mem/hdmax_mem stay NULL; the per-v hdmin[]/hdmax[] pointers are unused
    * by the recompute path. Leave them NULL so any stray flat-array read faults
    * loudly rather than silently reading freed memory. */
@@ -2929,21 +2915,11 @@ cp9_EndHullRetryBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int pass_
  *           eslEINCONCEIVABLE if we can't expand the bands to make a valid parse (shouldn't happen)
  *           eslEMEM if a memory allocation error occurs
  */
-/* DEBUG: counters for HMMBandsEnforceValidParse profiling.
- * Print on exit via atexit() registered in cmsearch. */
-long _hmmbands_call_count        = 0;
-long _hmmbands_fix_unreachable_count = 0;
-long _hmmbands_fill_gap_count    = 0;
-double _hmmbands_total_secs      = 0.0;
-
 int
 HMMBandsEnforceValidParse(CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *errbuf, int i0, int j0, int doing_search,
 			  int **ret_r_mn, int **ret_r_mx, int **ret_r_in,  int **ret_r_ix, int **ret_r_dn, int **ret_r_dx,
 			  int **ret_r_nn_i, int **ret_r_nx_i, int **ret_r_nn_j, int **ret_r_nx_j)
 {
-  ESL_STOPWATCH *_dbg_watch = esl_stopwatch_Create();
-  esl_stopwatch_Start(_dbg_watch);
-  _hmmbands_call_count++;
   int status;
   /* r_* arrays, these are the bands on 'reachable' residues for each HMM state as we move 
    * from left to right through the HMM. 
@@ -3120,7 +3096,7 @@ HMMBandsEnforceValidParse(CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *
 	    if(r_mn[k+1] != INT_MAX) { 
 	      if(!local_begins_ends_on && ESL_MIN(x, r_mx[k+1]) - ESL_MAX(n, r_mn[k+1]) < -1) { 
 		/* there's a 'gap' of >= 1 residue between n..x and r_mn[k+1].._r_mx[k+1], fill the gap by expanding band of I_k */
-		_hmmbands_fill_gap_count++; if((status = HMMBandsFillGap(cp9b, errbuf, k, n, x, r_mn[k+1], r_mx[k+1], r_mn[k-1], r_dn[k-1])) != eslOK) return status;
+		if((status = HMMBandsFillGap(cp9b, errbuf, k, n, x, r_mn[k+1], r_mx[k+1], r_mn[k-1], r_dn[k-1])) != eslOK) return status;
 		just_filled_gap = TRUE;
 	      }
 	    }
@@ -3143,7 +3119,7 @@ HMMBandsEnforceValidParse(CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *
 	      if(!local_begins_ends_on && ESL_MIN(x, r_mx[k+1]) - ESL_MAX(n, r_mn[k+1]) < -1) { 
 		/* there's a 'gap' of >= 1 residue between n..x and r_mn[k+1].._r_mx[k+1], fill the gap by expanding band of I_k */
 		ESL_DASSERT1((k != 0));
-		_hmmbands_fill_gap_count++; if((status = HMMBandsFillGap(cp9b, errbuf, k, n, x, r_mn[k+1], r_mx[k+1], r_mn[k-1], r_dn[k-1])) != eslOK) return status;
+		if((status = HMMBandsFillGap(cp9b, errbuf, k, n, x, r_mn[k+1], r_mx[k+1], r_mn[k-1], r_dn[k-1])) != eslOK) return status;
 		just_filled_gap = TRUE;
 	      }
 	    }
@@ -3165,7 +3141,7 @@ HMMBandsEnforceValidParse(CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *
 	    if(!local_begins_ends_on && ESL_MIN(x, r_mx[k+1]) - ESL_MAX(n, r_mn[k+1]) < -1) { 
 	      /* there's a 'gap' of >= 1 residue between n..x and r_mn[k+1].._r_mx[k+1], fill the gap by expanding band of I_k */
 	      ESL_DASSERT1((k != 0));
-	      _hmmbands_fill_gap_count++; if((status = HMMBandsFillGap(cp9b, errbuf, k, n, x, r_mn[k+1], r_mx[k+1], r_mn[k-1], r_dn[k-1])) != eslOK) return status;
+	      if((status = HMMBandsFillGap(cp9b, errbuf, k, n, x, r_mn[k+1], r_mx[k+1], r_mn[k-1], r_dn[k-1])) != eslOK) return status;
 	      just_filled_gap = TRUE;
 	    }
 	    r_mn[k+1] = ESL_MIN(r_mn[k+1], n);
@@ -3190,7 +3166,7 @@ HMMBandsEnforceValidParse(CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *
 		  if(!local_begins_ends_on && ESL_MIN(x, r_mx[k+1]) - ESL_MAX(n, r_mn[k+1]) < -1) { 
 		    /* there's a 'gap' of >= 1 residue between n..x and r_mn[k+1].._r_mx[k+1], fill the gap by expanding band of I_k */
 		    ESL_DASSERT1((k != 0));
-		    _hmmbands_fill_gap_count++; if((status = HMMBandsFillGap(cp9b, errbuf, k, n, x, r_mn[k+1], r_mx[k+1], r_mn[k-1], r_dn[k-1])) != eslOK) return status;
+		    if((status = HMMBandsFillGap(cp9b, errbuf, k, n, x, r_mn[k+1], r_mx[k+1], r_mn[k-1], r_dn[k-1])) != eslOK) return status;
 		    just_filled_gap = TRUE;
 		  }
 		}
@@ -3290,7 +3266,7 @@ HMMBandsEnforceValidParse(CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *
 	      if(!local_begins_ends_on && ESL_MIN(x, r_dx[k+1]) - ESL_MAX(n, r_dn[k+1]) < -1) { 
 		/* there's a 'gap' of >= 1 residue between n..x and r_dn[k+1].._r_dx[k+1], fill the gap by expanding band of I_k */
 		ESL_DASSERT1((k != 0));
-		_hmmbands_fill_gap_count++; if((status = HMMBandsFillGap(cp9b, errbuf, k, n, x, r_dn[k+1], r_dx[k+1], r_mn[k-1], r_dn[k-1])) != eslOK) return status;
+		if((status = HMMBandsFillGap(cp9b, errbuf, k, n, x, r_dn[k+1], r_dx[k+1], r_mn[k-1], r_dn[k-1])) != eslOK) return status;
 		just_filled_gap = TRUE;
 	      }
 	    }
@@ -3314,7 +3290,7 @@ HMMBandsEnforceValidParse(CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *
 	      if(!local_begins_ends_on && ESL_MIN(x, r_dx[k+1]) - ESL_MAX(n, r_dn[k+1]) < -1) { 
 		/* there's a 'gap' of >= 1 residue between n..x and r_dn[k+1].._r_dx[k+1], fill the gap by expanding band of I_k */
 		ESL_DASSERT1((k != 0));
-		_hmmbands_fill_gap_count++; if((status = HMMBandsFillGap(cp9b, errbuf, k, n, x, r_dn[k+1], r_dx[k+1], r_mn[k-1], r_dn[k-1])) != eslOK) return status;
+		if((status = HMMBandsFillGap(cp9b, errbuf, k, n, x, r_dn[k+1], r_dx[k+1], r_mn[k-1], r_dn[k-1])) != eslOK) return status;
 		just_filled_gap = TRUE;
 	      }
 	    }
@@ -3336,7 +3312,7 @@ HMMBandsEnforceValidParse(CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *
 	    if(r_dn[k+1] != INT_MAX) { 
 	      if(!local_begins_ends_on && ESL_MIN(x, r_dx[k+1]) - ESL_MAX(n, r_dn[k+1]) < -1) { /* FALSE if n..x overlaps with r_mn[k+1].._r_mx[k+1] by at least 1 residue, if FAILs we have to pick to either NOT change r_mn, r_mx, or change them to n and x */
 		ESL_DASSERT1((k != 0));
-		_hmmbands_fill_gap_count++; if((status = HMMBandsFillGap(cp9b, errbuf, k, n, x, r_dn[k+1], r_dx[k+1], r_mn[k-1], r_dn[k-1])) != eslOK) return status;
+		if((status = HMMBandsFillGap(cp9b, errbuf, k, n, x, r_dn[k+1], r_dx[k+1], r_mn[k-1], r_dn[k-1])) != eslOK) return status;
 		just_filled_gap = TRUE;
 	      }
 	    }
@@ -3437,7 +3413,6 @@ HMMBandsEnforceValidParse(CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *
       if(was_unr[k]) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "HMMBandsEnforceValidParse() node k %d was determined unreachable in second pass! Shouldn't happen (coding error).\n", k);
       was_unr[k] = TRUE;
       /* expand the bands so k becomes reachable, using a greedy technique */
-      _hmmbands_fix_unreachable_count++;
       if((status = HMMBandsFixUnreachable(cp9b, errbuf, k, r_nn_hmm[k-1], r_nx_hmm[k-1], r_in[k-1])) != eslOK) return status;
       /* to ensure we can now reach node k, we simply decrement k by 2, then
        * we'll reenter the loop above for k=k-1, and check if k is reachable with
@@ -3519,14 +3494,9 @@ HMMBandsEnforceValidParse(CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *
   free(r_nn_hmm);
   free(r_nx_hmm);
 
-  esl_stopwatch_Stop(_dbg_watch);
-  _hmmbands_total_secs += _dbg_watch->elapsed;
-  esl_stopwatch_Destroy(_dbg_watch);
-
   return eslOK;
 
  ERROR:
-  esl_stopwatch_Destroy(_dbg_watch);
   ESL_FAIL(status, errbuf, "HMMBandsEnforceValidParse(): memory allocation error.");
   return eslOK; /* neverreached */
 }
