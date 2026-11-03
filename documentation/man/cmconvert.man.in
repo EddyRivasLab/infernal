@@ -85,6 +85,12 @@ in
 .B <cmfile>
 will not be written to the converted output file. 
 
+.TP
+.BI -o " <f>"
+Save the converted output to file
+.I <f>
+instead of writing it to standard output.
+
 .TP 
 .B --mlhmm
 Do not output a CM file. Instead, output one maximum likelihood p7 HMM
