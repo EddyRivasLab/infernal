@@ -1272,29 +1272,6 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
     pli->cmW  = cm_W;
     pli->clen = cm_clen;
 
-    /* Lever 3: auto-disable cykbands for small CMs where the path's
-     * overhead exceeds its benefit. CYKBANDS_MIN_CLEN env var only
-     * DOWN-gates an already-on cykbands setting per-CM; never up-gates.
-     * Default behavior (env unset) is unchanged.
-     *
-     * To survive heterogeneous CM files, we cache the user's original
-     * --cykbands setting in a function-static the first time we see it,
-     * then re-apply per-call.  (Single-pipeline-per-process is the norm
-     * for cmsearch; this is an experimental hook.)  */
-    {
-      const char *min_clen_env = getenv("CYKBANDS_MIN_CLEN");
-      if(min_clen_env) {
-        static int cb_user_cached = -1;
-        if(cb_user_cached == -1) cb_user_cached = pli->do_cykbands;
-        int cb_min_clen = atoi(min_clen_env);
-        if(cb_user_cached && cm_clen < cb_min_clen) {
-          pli->do_cykbands = FALSE;
-        } else {
-          pli->do_cykbands = cb_user_cached;
-        }
-      }
-    }
-
     /* determine pli->maxW, this will be one more than the number of
      * residues that must overlap between adjacent windows on a single
      * sequence, this is MAX of cm->W and pli->cmult * cm->clen.
@@ -2437,9 +2414,9 @@ cm_pli_Statistics(FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w)
 	    (int) ((pli->nmodels_hmmonly        > 0) ? pli->acct_cm[PLI_PASS_HMM_ONLY_ANY].n_output : 0) + 
 	    (int) ((pli->nmodels_hmmonly_glocal > 0) ? pli->acct_hg[PLI_PASS_CM_SUMMED].n_output   : 0));
   }
-  /* Stage timing breakdown */
+  /* Stage timing breakdown: developer diagnostic, --devdiag only (brief 26_0821-174) */
   { double total_stg = pli->stg_time_F1F3 + pli->stg_time_seq2bands + pli->stg_time_F4 + pli->stg_time_F5 + pli->stg_time_F6;
-    if (total_stg > 0.001) { /* only print if we have meaningful timing data */
+    if (cm_StageVerbose() && total_stg > 0.001) { /* only print if we have meaningful timing data */
       fprintf(ofp, "# Stage timing breakdown:\n");
       fprintf(ofp, "#   F1-F3 (SSV/Vit/Fwd filters):  %8.2f sec  (%5.1f%%)\n", pli->stg_time_F1F3, 100.0 * pli->stg_time_F1F3 / total_stg);
       if (pli->stg_time_seq2bands > 0.0)
@@ -4962,24 +4939,6 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
     int ti; for(ti = 0; ti < np7env; ti++) { trA_tmp[ti] = NULL; trA_tmp_es[ti] = -1; trA_tmp_ee[ti] = -1; }
   }
 
-  /* F6SHADOW instrumentation: gated on env var F6SHADOW_DUMP=1.
-   * Per F6 survivor, dump cykbands-specific shadow-fill cost.
-   *   path=hc:   FastCYKScanHB_shmx replaced FastCYKScanHB in dispatch
-   *              (no separate plain-CYK call; we report DP time as the
-   *              shmx call wall, this is an over-estimate of overhead vs
-   *              defppp by the amount that shmx exceeds plain CYK).
-   *   path=bord: extra FastCYKScanHB_shmx after plain CYK; we time JUST
-   *              that extra call. Pure cykbands overhead.
-   *   path=miss: F6 survivor but no parsetree captured (overflow etc).
-   */
-  int f6shadow_dump = (getenv("F6SHADOW_DUMP") != NULL);
-  /* Lever 1: F6CYKTIMING_DUMP=1 dumps plain-vs-shmx timing pairs on the
-   * borderline path. plain_us = pli->last_dispatch_dp (FastCYKScanHB),
-   * shmx_us = w_f6shadow elapsed (FastCYKScanHB_shmx).
-   * Activates the same w_f6shadow stopwatch as F6SHADOW_DUMP. */
-  int f6cyktiming_dump = (getenv("F6CYKTIMING_DUMP") != NULL);
-  ESL_STOPWATCH *w_f6shadow = NULL;
-  if((f6shadow_dump || f6cyktiming_dump) && pli->do_cykbands) w_f6shadow = esl_stopwatch_Create();
 
   /* Determine bit score cutoff for CYK envelope redefinition, any
    * residue that exists in a CYK hit that reaches this threshold will
@@ -5020,22 +4979,10 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
        * (analysis script binned envelopes by F5 P-value and measured F6
        * pass-rate): bucket -10 has ~93% pass, bucket -15 has ~100%, but
        * the cost of a wrong guess (one wasted shmx call) is small, so
-       * 1e-10 strikes the right balance. Env-overridable via
-       * CYKBANDS_F5_THRESH for sweep experiments (Lever 2). */
-      double cb_f5_thresh = 1e-10;
-      const char *cb_f5_thresh_env = getenv("CYKBANDS_F5_THRESH");
-      if(cb_f5_thresh_env) cb_f5_thresh = strtod(cb_f5_thresh_env, NULL);
-      if(f5_pval <= cb_f5_thresh) high_conf = TRUE;
+       * 1e-10 strikes the right balance. */
+      if(f5_pval <= 1e-10) high_conf = TRUE;
     }
 
-    /* DEBUG: dump per-envelope F5 P-value + F6 score for tuning */
-    if(pli->do_cykbands && p7eb != NULL && p7_evparam != NULL && getenv("CYKBANDS_DUMP")) {
-      float f5p_dbg = (pli->cur_pass_idx == PLI_PASS_STD_ANY)
-                    ? esl_exp_surv(p7eb[i], p7_evparam[CM_p7_GFMU],  p7_evparam[CM_p7_GFLAMBDA])
-                    : esl_exp_surv(p7eb[i], p7_evparam[CM_p7_LFTAU], p7_evparam[CM_p7_LFLAMBDA]);
-      fprintf(stderr, "#CYKBANDS_DUMP env=%d es=%lld ee=%lld f5sc=%.2f f5P=%.3e ",
-              i, (long long)p7es[i], (long long)p7ee[i], p7eb[i], f5p_dbg);
-    }
     /* Tell dispatch whether to call FastCYKScanHB_shmx (yields parsetree
      * via pli->last_dispatch_tr) instead of plain FastCYKScanHB. */
     pli->cykbands_high_conf = high_conf;
@@ -5059,9 +5006,6 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
     P = esl_exp_surv(sc, fcyk_expA[pli->fcyk_cm_exp_mode]->mu_extrap, fcyk_expA[pli->fcyk_cm_exp_mode]->lambda);
     if(f6pval_tmp) f6pval_tmp[i] = (float)P;
 
-    if(getenv("CYKBANDS_DUMP")) {
-      fprintf(stderr, "f6sc=%.2f f6P=%.3e f6pass=%d\n", sc, P, (P <= pli->F6) ? 1 : 0);
-    }
     if (P > pli->F6) {
       if(pli->last_dispatch_tr) { FreeParsetree(pli->last_dispatch_tr); pli->last_dispatch_tr = NULL; }
       continue;
@@ -5094,55 +5038,18 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
          * exactly the post-redef range. So shifting/storing as post-redef
          * envelope is correct. */
         pli->last_dispatch_tr = NULL;
-        if(f6shadow_dump) {
-          /* hc path: dispatch DP wall replaced plain CYK with shmx.
-           * The full DP time is reported; pure overhead = shmx_DP - plain_CYK_DP
-           * (we don't have plain CYK time on same env to subtract). */
-          fprintf(stderr, "F6SHADOW\t%s\t%lld\t%lld\t%d\thc\t%.0f\n",
-                  cm->name,
-                  (long long)p7es[i], (long long)p7ee[i],
-                  (int)(p7ee[i] - p7es[i] + 1),
-                  pli->last_dispatch_dp * 1.0e6);
-        }
       }
       else {
         Parsetree_t *new_tr = NULL;
         float dummy_sc;
         float local_mxsize_limit = (pli->mxsize_set) ? pli->mxsize_limit : pli_mxsize_limit_from_W(cm->W);
-        if(w_f6shadow) esl_stopwatch_Start(w_f6shadow);
         int   tr_status = FastCYKScanHB_shmx(cm, pli->errbuf, cm->hb_mx, cm->hb_shmx, local_mxsize_limit,
                                              sq->dsq, p7es[i], p7ee[i], 0., NULL, pli->do_null3,
                                              0., NULL, NULL, &new_tr, &dummy_sc);
-        if(w_f6shadow) esl_stopwatch_Stop(w_f6shadow);
         if(tr_status == eslOK && new_tr != NULL) {
           trA_tmp[i]    = new_tr;
           trA_tmp_es[i] = p7es[i];
           trA_tmp_ee[i] = p7ee[i];
-        }
-        if(f6shadow_dump) {
-          /* bord path: pure cykbands overhead — this shmx call would not
-           * exist without --cykbands. */
-          double bord_us = w_f6shadow ? (w_f6shadow->elapsed * 1.0e6) : 0.0;
-          fprintf(stderr, "F6SHADOW\t%s\t%lld\t%lld\t%d\t%s\t%.0f\n",
-                  cm->name,
-                  (long long)p7es[i], (long long)p7ee[i],
-                  (int)(p7ee[i] - p7es[i] + 1),
-                  (tr_status == eslOK && new_tr != NULL) ? "bord" : "miss",
-                  bord_us);
-        }
-        if(f6cyktiming_dump && tr_status == eslOK && new_tr != NULL) {
-          /* Lever 1 timing: pli->last_dispatch_dp is the plain CYK call
-           * (FastCYKScanHB) wall from pli_dispatch_cm_search above.
-           * w_f6shadow timed the extra FastCYKScanHB_shmx call.
-           * Both calls operated on the same envelope range. */
-          double plain_us = pli->last_dispatch_dp * 1.0e6;
-          double shmx_us  = w_f6shadow ? (w_f6shadow->elapsed * 1.0e6) : 0.0;
-          double ratio    = (plain_us > 0.0) ? (shmx_us / plain_us) : 0.0;
-          fprintf(stderr, "F6CYKTIMING\t%s\t%lld\t%lld\t%d\t%.0f\t%.0f\t%.3f\n",
-                  cm->name,
-                  (long long)p7es[i], (long long)p7ee[i],
-                  (int)(p7ee[i] - p7es[i] + 1),
-                  plain_us, shmx_us, ratio);
         }
       }
     }
@@ -5215,7 +5122,6 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
   if(f6delta_tmp) { free(f6delta_tmp); f6delta_tmp = NULL; }
   cm->tau = save_tau;
   if(i_surv != NULL) free(i_surv);
-  if(w_f6shadow != NULL) esl_stopwatch_Destroy(w_f6shadow);
   *ret_es   = es;
   *ret_ee   = ee;
   *ret_nenv = nenv;
@@ -5227,7 +5133,6 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
   if(i_surv != NULL) free(i_surv);
   if(es     != NULL) free(es);
   if(ee     != NULL) free(ee);
-  if(w_f6shadow != NULL) esl_stopwatch_Destroy(w_f6shadow);
   *ret_es   = NULL;
   *ret_ee   = NULL;
   *ret_nenv = 0;
@@ -6144,38 +6049,6 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
     }
     else if(status == eslOK) {
       /* bands imply a matrix or size mxsize_limit or smaller with tau == cm->tau <= pli->maxtau */
-      /* F7BANDSIZE_DUMP: collect bandsize metadata before DP, then emit line
-       * AFTER DP completes so we can include f7_dp_us alongside band_derive_us. */
-      int     f7d_dump = (getenv("F7BANDSIZE_DUMP") != NULL) ? 1 : 0;
-      int64_t f7d_ncells = 0;
-      float   f7d_mb     = 0.;
-      int64_t f7d_active = 0;
-      int     f7d_njvalid = 0;
-      int     f7d_M       = 0;
-      const char *f7d_src = "defppp";
-      if(f7d_dump) {
-        f7d_src = pli->use_stored_cp9b   ? "cykbands"
-                : pli->do_p7post_cp9b    ? "p7post"
-                : pli->do_msvband        ? "msvband"
-                : pli->do_vitband        ? "vitband"
-                : "defppp";
-        if(cm_hb_mx_SizeNeeded(cm, pli->errbuf, cm->cp9b, (int)(stop - start + 1),
-                               &f7d_ncells, &f7d_mb) == eslOK) {
-          int v_, jp_;
-          for(v_ = 0; v_ < cm->cp9b->cm_M; v_++) {
-            if(cm->cp9b->Jvalid[v_]) {
-              f7d_njvalid++;
-              for(jp_ = 0; jp_ <= (cm->cp9b->jmax[v_] - cm->cp9b->jmin[v_]); jp_++) {
-                f7d_active += hd_max(cm->cp9b, v_, jp_) - hd_min(cm->cp9b, v_, jp_) + 1;
-              }
-            }
-          }
-          f7d_M = cm->cp9b->cm_M;
-        }
-        else {
-          f7d_dump = 0; /* SizeNeeded failed; skip dump */
-        }
-      }
       esl_stopwatch_Start(w_dp);
       if(do_trunc) { /* HMM banded, truncated */
 	if(do_inside) {
@@ -6215,36 +6088,6 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
       }
       esl_stopwatch_Stop(w_dp);
       pli->last_dispatch_dp = w_dp->elapsed;
-      if(f7d_dump) {
-        /* Schema:
-         *   F7BANDSIZE  cm  env_start  env_end  env_len  total_cells  mb
-         *               do_inside  band_source  active_cells  n_jvalid  M
-         *               band_derive_us  f7_dp_us
-         * Notes:
-         *   band_derive_us  = wall-time of the cp9-bands path (use_stored_cp9b
-         *                     short-circuit, p7post, vit/msv, or defppp
-         *                     cp9_IterateSeq2Bands), measured by w_cp9.
-         *   f7_dp_us        = wall-time of the F7 DP call (FastCYKScanHB /
-         *                     FastFInsideScanHB / TrCYKScanHB / FTrInsideScanHB
-         *                     / FastCYKScanHB_shmx). Includes the matrix
-         *                     GrowTo done inside the DP function — alloc is
-         *                     not separable without modifying those call sites.
-         */
-        fprintf(stderr,
-                "F7BANDSIZE\t%s\t%" PRId64 "\t%" PRId64 "\t%d\t%" PRId64 "\t%.4f\t%d\t%s\t%" PRId64 "\t%d\t%d\t%.0f\t%.0f\n",
-                cm->name,
-                start, stop,
-                (int)(stop - start + 1),
-                f7d_ncells,
-                f7d_mb,
-                do_inside ? 1 : 0,
-                f7d_src,
-                f7d_active,
-                f7d_njvalid,
-                f7d_M,
-                pli->last_dispatch_cp9bands * 1.0e6,
-                pli->last_dispatch_dp       * 1.0e6);
-      }
     }
     esl_stopwatch_Destroy(w_cp9); esl_stopwatch_Destroy(w_dp);
   }
