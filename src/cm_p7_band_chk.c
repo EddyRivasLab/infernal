@@ -115,21 +115,17 @@
 #define CP9_DLOGSUM_CUTOFF 53.0
 #define CP9_DLOGSUM_TBLN   53002    /* (int)(CUTOFF*SCALE)+2 = 53000+2 */
 static double  cp9_dlogsum_tbl[CP9_DLOGSUM_TBLN];
-static int     cp9_dlogsum_exact = 0;   /* set by CP9_DLOGSUM_EXACT=1 */
 
 __attribute__((constructor)) static void
 cp9_chk_dlogsum_lut_init(void)
 {
-  char *s;
   int i;
   /* BASE 2, matching ILogsum's sreLOG2(1.+sreEXP2(-i/INTSCALE)) exactly. */
   for(i = 0; i < CP9_DLOGSUM_TBLN; i++) cp9_dlogsum_tbl[i] = log2(1. + exp2((double) -i / CP9_DLOGSUM_SCALE));
-  if((s = getenv("CP9_DLOGSUM_EXACT")) != NULL && atoi(s) != 0) cp9_dlogsum_exact = 1;
 }
 
 /* Double-precision log-sum for the checkpointed double-trunc CP9 F/B kernels
- * (brief 26_0430-153/154/193). -inf-guarded. LUT by default; exact transcendental
- * under CP9_DLOGSUM_EXACT=1.
+ * (brief 26_0430-153/154/193). -inf-guarded. LUT.
  *
  * BASE 2 (briefs 26_0821-024/025/026). Every value this combines is a
  * Scorify()d score, i.e. BITS -- Infernal has used bits, not nats, since 2007
@@ -142,67 +138,10 @@ cp9_chk_dlogsum(double a, double b)
 {
   if(a == -eslINFINITY) return b;
   if(b == -eslINFINITY) return a;
-  if(cp9_dlogsum_exact) {
-    if(a > b) return a + log2(1. + exp2(b - a));
-    else      return b + log2(1. + exp2(a - b));
-  }
   const double max = (a > b) ? a : b;
   const double min = (a > b) ? b : a;
   return ((max - min) >= CP9_DLOGSUM_CUTOFF) ? max
          : max + cp9_dlogsum_tbl[(int)((max - min) * CP9_DLOGSUM_SCALE)];
-}
-
-/* CP9_DMX: file-local double mirror of CP9_FMX, used ONLY by the env-gated
- * CP9_CKPTF_FBCMP debug block below (the chk kernels write double planes, so the
- * scratch matrix that block hands them must be double). Full (unbanded) layout,
- * matching CreateCP9FMatrix(L,M)'s rows-at-i*(M+1) scratch use. */
-typedef struct {
-  double **mmx, **imx, **dmx, **elmx;
-  double  *mmx_mem, *imx_mem, *dmx_mem, *elmx_mem;
-  int      M, rows;
-} CP9_DMX;
-
-static CP9_DMX *
-CreateCP9DMatrix(int N, int M)
-{
-  int status;
-  CP9_DMX *mx;
-  int i;
-  ESL_ALLOC(mx,      sizeof(CP9_DMX));
-  ESL_ALLOC(mx->mmx, sizeof(double *) * (N+1));
-  ESL_ALLOC(mx->imx, sizeof(double *) * (N+1));
-  ESL_ALLOC(mx->dmx, sizeof(double *) * (N+1));
-  ESL_ALLOC(mx->elmx,sizeof(double *) * (N+1));
-  ESL_ALLOC(mx->mmx_mem, sizeof(double) * ((N+1)*(M+1)));
-  ESL_ALLOC(mx->imx_mem, sizeof(double) * ((N+1)*(M+1)));
-  ESL_ALLOC(mx->dmx_mem, sizeof(double) * ((N+1)*(M+1)));
-  ESL_ALLOC(mx->elmx_mem,sizeof(double) * ((N+1)*(M+1)));
-  memset(mx->mmx_mem,  0, sizeof(double) * ((N+1)*(M+1)));
-  memset(mx->imx_mem,  0, sizeof(double) * ((N+1)*(M+1)));
-  memset(mx->dmx_mem,  0, sizeof(double) * ((N+1)*(M+1)));
-  memset(mx->elmx_mem, 0, sizeof(double) * ((N+1)*(M+1)));
-  mx->mmx[0] = mx->mmx_mem; mx->imx[0] = mx->imx_mem;
-  mx->dmx[0] = mx->dmx_mem; mx->elmx[0]= mx->elmx_mem;
-  for (i = 1; i <= N; i++) {
-    mx->mmx[i] = mx->mmx[0] + (i*(M+1));
-    mx->imx[i] = mx->imx[0] + (i*(M+1));
-    mx->dmx[i] = mx->dmx[0] + (i*(M+1));
-    mx->elmx[i]= mx->elmx[0]+ (i*(M+1));
-  }
-  mx->M = M; mx->rows = N;
-  return mx;
- ERROR:
-  cm_Fail("Memory allocation error.");
-  return NULL;
-}
-
-static void
-FreeCP9DMatrix(CP9_DMX *mx)
-{
-  if(mx == NULL) return;
-  free(mx->mmx_mem); free(mx->imx_mem); free(mx->dmx_mem); free(mx->elmx_mem);
-  free(mx->mmx); free(mx->imx); free(mx->dmx); free(mx->elmx);
-  free(mx);
 }
 
 /* Forward row 0 (init). Verbatim from cp9_ForwardP7BF i=0 block.
@@ -759,7 +698,6 @@ cp9chkF_Create(int L, int M, int *kmin, int *kmax, char *errbuf)
 
   blk = (int) sqrt((double) (L > 0 ? L : 1));
   if(blk < 1) blk = 1;
-  { const char *bs = getenv("CP9_CKPT_BLK"); if(bs != NULL) { blk = atoi(bs); if(blk < 1) blk = 1; } }
   s->blk = blk;
 
   cap = (L / blk) + 3;
@@ -1132,18 +1070,14 @@ cp9segF_PostRow(cp9segF_t *g, CP9_t *hmm, ESL_DSQ *dsq, int i, int *kmin, int *k
  * It is an error only if no caller-level fallback recovers.  Since brief
  * 26_0821-096, cmalign usually does: a genome-scale no-parse band is retried
  * once with --p7ibv-mem bands, and below genome scale the non-p7-banded CP9
- * re-derivation runs.  This leaf cannot tell which will happen, so its stderr
- * block is a '#'-prefixed diagnostic and never says "error"; when no fallback
- * recovers, the caller fails with an Error: message built from errbuf
- * (brief 26_0821-097).
+ * re-derivation runs.  This leaf cannot tell which will happen, so it
+ * prints nothing; when no fallback recovers, the caller fails with an
+ * Error: message built from errbuf (brief 26_0821-097).
  */
 static int
 cp9_chk_noparse_check(char *errbuf, const char *where, int L, int M,
                       int *kmin, int *kmax, double fsc, double bsc)
 {
-  double ncells = 0., full;
-  int    i, nempty = 0, minw = M+1, maxw = 0;
-
   /* An impossible total is usually NOT non-finite here. The CP9 transition
    * scores reach these kernels through Scorify(), which maps -INFTY to the
    * finite IMPOSSIBLE (-1e36, infernal.h), so a band with no complete parse
@@ -1151,31 +1085,6 @@ cp9_chk_noparse_check(char *errbuf, const char *where, int L, int M,
    * 26_0821-099, 26_0821-100). infernal.h guarantees that any sum involving
    * IMPOSSIBLE is below IMPROBABLE, so test against that as well. */
   if(isfinite(fsc) && isfinite(bsc) && NOT_IMPROBABLE(fsc) && NOT_IMPROBABLE(bsc)) return eslOK;
-
-  for(i = 0; i <= L; i++) {
-    int w = kmax[i] - kmin[i] + 1;
-    if(w <= 0) { nempty++; w = 0; }
-    ncells += (double) w;
-    if(w < minw) minw = w;
-    if(w > maxw) maxw = w;
-  }
-  full = ((double) L + 1.) * ((double) M + 1.);
-
-  /* The detail goes to stderr, not errbuf: eslERRBUFSIZE is 128 bytes, far too
-   * small to carry it, and silently truncating the explanation would recreate
-   * the illegibility this guard exists to remove. errbuf gets a short form so
-   * whatever finally prints it still names the cause. Developer-only since
-   * brief 26_0821-133: stderr carries errors only unless INFERNAL_STAGE_VERBOSE
-   * is set. */
-  if(cm_StageVerbose())
-    fprintf(stderr,
-          "# no-parse p7 band in checkpointed CP9 band derivation (%s):\n"
-          "#   no complete parse under this band; CP9 Forward/Backward totals impossible (fwd=%g bwd=%g)\n"
-          "#   band: L=%d M=%d cells=%.0f of %.0f (cover=%.6f)\n"
-          "#   band width: min=%d max=%d mean=%.1f, %d empty row(s)\n",
-          where, fsc, bsc, L, M, ncells, full,
-          (full > 0. ? ncells / full : 0.), minw, maxw,
-          ncells / ((double) L + 1.), nempty);
 
   ESL_FAIL(eslENORESULT, errbuf,
            "no-parse p7 band: no complete parse under this band (CP9 F/B total impossible)");
@@ -1195,16 +1104,14 @@ cp9_chk_band_deriver_name(CM_t *cm)
   return "default p7 Viterbi-trace";
 }
 
-/* brief 26_0430-310: emit the no-parse diagnostic on stderr AND fold the deriver
- * name into errbuf, so the cause is visible whether the caller prints errbuf or
- * discards it.
+/* brief 26_0430-310: fold the deriver name into errbuf, so the error the caller
+ * prints names it.
  */
 static void
 cp9_chk_noparse_report(CM_t *cm, char *errbuf)
 {
   const char *deriver = cp9_chk_band_deriver_name(cm);
 
-  if(cm_StageVerbose()) fprintf(stderr, "#   band deriver: %s\n", deriver); /* brief 26_0821-133 */
   snprintf(errbuf, eslERRBUFSIZE,
            "no-parse p7 band from %s: no complete parse under this band "
            "(CP9 F/B total impossible)", deriver);
@@ -1257,36 +1164,7 @@ cp9_FB2HMMBandsP7BF_chk(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t *cp9b
   /* DEBUG: double chk kernels vs the non-checkpointed FLOAT path (cp9_*P7BF).
    * Post-154 the chk side is double and the ref is float, so this is a
    * precision cross-check with tolerance, not an exact-equality test. */
-  if(getenv("CP9_CKPTF_FBCMP") != NULL) {
-    CP9_FMX *fr=CreateCP9FMatrix(L,M), *br=CreateCP9FMatrix(L,M);
-    CP9_DMX *fc=CreateCP9DMatrix(L,M), *bc=CreateCP9DMatrix(L,M);
-    float rsc; int ii, kk, kpp, fmis=0, bmis=0;
-    cp9_ForwardP7BF (hmm, errbuf, fr, dsq, L, kmin, kmax, &rsc);
-    cp9_BackwardP7BF(hmm, errbuf, br, dsq, L, kmin, kmax, NULL);
-    cp9_chk_fwd_row0F(hmm, kmin, kmax, M, fc->mmx[0], fc->imx[0], fc->dmx[0], fc->elmx[0], NULL);
-    for(ii=1; ii<=L; ii++) cp9_chk_fwd_rowF(hmm, dsq, ii, kmin, kmax, M, fc->mmx[ii-1],fc->imx[ii-1],fc->dmx[ii-1],fc->elmx[ii-1], fc->mmx[ii],fc->imx[ii],fc->dmx[ii],fc->elmx[ii], NULL);
-    cp9_chk_bwd_rowLF(hmm, dsq, L, kmin, kmax, M, bc->mmx[L],bc->imx[L],bc->dmx[L],bc->elmx[L]);
-    for(ii=L-1; ii>=1; ii--) cp9_chk_bwd_rowF(hmm, dsq, ii, kmin, kmax, M, bc->mmx[ii],bc->imx[ii],bc->dmx[ii],bc->elmx[ii], bc->mmx[ii+1],bc->imx[ii+1],bc->dmx[ii+1],bc->elmx[ii+1]);
-    cp9_chk_bwd_row0F(hmm, dsq, kmin, kmax, M, bc->mmx[0],bc->imx[0],bc->dmx[0],bc->elmx[0], bc->mmx[1],bc->imx[1],bc->dmx[1],bc->elmx[1]);
-    for(ii=0; ii<=L; ii++){ kpp=0; for(kk=kmin[ii]; kk<=kmax[ii]; kk++,kpp++){
-#define FBCMP_NE(a,b) (fabs((double)(a)-(double)(b)) > 1e-2)
-      if(FBCMP_NE(fr->mmx[ii][kpp],fc->mmx[ii][kpp])||FBCMP_NE(fr->imx[ii][kpp],fc->imx[ii][kpp])||FBCMP_NE(fr->dmx[ii][kpp],fc->dmx[ii][kpp])||FBCMP_NE(fr->elmx[ii][kpp],fc->elmx[ii][kpp])){ if(fmis<12) fprintf(stderr,"#FBCMPF F i=%d k=%d ref[M%g I%g D%g E%g] chk[M%g I%g D%g E%g]\n",ii,kk,fr->mmx[ii][kpp],fr->imx[ii][kpp],fr->dmx[ii][kpp],fr->elmx[ii][kpp],fc->mmx[ii][kpp],fc->imx[ii][kpp],fc->dmx[ii][kpp],fc->elmx[ii][kpp]); fmis++; }
-      if(FBCMP_NE(br->mmx[ii][kpp],bc->mmx[ii][kpp])||FBCMP_NE(br->imx[ii][kpp],bc->imx[ii][kpp])||FBCMP_NE(br->dmx[ii][kpp],bc->dmx[ii][kpp])||FBCMP_NE(br->elmx[ii][kpp],bc->elmx[ii][kpp])){ if(bmis<12) fprintf(stderr,"#FBCMPF B i=%d k=%d ref[M%g I%g D%g E%g] chk[M%g I%g D%g E%g]\n",ii,kk,br->mmx[ii][kpp],br->imx[ii][kpp],br->dmx[ii][kpp],br->elmx[ii][kpp],bc->mmx[ii][kpp],bc->imx[ii][kpp],bc->dmx[ii][kpp],bc->elmx[ii][kpp]); bmis++; }
-#undef FBCMP_NE
-    }}
-    fprintf(stderr,"#FBCMPF forward mismatches=%d backward mismatches=%d (L=%d M=%d)\n", fmis, bmis, L, M);
-    FreeCP9FMatrix(fr);FreeCP9FMatrix(br);FreeCP9DMatrix(fc);FreeCP9DMatrix(bc);
-  }
 
-  if(getenv("CP9_CKPT_VERBOSE") != NULL) {
-    int64_t full_ncells = 0; int r;
-    for(r = 0; r <= L; r++) full_ncells += (kmax[r]-kmin[r]+1);
-    fprintf(stderr, "#CP9_CKPTF L=%d M=%d blk=%d nbnd=%d | non-ckpt 3xCP9_FMX=%.1f MB | ckpt stores=%.1f MB (%.0fx smaller)\n",
-            L, M, s->blk, s->nbnd,
-            3.0 * 32.0 * (double) full_ncells / 1.0e6,
-            2.0 * 32.0 * (double) s->ncells   / 1.0e6,
-            (3.0 * (double) full_ncells) / (2.0 * (double) (s->ncells > 0 ? s->ncells : 1)));
-  }
 
   if((status = cp9chkF_FwdFill(s, hmm, dsq, kmin, kmax, errbuf)) != eslOK) goto ERROR;
   if((status = cp9chkF_BwdFill(s, hmm, dsq, kmin, kmax, &sc, errbuf)) != eslOK) goto ERROR;
@@ -1297,9 +1175,6 @@ cp9_FB2HMMBandsP7BF_chk(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t *cp9b
   cp9b->hmm_sc = sc; /* for centering CM alignment DP scores (DispatchSqAlignment()) */
   /* brief 26_0430-154 diag: double checkpointed CP9 F/B totals (cf. 153 ref fwd/bwd≈7993.144,
    * gap≈+0.00003; float ckpt path gave gap≈-1.687 at norovirus, ≈-35/-45 at HSV/MPXV). */
-  if(getenv("P154_FBDUMP") != NULL)
-    fprintf(stderr, "P154 FBDUMP L=%d M=%d fwd_d=%.6f bwd_d=%.6f gap_d=%.6f\n",
-            L, M, s->fsc, sc, s->fsc - sc);
   if((g = cp9segF_Create(s, kmin, kmax, errbuf)) == NULL) { status = eslEMEM; goto ERROR; }
 
   /* === MIN sweep: ascending i (0..L). Streams pocc_arr. === */
@@ -1404,44 +1279,6 @@ cp9_FB2HMMBandsP7BF_chk(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t *cp9b
   }
 
   /* DEBUG: compare chk pn arrays vs the non-checkpointed double reduction. */
-  if(getenv("CP9_CKPTF_DEBUG") != NULL) {
-    int *tmn,*tmx_m,*tin,*tix,*tdn,*tdx;
-    CP9_FMX *fmx=NULL,*bmx=NULL,*pmx=NULL; float rsc; int kk, nmis=0;
-    /* brief 26_0430-186: optional full CSV dump (every mismatch, not just the first
-     * 20) to a file, so a follow-on can characterize the divergence shape
-     * (uniform vs localized vs boundary-correlated) instead of eyeballing a
-     * truncated stderr sample. Env-gated, inert unless CP9_CKPTFDBG_CSV is
-     * set to an output path. */
-    FILE *csv = NULL;
-    char *csv_path = getenv("CP9_CKPTFDBG_CSV");
-    if(csv_path != NULL) csv = fopen(csv_path, "w");
-    if(csv != NULL) fprintf(csv, "k,type,ref_min,ref_max,chk_min,chk_max\n");
-    ESL_ALLOC(tmn, sizeof(int)*(M+1)); ESL_ALLOC(tmx_m, sizeof(int)*(M+1));
-    ESL_ALLOC(tin, sizeof(int)*(M+1)); ESL_ALLOC(tix, sizeof(int)*(M+1));
-    ESL_ALLOC(tdn, sizeof(int)*(M+1)); ESL_ALLOC(tdx, sizeof(int)*(M+1));
-    for(kk=0;kk<=M;kk++){ tmn[kk]=cp9b->pn_min_m[kk]; tmx_m[kk]=cp9b->pn_max_m[kk]; tin[kk]=cp9b->pn_min_i[kk]; tix[kk]=cp9b->pn_max_i[kk]; tdn[kk]=cp9b->pn_min_d[kk]; tdx[kk]=cp9b->pn_max_d[kk]; }
-    fmx=CreateCP9FMatrix(1,M); bmx=CreateCP9FMatrix(1,M); pmx=CreateCP9FMatrix(1,M);
-    cp9_ForwardP7BF (hmm, errbuf, fmx, dsq, L, kmin, kmax, &rsc);
-    cp9_BackwardP7BF(hmm, errbuf, bmx, dsq, L, kmin, kmax, NULL);
-    /* brief 26_0430-186: compare float-path total F/B scores (rsc = fwd total, bmx->mmx[0][0]
-     * = bwd total, both accumulated via p7_FLogsum over L residues) against the
-     * checkpointed double-path totals already in scope (s->fsc, sc) -- a direct
-     * check of whether the float path's cumulative FLogsum drift over this L is
-     * large enough to explain the pn-band collapse below. */
-    fprintf(stderr, "#CKPTFDBG_TOTALS float_fwd=%.6f float_bwd=%.6f dbl_fwd=%.6f dbl_bwd=%.6f fwd_gap=%.6f bwd_gap=%.6f (L=%d)\n",
-            rsc, bmx->mmx[0][0], s->fsc, sc, (double)rsc - s->fsc, (double)bmx->mmx[0][0] - sc, L);
-    cp9_FB2HMMBandsP7BF(hmm, errbuf, dsq, fmx, bmx, pmx, cp9b, L, M, p_thresh, 0, kmin, kmax, 0, do_pnmono, do_pnmono_print);
-    for(kk=0;kk<=M;kk++){
-      if(tmn[kk]!=cp9b->pn_min_m[kk]||tmx_m[kk]!=cp9b->pn_max_m[kk]) { if(nmis<20) fprintf(stderr,"#CKPTFDBG k=%d M ref[%d,%d] chk[%d,%d]\n",kk,cp9b->pn_min_m[kk],cp9b->pn_max_m[kk],tmn[kk],tmx_m[kk]); if(csv!=NULL) fprintf(csv,"%d,M,%d,%d,%d,%d\n",kk,cp9b->pn_min_m[kk],cp9b->pn_max_m[kk],tmn[kk],tmx_m[kk]); nmis++; }
-      if(tin[kk]!=cp9b->pn_min_i[kk]||tix[kk]!=cp9b->pn_max_i[kk]) { if(nmis<20) fprintf(stderr,"#CKPTFDBG k=%d I ref[%d,%d] chk[%d,%d]\n",kk,cp9b->pn_min_i[kk],cp9b->pn_max_i[kk],tin[kk],tix[kk]); if(csv!=NULL) fprintf(csv,"%d,I,%d,%d,%d,%d\n",kk,cp9b->pn_min_i[kk],cp9b->pn_max_i[kk],tin[kk],tix[kk]); nmis++; }
-      if(tdn[kk]!=cp9b->pn_min_d[kk]||tdx[kk]!=cp9b->pn_max_d[kk]) { if(nmis<20) fprintf(stderr,"#CKPTFDBG k=%d D ref[%d,%d] chk[%d,%d]\n",kk,cp9b->pn_min_d[kk],cp9b->pn_max_d[kk],tdn[kk],tdx[kk]); if(csv!=NULL) fprintf(csv,"%d,D,%d,%d,%d,%d\n",kk,cp9b->pn_min_d[kk],cp9b->pn_max_d[kk],tdn[kk],tdx[kk]); nmis++; }
-    }
-    fprintf(stderr,"#CKPTFDBG total pn mismatches: %d (M=%d L=%d)\n", nmis, M, L);
-    if(csv != NULL) fclose(csv);
-    for(kk=0;kk<=M;kk++){ cp9b->pn_min_m[kk]=tmn[kk]; cp9b->pn_max_m[kk]=tmx_m[kk]; cp9b->pn_min_i[kk]=tin[kk]; cp9b->pn_max_i[kk]=tix[kk]; cp9b->pn_min_d[kk]=tdn[kk]; cp9b->pn_max_d[kk]=tdx[kk]; }
-    FreeCP9FMatrix(fmx); FreeCP9FMatrix(bmx); FreeCP9FMatrix(pmx);
-    free(tmn);free(tmx_m);free(tin);free(tix);free(tdn);free(tdx);
-  }
 
   cp9segF_Destroy(g);
   cp9chkF_Destroy(s);
@@ -1534,9 +1371,6 @@ cp9_FB2HMMBandsP7BF_chk_multi(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t
    * line ~2243), replicated here in the MULTI (tau-ratchet) band-extraction path so
    * genome-scale runs that take this path still report the F/B gap for the LUT-vs-exact
    * precision comparison. Same env var, so only one dump fires per sequence. */
-  if(getenv("P154_FBDUMP") != NULL)
-    fprintf(stderr, "P154 FBDUMP L=%d M=%d fwd_d=%.6f bwd_d=%.6f gap_d=%.6f\n",
-            L, M, s->fsc, sc, s->fsc - sc);
   if((g = cp9segF_Create(s, kmin, kmax, errbuf)) == NULL) { status = eslEMEM; goto ERROR; }
 
   /* === MIN sweep: ascending i (0..L). Streams pocc_raw once. === */
@@ -2146,28 +1980,6 @@ cp9_IterateSeq2BandsP7BF_chk_multi(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *
    * sweep's slot. Catches any accumulator-order divergence. cp9b->pn_* is used
    * as scratch here; the per-step tail below re-sets it from the slots, so no
    * save/restore is needed. Env-gated; off in production. ---- */
-  if(getenv("CP9_TAURATCHET_DBG") != NULL) {
-    double *dpocc = NULL;
-    int nmis = 0, ss, kk;
-    ESL_ALLOC(dpocc, sizeof(double)*(M+1));
-    for(ss = 0; ss < NS; ss++) {
-      if((status = cp9_FB2HMMBandsP7BF_chk(cp9, errbuf, dsq, cp9b, L, M, p_thresh[ss], kmin, kmax,
-                                           debug_level, do_pnmono, do_pnmono_print, dpocc)) != eslOK) { free(dpocc); goto DONE; }
-      for(kk = 0; kk <= M; kk++) {
-        if(cp9b->pn_min_m[kk]!=pnmm[ss][kk] || cp9b->pn_max_m[kk]!=pnxm[ss][kk] ||
-           cp9b->pn_min_i[kk]!=pnmi[ss][kk] || cp9b->pn_max_i[kk]!=pnxi[ss][kk] ||
-           cp9b->pn_min_d[kk]!=pnmd[ss][kk] || cp9b->pn_max_d[kk]!=pnxd[ss][kk] ||
-           dpocc[kk]!=pocc[ss][kk]) {
-          if(nmis < 20) fprintf(stderr, "#TAURATCHET_DBG MISMATCH s=%d(step%d) k=%d ref[m %d,%d|i %d,%d|d %d,%d|pocc %g] multi[m %d,%d|i %d,%d|d %d,%d|pocc %g]\n",
-              ss, ss+1, kk, cp9b->pn_min_m[kk],cp9b->pn_max_m[kk],cp9b->pn_min_i[kk],cp9b->pn_max_i[kk],cp9b->pn_min_d[kk],cp9b->pn_max_d[kk],dpocc[kk],
-              pnmm[ss][kk],pnxm[ss][kk],pnmi[ss][kk],pnxi[ss][kk],pnmd[ss][kk],pnxd[ss][kk],pocc[ss][kk]);
-          nmis++;
-        }
-      }
-    }
-    free(dpocc);
-    fprintf(stderr, "#TAURATCHET_DBG total pn/pocc mismatches across %d grid steps: %d (M=%d L=%d)\n", NS, nmis, M, L);
-  }
 
   /* ---- Per-step tail: scan s=0..NS-1, break at first fit. ---- */
   for(s = 0; s < NS; s++) {
