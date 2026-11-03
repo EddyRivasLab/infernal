@@ -54,6 +54,19 @@ options, and exit.
 .B \-\-version
 Show version information: print the program name and Infernal version, and exit.
 
+.TP
+.B --devhelp
+Print help, as with  
+.B "-h",
+but also include expert options that are not displayed with 
+.B "-h". 
+These expert options are not expected to be relevant for the vast
+majority of users and so are not described in the manual page.  The
+only resources for understanding what they actually do are the brief
+one-line descriptions output when
+.B "--devhelp"
+is enabled, and the source code.
+
 .TP 
 .B -a
 Output profiles in ASCII text format. This is the default.
@@ -121,11 +134,20 @@ With
 .B -a
 or
 .B -b,
-write the CMs in an older Infernal 1.1 format,
+write the CMs in an older format,
 .I <s>
-= 1/a, 1/b or 1/d, for use by older versions of Infernal. These
-formats store a filter HMM after each CM; a CM in the current format
-has none, so its filter HMM (its maximum likelihood p7 HMM) is stored.
+= 1/a, 1/b or 1/d. INFERNAL1/a is the format of Infernal 1.1, so
+.B --outfmt 1/a
+writes CMs that Infernal 1.1 can read. INFERNAL1/b and INFERNAL1/d
+were used only during the development of Infernal 1.2, and no earlier
+release reads them. These formats store a filter HMM after each CM; a
+CM in the current format has none, so its filter HMM (its maximum
+likelihood p7 HMM) is stored. The current format, INFERNAL1/e, is not
+a value of
+.B --outfmt:
+it is the default, and
+.B --upgrade
+writes it for CMs in older formats.
 
 .TP
 .B --dropknots
@@ -205,7 +227,9 @@ The prior file's transition priors determine the HMM-only search HMM.
 .BI --cpu " <n>"
 With
 .B --upgrade,
-the number of parallel worker threads for calibrating the filter HMMs.
+or for CMs read from an Infernal v1.0 file (which are always
+upgraded), the number of parallel worker threads for calibrating the
+filter HMMs.
 
 .SH SEE ALSO
 
