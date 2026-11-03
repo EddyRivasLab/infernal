@@ -381,10 +381,6 @@ cm_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, const P7_GMX *g
 	/*if(k2i[(k-1)] != -1) { status = eslEINCOMPAT; printf("! discontiguous trace k2i[k-1=%d] != -1 (%d) i-1 = %d\n", k-1, k2i[(k-1)], i-1); goto ERROR;} */
 	/*if(i2k[(i-1)] != -1) { status = eslEINCOMPAT; printf("! discontiguous trace i2k[i-1=%d] != -1 (%d) k-1 = %d\n", i-1, i2k[(i-1)], k-1); goto ERROR;} */
 	if(i2k[(i-1)] != -1 || k2i[(k-1)] != -1) {
-	  if (getenv("MSVBAND_DBG")) {
-	    fprintf(stderr, "#MSVBAND_DBG: conflict at i=%d k=%d: i2k[i-1=%d]=%d k2i[k-1=%d]=%d\n",
-	            i, k, i-1, i2k[(i-1)], k-1, k2i[(k-1)]);
-	  }
 	  iconflict[(k2i[(k-1)])] = TRUE; /* eventually remove pin kmer that included k we *thought* pinned i-1 */
 	  iconflict[(i-1)]        = TRUE; /* eventually remove pin kmer that includes k we currently think pins i-1 */
 	}
@@ -748,8 +744,6 @@ cm_p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_kmin, 
     int64_t ncells64 = 0;
     for(i = 1; i <= L; i++) ncells64 += (int64_t)(kmax[i] - kmin[i] + 1);
     if(ncells64 > (int64_t) INT_MAX) {
-      if(cm_StageVerbose()) fprintf(stderr, "#NCELLS64 p7_pins2bands L=%d M=%d ncells=%lld (saturated to INT_MAX in int32 ret_ncells)\n",
-              L, M, (long long) ncells64);
       *ret_ncells = INT_MAX;
     } else {
       *ret_ncells = (int) ncells64;
@@ -1015,8 +1009,6 @@ cm_p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
     int64_t ncells64 = 0;
     for(i = 1; i <= L; i++) ncells64 += (int64_t)(kmax[i] - kmin[i] + 1);
     if(ncells64 > (int64_t) INT_MAX) {
-      if(cm_StageVerbose()) fprintf(stderr, "#NCELLS64 p7_pins2bands_nodepad L=%d M=%d ncells=%lld (saturated to INT_MAX in int32 ret_ncells)\n",
-              L, M, (long long) ncells64);
       *ret_ncells = INT_MAX;
     } else {
       *ret_ncells = (int) ncells64;
@@ -1229,23 +1221,6 @@ kmc_anchor_contested(const kmw_hit_t *a, const kmw_hit_t *byj, const kmw_hit_t *
   return FALSE;
 }
 
-/* brief 26_0628-035: temporary peak-RSS attribution instrumentation, gated by
- * BRIEF035_MEMPOINT (mirrors P135B_FB_INSTRUMENT convention). Reads
- * /proc/self/status VmRSS. Revert before finishing if not worth keeping. */
-static long
-brief035_rss_kb(void)
-{
-  FILE *fp = fopen("/proc/self/status", "r");
-  char line[256];
-  long rss = -1;
-  if (fp == NULL) return -1;
-  while (fgets(line, sizeof(line), fp) != NULL) {
-    if (strncmp(line, "VmRSS:", 6) == 0) { sscanf(line+6, "%ld", &rss); break; }
-  }
-  fclose(fp);
-  return rss;
-}
-
 /* Function: p7_Seq2BandsKmerChain()
  * Date:     Brief 26_0628-027, 2026-07-03
  *
@@ -1313,7 +1288,6 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
   int        *rawpins = NULL;       /* pins before junction slack, for <ret_rawpins> */
   int        *local_nodepad = NULL;
   int j, x, i;
-  int min_anchor;                   /* brief 26_0628-078: KMC_MIN_ANCHOR or env override */
   /* brief 26_0628-059 (extended 2026-07-11, brief 190 follow-up): optional
    * stage a/b/bd timing -- a = seed finding (raw hits + merge), b = colinear
    * chaining DP + backtrack + pin emission, bd = converting the winning
@@ -1329,12 +1303,9 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
   *ret_i2k = NULL; *ret_kmin = NULL; *ret_kmax = NULL; *ret_ncells = 0;
   if (ret_rawpins != NULL) *ret_rawpins = NULL;
   if (cm->p7_kmerchain_mgate > 0 && M < cm->p7_kmerchain_mgate) {
-    if (cm_StageVerbose()) fprintf(stderr, "#KMERCHAIN L=%d M=%d gated=small-M (M<%d): falling back to unbanded\n", L, M, cm->p7_kmerchain_mgate);
     status = eslOK;   /* brief 26_0628-045/047 opt-in small-M gate; caller falls back per brief 26_0628-047's fallback mechanism */
     goto CLEANUP;     /* brief 26_0628-059: route through CLEANUP so stage a/b timing (if requested) still gets filled in */
   }
-  if (getenv("BRIEF035_MEMPOINT") != NULL)
-    fprintf(stderr, "#MEMPOINT before_kmerchain L=%d M=%d rss_kb=%ld\n", L, M, brief035_rss_kb());
 
   /* 1. model consensus (argmax match emission per node) */
   ESL_ALLOC(cons, sizeof(ESL_DSQ) * (M+2));
@@ -1390,17 +1361,6 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
    * (diagonal, tlo); an anchor extends while the next interval on the same
    * diagonal overlaps or abuts (tlo <= cur_thi + 1). Keep anchors of length
    * >= KMC_MIN_ANCHOR to drop isolated short (mostly spurious) matches. */
-  /* brief 26_0628-078: optional source-level raise of the anchor-admission
-   * floor (env KMC_ANCHOR_FLOOR, unset => compiled KMC_MIN_ANCHOR=10). Tests
-   * whether requiring a longer exact match to be an anchor AT ALL beats the
-   * per-link KMC_MIN_OPEN floor: it suppresses the same chance-collision
-   * anchors, but unlike the per-link floor it also removes them as
-   * same-diagonal extension pins, which is where 26_0628-029's MPXV band-width
-   * win came from. */
-  {
-    char *afl_env = getenv("KMC_ANCHOR_FLOOR");
-    min_anchor = (afl_env != NULL && atoi(afl_env) > 0) ? atoi(afl_env) : KMC_MIN_ANCHOR;
-  }
   if (nival > 0) {
     qsort(ival, nival, sizeof(kmc_ival_t), kmc_ival_cmp);
     int r = 0;
@@ -1413,7 +1373,7 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
       }
       int len = thi - tlo + 1;
       if (len > maxrun) maxrun = len;
-      if (len >= min_anchor) {
+      if (len >= KMC_MIN_ANCHOR) {
         if (nseed == seedcap) {
           int newcap = seedcap ? seedcap*2 : 4096;
           void *tmp = realloc(seeds, sizeof(kmw_hit_t) * newcap);
@@ -1428,17 +1388,11 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
   }
   /* brief 26_0821-133: the #KMERCHAIN lines are developer diagnostics, printed
    * only if INFERNAL_STAGE_VERBOSE is set; their format is unchanged. */
-  if (cm_StageVerbose())
-    fprintf(stderr, "#KMERCHAIN L=%d M=%d nraw=%d perk=[k10:%d k15:%d k20:%d k25:%d k30:%d] nanchor=%d (minlen=%d)\n",
-            L, M, nival, nival, 0, 0, 0, 0, nseed, min_anchor);
 
   /* brief 26_0628-046: per-query longest-exact-match signal gate (unvalidated,
    * default off -- see kmer_ngate_fires() header comment). Checked right after
    * the seed collection/merge above, independent of the M-gate above. */
   if (kmer_ngate_fires(maxrun, cm->p7_kmerchain_mink)) {
-    if (cm_StageVerbose())
-      fprintf(stderr, "#KMERCHAIN L=%d M=%d gated=zero-hits (k>=%d finds no exact match anywhere in model): "
-                    "falling back to unbanded\n", L, M, cm->p7_kmerchain_mink);
     status = eslOK; goto CLEANUP;
   }
 
@@ -1446,19 +1400,9 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
    * by BRIEF045_SEEDDUMP (silent no-op by default, same convention as brief
    * 041's BRIEF041_CHAINDUMP). Lets us see whether a given model region has
    * ANY candidate anchor at all, vs has one that the chaining DP rejected. */
-  if (getenv("BRIEF045_SEEDDUMP") != NULL) {
-    int si;
-    for (si = 0; si < nseed; si++)
-      fprintf(stderr, "#KMERCHAIN_SEED L=%d M=%d idx=%d/%d model=[%d,%d] query=[%d,%d] len=%d\n",
-              L, M, si, nseed, seeds[si].j, seeds[si].j + seeds[si].k - 1,
-              seeds[si].t, seeds[si].t + seeds[si].k - 1, seeds[si].k);
-  }
-  if (getenv("BRIEF035_MEMPOINT") != NULL)
-    fprintf(stderr, "#MEMPOINT after_seedmerge L=%d nraw=%d nanchor=%d rss_kb=%ld\n", L, nival, nseed, brief035_rss_kb());
   free(ival); ival = NULL;
 
   if (nseed == 0) {   /* no anchors: caller falls back to unbanded Viterbi */
-    if (cm_StageVerbose()) fprintf(stderr, "#KMERCHAIN L=%d M=%d chain=NONE (no anchors)\n", L, M);
     status = eslOK; goto CLEANUP;
   }
 
@@ -1490,22 +1434,9 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
   ESL_ALLOC(pre, sizeof(int)   * nseed);
   int   best_end = 0;
   float best_sc  = -1.0;
-  long   nlink    = 0;   /* DP work counter (instrumentation) */
-  /* brief 26_0628-078: developer overrides of the gap-cost constants on the
-   * colinear-chaining DP link cost below (no-ops when unset).
-   *
-   *   KMC_GAP_LIN_OVERRIDE / KMC_GAP_LOG_OVERRIDE
-   *                      re-tune the two gap-cost constants. Since brief
-   *                      26_0821-124 KMC_GAP_LIN is the whole linear
-   *                      coefficient (bits per diagonal residue, 0.15); it
-   *                      used to be multiplied by KMC_AVGK=15. */
-  char  *glin_env  = getenv("KMC_GAP_LIN_OVERRIDE");
-  char  *glog_env  = getenv("KMC_GAP_LOG_OVERRIDE");
-  double glin      = (glin_env  != NULL) ? atof(glin_env)  : KMC_GAP_LIN;
-  double glog      = (glog_env  != NULL) ? atof(glog_env)  : KMC_GAP_LOG;
-  /* developer override of the lookback limit (brief 26_0821-117). */
-  char  *it_env    = getenv("KMC_MAX_ITER_OVERRIDE");
-  int    max_iter  = (it_env != NULL) ? atoi(it_env) : KMC_MAX_ITER;
+  double glin      = KMC_GAP_LIN;
+  double glog      = KMC_GAP_LOG;
+  int    max_iter  = KMC_MAX_ITER;
   ESL_ALLOC(eord, sizeof(kmc_end_t) * nseed);
   for (i = 0; i < nseed; i++) {
     eord[i].te  = seeds[i].t + seeds[i].k - 1;
@@ -1534,7 +1465,6 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
       int qe = tei - eord[e].te;                /* > 0: j ends before i ends */
       int mn = qe < re ? qe : re;
       int match = mn < seeds[i].k ? mn : seeds[i].k;   /* overlap-adjusted, end coordinates */
-      nlink++;
       float gapc  = (dgap > 0) ? (glin*(double)dgap + glog*log2((double)dgap)) : 0.0;
       float sc    = f[jj] + (float) match - gapc;
       if (sc > fi) { fi = sc; pi = jj; }
@@ -1552,41 +1482,7 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
   /* chain[0..nc-1] is end..start; reverse to start..end */
   for (i = 0; i < nc/2; i++) { int tmp = chain[i]; chain[i] = chain[nc-1-i]; chain[nc-1-i] = tmp; }
 
-  /* 5. chain diagnostics. brief 26_0821-135 dropped the HSV-specific
-   * repeat_anchors_in[9401,9600] field (brief 26_0628-027's repeat-trap
-   * check) from this line. */
-  {
-    int cs = chain[0], ce = chain[nc-1];
-    int mlo = seeds[cs].j, mhi = seeds[ce].j + seeds[ce].k - 1;
-    int qlo = seeds[cs].t, qhi = seeds[ce].t + seeds[ce].k - 1;
-    int c;
-    if (cm_StageVerbose())
-      fprintf(stderr, "#KMERCHAIN L=%d M=%d chain_nanchor=%d score=%.1f model_span=[%d,%d] query_span=[%d,%d] nlink=%ld\n",
-            L, M, nc, best_sc, mlo, mhi, qlo, qhi, nlink);
-    /* brief 26_0628-041 (ported from infernal-brief040-stagetime): per-anchor chain dump,
-     * gated by BRIEF041_CHAINDUMP (silent no-op by default, mirrors
-     * BRIEF035_MEMPOINT convention). */
-    if (getenv("BRIEF041_CHAINDUMP") != NULL) {
-      for (c = 0; c < nc; c++) {
-        int aj  = seeds[chain[c]].j,  ajx = seeds[chain[c]].j + seeds[chain[c]].k - 1;
-        int at  = seeds[chain[c]].t,  atx = seeds[chain[c]].t + seeds[chain[c]].k - 1;
-        int qgap = -1, mgap = -1, dgap = -1;
-        if (c+1 < nc) {
-          int nj = seeds[chain[c+1]].j, nt = seeds[chain[c+1]].t;
-          qgap = nt - atx - 1;
-          mgap = nj - ajx - 1;
-          dgap = (nj - nt) - (aj - at);
-        }
-        fprintf(stderr, "#KMERCHAIN_ANCHOR L=%d M=%d idx=%d/%d model=[%d,%d] query=[%d,%d] len=%d "
-                        "gap_to_next: query=%d model=%d diagdelta=%d\n",
-                L, M, c, nc, aj, ajx, at, atx, seeds[chain[c]].k, qgap, mgap, dgap);
-      }
-    }
-    if (getenv("BRIEF035_MEMPOINT") != NULL)
-      fprintf(stderr, "#MEMPOINT after_chainDP L=%d nseed=%d nlink=%ld rss_kb=%ld\n", L, nseed, nlink, brief035_rss_kb());
-  }
-
-  /* 6. emit multi-segment pins from every seed in the winning chain, leaving
+  /* 5. emit multi-segment pins from every seed in the winning chain, leaving
    *    junction slack unpinned (briefs 26_0821-117/26_0821-118, bounded in
    *    briefs 26_0821-119/26_0821-125/26_0821-126).
    *
@@ -1715,14 +1611,9 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
   {
     int npin = 0, tmin = L+1, tmax = 0;
     for (i = 1; i <= L; i++) if (i2k[i] != -1) { npin++; if (i < tmin) tmin = i; if (i > tmax) tmax = i; }
-    if (cm_StageVerbose())
-      fprintf(stderr, "#KMERCHAIN L=%d M=%d npins=%d pin_tspan=[%d,%d] cover=%.3f\n",
-            L, M, npin, (npin? tmin:0), tmax, (double) npin / (double) L);
-    if (getenv("BRIEF035_MEMPOINT") != NULL)
-      fprintf(stderr, "#MEMPOINT after_pinemission L=%d npins=%d rss_kb=%ld\n", L, npin, brief035_rss_kb());
   }
 
-  /* 7. pins -> bands via the UNMODIFIED consumer */
+  /* 6. pins -> bands via the UNMODIFIED consumer */
   if (ret_bd_s != NULL) { clock_gettime(CLOCK_MONOTONIC, &_stagebd_t0); _stagebd_t0_set = TRUE; }
   if (nodepad == NULL) {
     int k2;
@@ -1763,8 +1654,6 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
   if (kmin)          free(kmin);
   if (kmax)          free(kmax);
   if (rawpins)       free(rawpins);
-  if (getenv("BRIEF035_MEMPOINT") != NULL)
-    fprintf(stderr, "#MEMPOINT after_kmerchain_return L=%d rss_kb=%ld\n", L, brief035_rss_kb());
   if (ret_a_s != NULL) {
     clock_gettime(CLOCK_MONOTONIC, &_stage_texit);
     if (_stagebd_t0_set) {
@@ -3819,9 +3708,7 @@ cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, 
    * or otherwise) on any live path -- 26_0628-074 routed !do_trunc through
    * cp9_IterateSeq2BandsP7BF_chk_multi unconditionally, same as do_trunc.
    * cp9_Seq2BandsP7B currently has exactly 1 live caller: cm_pipeline.c
-   * (search/scan, untouched). It is also reachable here, but only via the
-   * DIAGNOSTIC-ONLY, off-by-default INT_P7B_LEGACY env gate below (brief
-   * 26_0821-067/070) -- not a production call path.
+   * (search/scan, untouched).
    * cp9_Seq2BandsP7BF has 0 live callers: the do_trunc branch below returns
    * unconditionally before reaching it (see the do_trunc block's own
    * comments). The float entry point is intentionally unreachable from
@@ -3841,18 +3728,6 @@ cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, 
     default:                                    cp9 = cm->cp9;  break;
   }
   if(cp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_IterateSeq2BandsP7B, cp9 is NULL (pass_idx %d).", pass_idx);
-
-  /* Brief 26_0430-215: env-gated DIRECT p7->cp9 band inversion, bypassing the
-   * numerically-fragile CP9 F/B posterior (which collapses ALL per-node bands
-   * to -1 on a tight band -- see brief 187 comment below). Mirrors the robust
-   * HMM-path band conversion (p7_kbands2gbands). Uses p7bands_to_cp9bands with
-   * pocc=NULL (extent-based). Test path for whether a tightened band can drive
-   * a valid CM alignment without the F/B collapse. */
-  if(getenv("P215_DIRECT") != NULL) {
-    status = p7bands_to_cp9bands(cm, errbuf, kmin, kmax, L, cm->cp9b, i0, j0, pass_idx, NULL, doing_search, 0);
-    if(ret_Mb != NULL) *ret_Mb = 0.;
-    return status;
-  }
 
   if(do_trunc) {
     /* brief 26_0430-150 (144-B Phase 2): checkpointed banded CP9 float F/B for the
@@ -3895,7 +3770,6 @@ cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, 
                                                   do_post, maxtau, do_pnmono, do_pnmono_print,
                                                   &nbump, &hbmx_Mb);
       if(status != eslOK && status != eslERANGE) goto ERROR;
-      if(getenv("CP9_CKPT_VERBOSE") != NULL) fprintf(stderr, "#CP9_CKPTF_TAU L=%d tau_bumps=%d (single-pass tabulation; one checkpointed float F/B)\n", L, nbump);
       if(ret_Mb != NULL) *ret_Mb = hbmx_Mb;
       return status; /* eslOK or eslERANGE, exactly as the old loop returned */
     }
@@ -3940,83 +3814,6 @@ cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, 
     return eslOK;
   }
 
-  /* DIAGNOSTIC ONLY (brief 26_0821-067): env-gated restoration of the exact
-   * pre-26_0628-074 legacy int P7-banded CP9 F/B path for the !do_trunc branch,
-   * so the INT-P7B arm can be driven via real cmalign for a same-instrument
-   * three-arm (INT-UNB / INT-P7B / DBL-P7B) comparison. OFF BY DEFAULT. Not for
-   * production use; revert or leave OFF before this brief's work concludes. */
-  if(getenv("INT_P7B_LEGACY") != NULL) {
-    CP9_MX *pmx = NULL;
-    if((status = cp9_ForwardP7B_OLD_WITH_EL(cp9, errbuf, cm->cp9_mx, dsq, L, kmin, kmax, &sc)) != eslOK) goto ERROR;
-    if((status = cp9_BackwardP7B(cp9, errbuf, cm->cp9_bmx, dsq, L, kmin, kmax, NULL)) != eslOK) goto ERROR;
-    if((pmx = CreateCP9Matrix(1, cp9->M)) == NULL)
-      ESL_XFAIL(eslEMEM, errbuf, "cp9_IterateSeq2BandsP7B: OOM allocating local pmx (INT_P7B_LEGACY)");
-    int nbump_legacy = 0;
-    while(1) {
-      if((status = cp9_FBMatrices2BandsP7B(cm, errbuf, cp9, cm->cp9_mx, cm->cp9_bmx, pmx, dsq, cm->cp9b,
-					   kmin, kmax, L, i0, j0, pass_idx, doing_search, 0, do_pnmono, do_pnmono_print)) != eslOK) { FreeCP9Matrix(pmx); goto ERROR; }
-      if(doing_search) {
-	if((status = cm_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, j0-i0+1, NULL, &hbmx_Mb)) != eslOK) { FreeCP9Matrix(pmx); goto ERROR; }
-      }
-      else {
-	status = cm_AlignSizeNeededHB(cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &cp9mx_Mb, &hbmx_Mb, &tot_Mb);
-	if(status != eslOK && status != eslERANGE) { FreeCP9Matrix(pmx); goto ERROR; }
-      }
-      if(hbmx_Mb < size_limit)                                  break;
-      if(tau_at_limit && thresh1_at_limit && thresh2_at_limit)  break;
-      if(! tau_at_limit) { cm->tau *= TAU_MULTIPLIER; if(cm->tau >= maxtau) { cm->tau = maxtau; tau_at_limit = TRUE; } }
-      if(! thresh1_at_limit) { cm->cp9b->thresh1 += DELTA_CP9BANDS_THRESH1; if(cm->cp9b->thresh1 >= MAX_CP9BANDS_THRESH1) { cm->cp9b->thresh1 = MAX_CP9BANDS_THRESH1; thresh1_at_limit = TRUE; } }
-      if(! thresh2_at_limit) { cm->cp9b->thresh2 -= DELTA_CP9BANDS_THRESH2; if(cm->cp9b->thresh2 <= MIN_CP9BANDS_THRESH2) { cm->cp9b->thresh2 = MIN_CP9BANDS_THRESH2; thresh2_at_limit = TRUE; } }
-      nbump_legacy++;
-    }
-    FreeCP9Matrix(pmx);
-    if(getenv("CP9_CKPT_VERBOSE") != NULL) fprintf(stderr, "#INT_P7B_LEGACY L=%d tau_bumps=%d (brief 26_0821-067 diagnostic path)\n", L, nbump_legacy);
-    if(ret_Mb != NULL) *ret_Mb = hbmx_Mb;
-    if(hbmx_Mb > size_limit) return eslERANGE;
-    return eslOK;
-  }
-
-  /* DIAGNOSTIC ONLY (brief 26_0821-068): env-gated invocation of the plain
-   * float NON-checkpointed P7-banded CP9 F/B (cp9_ForwardP7BF/cp9_BackwardP7BF/
-   * cp9_FBMatrices2BandsF) on the !do_trunc branch, mirroring INT_P7B_LEGACY
-   * above -- so a fourth arm (FLT-P7B) can be driven via real cmalign to test
-   * whether the diffuse-band defect is shared by both non-checkpointed P7B
-   * kernels (precision-independent) or specific to the int kernel. OFF BY
-   * DEFAULT. Not for production use; revert or leave OFF before this brief's
-   * work concludes. */
-  if(getenv("FLT_P7B_LEGACY") != NULL) {
-    CP9_FMX *fmx_f2 = NULL, *bmx_f2 = NULL, *pmx_f2 = NULL;
-    float fsc;
-    if((fmx_f2 = CreateCP9FMatrix(1, cp9->M)) == NULL) ESL_XFAIL(eslEMEM, errbuf, "cp9_IterateSeq2BandsP7B: OOM allocating fmx_f2 (FLT_P7B_LEGACY)");
-    if((bmx_f2 = CreateCP9FMatrix(1, cp9->M)) == NULL) ESL_XFAIL(eslEMEM, errbuf, "cp9_IterateSeq2BandsP7B: OOM allocating bmx_f2 (FLT_P7B_LEGACY)");
-    if((pmx_f2 = CreateCP9FMatrix(1, cp9->M)) == NULL) ESL_XFAIL(eslEMEM, errbuf, "cp9_IterateSeq2BandsP7B: OOM allocating pmx_f2 (FLT_P7B_LEGACY)");
-    if((status = cp9_ForwardP7BF (cp9, errbuf, fmx_f2, dsq, L, kmin, kmax, &fsc))  != eslOK) { FreeCP9FMatrix(fmx_f2); FreeCP9FMatrix(bmx_f2); FreeCP9FMatrix(pmx_f2); goto ERROR; }
-    if((status = cp9_BackwardP7BF(cp9, errbuf, bmx_f2, dsq, L, kmin, kmax, NULL))  != eslOK) { FreeCP9FMatrix(fmx_f2); FreeCP9FMatrix(bmx_f2); FreeCP9FMatrix(pmx_f2); goto ERROR; }
-    int nbump_fltlegacy = 0;
-    while(1) {
-      if((status = cp9_FBMatrices2BandsF(cm, errbuf, cp9, fmx_f2, bmx_f2, pmx_f2, dsq, cm->cp9b,
-					 kmin, kmax, L, i0, j0, pass_idx, 0, do_pnmono, do_pnmono_print)) != eslOK) { FreeCP9FMatrix(fmx_f2); FreeCP9FMatrix(bmx_f2); FreeCP9FMatrix(pmx_f2); goto ERROR; }
-      if(doing_search) {
-	if((status = cm_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, j0-i0+1, NULL, &hbmx_Mb)) != eslOK) { FreeCP9FMatrix(fmx_f2); FreeCP9FMatrix(bmx_f2); FreeCP9FMatrix(pmx_f2); goto ERROR; }
-      }
-      else {
-	status = cm_AlignSizeNeededHB(cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &cp9mx_Mb, &hbmx_Mb, &tot_Mb);
-	if(status != eslOK && status != eslERANGE) { FreeCP9FMatrix(fmx_f2); FreeCP9FMatrix(bmx_f2); FreeCP9FMatrix(pmx_f2); goto ERROR; }
-      }
-      if(hbmx_Mb < size_limit)                                  break;
-      if(tau_at_limit && thresh1_at_limit && thresh2_at_limit)  break;
-      if(! tau_at_limit) { cm->tau *= TAU_MULTIPLIER; if(cm->tau >= maxtau) { cm->tau = maxtau; tau_at_limit = TRUE; } }
-      if(! thresh1_at_limit) { cm->cp9b->thresh1 += DELTA_CP9BANDS_THRESH1; if(cm->cp9b->thresh1 >= MAX_CP9BANDS_THRESH1) { cm->cp9b->thresh1 = MAX_CP9BANDS_THRESH1; thresh1_at_limit = TRUE; } }
-      if(! thresh2_at_limit) { cm->cp9b->thresh2 -= DELTA_CP9BANDS_THRESH2; if(cm->cp9b->thresh2 <= MIN_CP9BANDS_THRESH2) { cm->cp9b->thresh2 = MIN_CP9BANDS_THRESH2; thresh2_at_limit = TRUE; } }
-      nbump_fltlegacy++;
-    }
-    FreeCP9FMatrix(fmx_f2); FreeCP9FMatrix(bmx_f2); FreeCP9FMatrix(pmx_f2);
-    if(getenv("CP9_CKPT_VERBOSE") != NULL) fprintf(stderr, "#FLT_P7B_LEGACY L=%d tau_bumps=%d (brief 26_0821-068 diagnostic path)\n", L, nbump_fltlegacy);
-    if(ret_Mb != NULL) *ret_Mb = hbmx_Mb;
-    if(hbmx_Mb > size_limit) return eslERANGE;
-    return eslOK;
-  }
-
   /* Non-truncated path (brief 26_0628-073 diagnosis, brief 26_0628-074 fix):
    * route band derivation through the SAME double-precision checkpointed CP9
    * F/B that the do_trunc path uses (cp9_IterateSeq2BandsP7BF_chk_multi),
@@ -4043,7 +3840,6 @@ cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, 
                                                 do_post, maxtau, do_pnmono, do_pnmono_print,
                                                 &nbump, &hbmx_Mb);
     if(status != eslOK && status != eslERANGE) goto ERROR;
-    if(getenv("CP9_CKPT_VERBOSE") != NULL) fprintf(stderr, "#CP9_CKPTF_TAU L=%d tau_bumps=%d (non-truncated; one checkpointed double F/B)\n", L, nbump);
     if(ret_Mb != NULL) *ret_Mb = hbmx_Mb;
     return status;
   }
@@ -4054,301 +3850,6 @@ cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, 
   if(pmx_f) FreeCP9FMatrix(pmx_f);
   if(ret_Mb != NULL) *ret_Mb = 0.;
   return status;
-}
-
-
-/* Function: p7bands_to_cp9bands
- * Date    : EPN, 2026-03-26
- *
- * Purpose:  Convert p7 HMM bands (kmin[i]/kmax[i] per residue) directly to
- *           CP9 HMM bands (pn_min/pn_max per node), bypassing the O(L*M)
- *           CP9 Forward/Backward DP.
- *
- *           For each CP9 node k, the band covers all positions i where k is
- *           within the p7 band: kmin[i] <= k <= kmax[i].  This is guaranteed
- *           to produce bands at least as permissive (wide) as the p7-banded
- *           CP9 F/B approach, because CP9 F/B constrained by p7 bands cannot
- *           assign non-zero posterior to positions outside those bands.
- *
- *           NOTE: This function is CURRENTLY UNUSED (no active callers on the
- *           defppp dispatch path as of 2026-04-21). It is inferior to the
- *           two-phase p7banded_post_to_pn_bands + p7pn_bands_to_cp9cm_bands
- *           approach used by defppp, because it has no access to F/B posteriors
- *           and therefore cannot compute per-node occupancy for the cp9-style
- *           thresh1/thresh2 sp/ep derivation (it falls back to the legacy
- *           extent-based sp1=sp2/ep1=ep2 collapse when pocc==NULL).
- *           Consider removing this function if no future caller materializes.
- *
- * Args:     cm          - the covariance model
- *           errbuf      - char buffer for reporting errors
- *           kmin        - p7 bands: kmin[i] = min node k for residue i [0..L]
- *           kmax        - p7 bands: kmax[i] = max node k for residue i [0..L]
- *           L           - length of target subsequence (1..L)
- *           cp9b        - PRE-ALLOCATED CP9 bands, filled here
- *           i0          - first position in original sequence coords
- *           j0          - final position in original sequence coords
- *           pass_idx    - pipeline pass index, determines truncation mode
- *           pocc        - [0..M] per-node match-posterior occupancy OR NULL.
- *                         When non-NULL, enables cp9-style thresh1/thresh2 sweep
- *                         for sp1/sp2/ep1/ep2 (same as p7pn_bands_to_cp9cm_bands).
- *                         When NULL, falls back to legacy extent-based collapse
- *                         (sp1=sp2, ep1=ep2). This function cannot compute pocc
- *                         internally (no F/B matrices available); callers must
- *                         supply it from an upstream posterior computation or
- *                         pass NULL to get legacy behavior.
- *           doing_search - brief 26_0821-069: TRUE for a search (partial-span
- *                         hit, bands may be loose), FALSE for an alignment
- *                         (full i0..j0 span; enables cp9_HMM2ijBands()'s
- *                         coverage-tightening checks). Passed straight through
- *                         to cp9_HMM2ijBands{_OLD,}() -- the caller owns this
- *                         value, this function does not infer it.
- *           debug_level - verbosity level for debugging printf()s
- *
- * Returns:  eslOK on success
- */
-int
-p7bands_to_cp9bands(CM_t *cm, char *errbuf, int *kmin, int *kmax, int L,
-		    CP9Bands_t *cp9b, int i0, int j0, int pass_idx,
-		    const float *pocc, int doing_search, int debug_level)
-{
-  int   status;
-  int   i, k;
-  int   M            = cp9b->hmm_M;
-  int   do_old_hmm2ij;
-  int   do_trunc;
-  CP9_t *cp9;
-
-  /* Contract checks */
-  if(cm->cp9map == NULL)
-    ESL_FAIL(eslEINCOMPAT, errbuf, "p7bands_to_cp9bands, cm->cp9map is NULL.\n");
-  if(!((cm->align_opts & CM_ALIGN_HBANDED) || (cm->search_opts & CM_SEARCH_HBANDED)))
-    ESL_FAIL(eslEINCOMPAT, errbuf, "p7bands_to_cp9bands, neither CM_ALIGN_HBANDED nor CM_SEARCH_HBANDED is set.\n");
-  if(cm->tau > 0.5)
-    ESL_FAIL(eslEINCOMPAT, errbuf, "p7bands_to_cp9bands, cm->tau (%f) > 0.5.\n", cm->tau);
-
-  do_old_hmm2ij = ((cm->align_opts & CM_ALIGN_HMM2IJOLD) || (cm->search_opts & CM_SEARCH_HMM2IJOLD)) ? TRUE : FALSE;
-  do_trunc      = cm_pli_PassAllowsTruncation(pass_idx);
-
-  switch(pass_idx) {
-    case PLI_PASS_5P_ONLY_FORCE:                cp9 = cm->Rcp9; break;
-    case PLI_PASS_3P_ONLY_FORCE:                cp9 = cm->Lcp9; break;
-    case PLI_PASS_5P_AND_3P_FORCE:
-    case PLI_PASS_5P_AND_3P_ANY:                cp9 = cm->Tcp9; break;
-    default:                                    cp9 = cm->cp9;  break;
-  }
-  if(cp9 == NULL)
-    ESL_FAIL(eslEINCOMPAT, errbuf, "p7bands_to_cp9bands, cp9 is NULL (pass_idx %d).\n", pass_idx);
-
-  /* Initialize all bands to "unset" sentinel values:
-   * pn_min_* = L+2  (larger than any valid position, signals "not yet seen from left")
-   * pn_max_* = -1   (smaller than any valid position, signals "not yet seen from right") */
-  for(k = 0; k <= M; k++) {
-    cp9b->pn_min_m[k] = L + 2;
-    cp9b->pn_max_m[k] = -1;
-    cp9b->pn_min_i[k] = L + 2;
-    cp9b->pn_max_i[k] = -1;
-    cp9b->pn_min_d[k] = L + 2;
-    cp9b->pn_max_d[k] = -1;
-  }
-
-  /* Direct inversion: sweep i=1..L for match/insert/delete; handle i=0 specially.
-   * At i=0 (the "begin" position before any residues):
-   *   - Only M_0 (begin state) has non-zero posterior => set pn_min/max_m[0] = 0
-   *   - D_k for k>0 can have non-zero posterior (entering deletes from begin) => update d bands
-   *   - M_k and I_k for k>0 are -INFTY at i=0 => must NOT update m/i bands for k>0
-   *   Setting pn_min_m[k] = 0 for k>0 would cause imin[v] = 0 in cp9_HMM2ijBands,
-   *   which violates the requirement imin[v] >= i0 >= 1. */
-  cp9b->pn_min_m[0] = cp9b->pn_max_m[0] = 0;  /* M_0 (begin) is always at position 0 */
-  for(k = 1; k <= kmax[0]; k++) {               /* D_k for k>0 may be active at i=0 */
-    if(0 < cp9b->pn_min_d[k]) cp9b->pn_min_d[k] = 0;
-    if(0 > cp9b->pn_max_d[k]) cp9b->pn_max_d[k] = 0;
-  }
-
-  for(i = 1; i <= L; i++) {
-    for(k = kmin[i]; k <= kmax[i]; k++) {
-      if(i < cp9b->pn_min_m[k]) cp9b->pn_min_m[k] = i;
-      if(i > cp9b->pn_max_m[k]) cp9b->pn_max_m[k] = i;
-      if(i < cp9b->pn_min_i[k]) cp9b->pn_min_i[k] = i;
-      if(i > cp9b->pn_max_i[k]) cp9b->pn_max_i[k] = i;
-      if(i < cp9b->pn_min_d[k]) cp9b->pn_min_d[k] = i;
-      if(i > cp9b->pn_max_d[k]) cp9b->pn_max_d[k] = i;
-    }
-  }
-
-  /* Convert unset states (min still > max) to -1 sentinel used by downstream code */
-  for(k = 0; k <= M; k++) {
-    if(cp9b->pn_min_m[k] > cp9b->pn_max_m[k]) cp9b->pn_min_m[k] = cp9b->pn_max_m[k] = -1;
-    if(cp9b->pn_min_i[k] > cp9b->pn_max_i[k]) cp9b->pn_min_i[k] = cp9b->pn_max_i[k] = -1;
-    if(cp9b->pn_min_d[k] > cp9b->pn_max_d[k]) cp9b->pn_min_d[k] = cp9b->pn_max_d[k] = -1;
-  }
-  cp9b->pn_min_d[0] = cp9b->pn_max_d[0] = -1; /* D_0 does not exist */
-
-  cp9b->tau = cm->tau;
-
-  /* Shift HMM bands from 1..L to i0..j0 coordinate system if needed */
-  if(i0 != 1) {
-    int offset = i0 - 1;
-    for(k = 0; k <= M; k++) {
-      if(cp9b->pn_min_m[k] != -1) { cp9b->pn_min_m[k] += offset; cp9b->pn_max_m[k] += offset; }
-      if(cp9b->pn_min_i[k] != -1) { cp9b->pn_min_i[k] += offset; cp9b->pn_max_i[k] += offset; }
-      if(cp9b->pn_min_d[k] != -1) { cp9b->pn_min_d[k] += offset; cp9b->pn_max_d[k] += offset; }
-    }
-  }
-
-  /* Set truncation candidate valid arrays.
-   * Two modes depending on whether the caller supplies per-node posterior occupancy:
-   * - pocc != NULL: cp9-style thresh1/thresh2 sweep (sp1 != sp2, ep1 != ep2 possible),
-   *   Rmarg/Lmarg from union over both. Mirrors p7pn_bands_to_cp9cm_bands.
-   * - pocc == NULL: legacy extent-based collapse (sp1=sp2, ep1=ep2). */
-  if(do_trunc) {
-    if(pocc != NULL) {
-      cp9b->sp1 = cp9b->sp2 = -1;
-      for(k = 1; k <= M; k++) {
-        if(cp9b->pn_min_m[k] == -1 && cp9b->pn_min_i[k] == -1 && cp9b->pn_min_d[k] == -1) continue;
-        if(cp9b->sp1 == -1 && pocc[k] > cp9b->thresh1) cp9b->sp1 = k;
-        if(cp9b->sp2 == -1 && pocc[k] > cp9b->thresh2) cp9b->sp2 = k;
-        if(cp9b->sp1 != -1 && cp9b->sp2 != -1) break;
-      }
-      if(cp9b->sp1 == -1) cp9b->sp1 = M + 1;
-      if(cp9b->sp2 == -1) cp9b->sp2 = M + 1;
-
-      if(cp9b->sp1 == M + 1 && cp9b->sp2 == M + 1) {
-        cp9b->ep1 = cp9b->ep2 = 0;
-      } else {
-        cp9b->ep1 = cp9b->ep2 = -1;
-        for(k = M; k >= 1; k--) {
-          if(cp9b->pn_min_m[k] == -1 && cp9b->pn_min_i[k] == -1 && cp9b->pn_min_d[k] == -1) continue;
-          if(cp9b->ep1 == -1 && pocc[k] > cp9b->thresh1) cp9b->ep1 = k;
-          if(cp9b->ep2 == -1 && pocc[k] > cp9b->thresh2) cp9b->ep2 = k;
-          if(cp9b->ep1 != -1 && cp9b->ep2 != -1) break;
-        }
-        if(cp9b->ep1 == -1) cp9b->ep1 = 0;
-        if(cp9b->ep2 == -1) cp9b->ep2 = 0;
-      }
-
-      if(cp9b->sp1 == M + 1) {
-        cp9b->Rmarg_imin = i0; cp9b->Rmarg_imax = j0;
-      } else {
-        int rmin = INT_MAX, rmax = INT_MIN;
-        if(cp9b->sp1 != (M+1) && cp9b->pn_min_m[cp9b->sp1] >= 0) rmin = ESL_MIN(rmin, cp9b->pn_min_m[cp9b->sp1]);
-        if(cp9b->sp1 != (M+1) && cp9b->pn_min_i[cp9b->sp1] >= 0) rmin = ESL_MIN(rmin, cp9b->pn_min_i[cp9b->sp1]);
-        if(cp9b->sp1 != (M+1) && cp9b->pn_min_d[cp9b->sp1] >= 0) rmin = ESL_MIN(rmin, cp9b->pn_min_d[cp9b->sp1]);
-        if(cp9b->sp2 != (M+1) && cp9b->pn_min_m[cp9b->sp2] >= 0) rmin = ESL_MIN(rmin, cp9b->pn_min_m[cp9b->sp2]);
-        if(cp9b->sp2 != (M+1) && cp9b->pn_min_i[cp9b->sp2] >= 0) rmin = ESL_MIN(rmin, cp9b->pn_min_i[cp9b->sp2]);
-        if(cp9b->sp2 != (M+1) && cp9b->pn_min_d[cp9b->sp2] >= 0) rmin = ESL_MIN(rmin, cp9b->pn_min_d[cp9b->sp2]);
-        if(rmin == INT_MAX || cp9b->sp1 == (M+1) || cp9b->sp2 == (M+1)) rmin = i0;
-        cp9b->Rmarg_imin = ESL_MAX(i0, ESL_MIN(j0 + 1, rmin));
-
-        if(cp9b->sp1 != (M+1) && cp9b->pn_max_m[cp9b->sp1] >= 0) rmax = ESL_MAX(rmax, cp9b->pn_max_m[cp9b->sp1]);
-        if(cp9b->sp1 != (M+1) && cp9b->pn_max_i[cp9b->sp1] >= 0) rmax = ESL_MAX(rmax, cp9b->pn_max_i[cp9b->sp1]);
-        if(cp9b->sp1 != (M+1) && cp9b->pn_max_d[cp9b->sp1] >= 0) rmax = ESL_MAX(rmax, cp9b->pn_max_d[cp9b->sp1]);
-        if(cp9b->sp2 != (M+1) && cp9b->pn_max_m[cp9b->sp2] >= 0) rmax = ESL_MAX(rmax, cp9b->pn_max_m[cp9b->sp2]);
-        if(cp9b->sp2 != (M+1) && cp9b->pn_max_i[cp9b->sp2] >= 0) rmax = ESL_MAX(rmax, cp9b->pn_max_i[cp9b->sp2]);
-        if(cp9b->sp2 != (M+1) && cp9b->pn_max_d[cp9b->sp2] >= 0) rmax = ESL_MAX(rmax, cp9b->pn_max_d[cp9b->sp2]);
-        if(rmax == INT_MIN || cp9b->sp1 == (M+1) || cp9b->sp2 == (M+1)) rmax = j0 + 1;
-        cp9b->Rmarg_imax = ESL_MAX(i0, ESL_MIN(j0 + 1, rmax));
-      }
-
-      if(cp9b->ep1 == 0) {
-        cp9b->Lmarg_jmin = i0 - 1; cp9b->Lmarg_jmax = j0;
-      } else {
-        int lmin = INT_MAX, lmax = INT_MIN;
-        if(cp9b->ep1 != 0 && cp9b->pn_min_m[cp9b->ep1] >= 0) lmin = ESL_MIN(lmin, cp9b->pn_min_m[cp9b->ep1]);
-        if(cp9b->ep1 != 0 && cp9b->pn_min_i[cp9b->ep1] >= 0) lmin = ESL_MIN(lmin, cp9b->pn_min_i[cp9b->ep1]);
-        if(cp9b->ep1 != 0 && cp9b->pn_min_d[cp9b->ep1] >= 0) lmin = ESL_MIN(lmin, cp9b->pn_min_d[cp9b->ep1] - 1);
-        if(cp9b->ep2 != 0 && cp9b->pn_min_m[cp9b->ep2] >= 0) lmin = ESL_MIN(lmin, cp9b->pn_min_m[cp9b->ep2]);
-        if(cp9b->ep2 != 0 && cp9b->pn_min_i[cp9b->ep2] >= 0) lmin = ESL_MIN(lmin, cp9b->pn_min_i[cp9b->ep2]);
-        if(cp9b->ep2 != 0 && cp9b->pn_min_d[cp9b->ep2] >= 0) lmin = ESL_MIN(lmin, cp9b->pn_min_d[cp9b->ep2] - 1);
-        if(lmin == INT_MAX || cp9b->ep1 == 0 || cp9b->ep2 == 0) lmin = i0 - 1;
-        cp9b->Lmarg_jmin = ESL_MAX(i0 - 1, ESL_MIN(j0, lmin));
-
-        if(cp9b->ep1 != 0 && cp9b->pn_max_m[cp9b->ep1] >= 0) lmax = ESL_MAX(lmax, cp9b->pn_max_m[cp9b->ep1]);
-        if(cp9b->ep1 != 0 && cp9b->pn_max_i[cp9b->ep1] >= 0) lmax = ESL_MAX(lmax, cp9b->pn_max_i[cp9b->ep1]);
-        if(cp9b->ep1 != 0 && cp9b->pn_max_d[cp9b->ep1] >= 0) lmax = ESL_MAX(lmax, cp9b->pn_max_d[cp9b->ep1] - 1);
-        if(cp9b->ep2 != 0 && cp9b->pn_max_m[cp9b->ep2] >= 0) lmax = ESL_MAX(lmax, cp9b->pn_max_m[cp9b->ep2]);
-        if(cp9b->ep2 != 0 && cp9b->pn_max_i[cp9b->ep2] >= 0) lmax = ESL_MAX(lmax, cp9b->pn_max_i[cp9b->ep2]);
-        if(cp9b->ep2 != 0 && cp9b->pn_max_d[cp9b->ep2] >= 0) lmax = ESL_MAX(lmax, cp9b->pn_max_d[cp9b->ep2] - 1);
-        if(lmax == INT_MIN || cp9b->ep1 == 0 || cp9b->ep2 == 0) lmax = j0;
-        cp9b->Lmarg_jmax = ESL_MAX(i0 - 1, ESL_MIN(j0, lmax));
-      }
-    } else {
-      /* Legacy: no posterior available; extent-based collapse (sp1=sp2, ep1=ep2). */
-      int sp = M + 1, ep = 0;
-      for(i = 1; i <= L; i++) {
-        if(kmin[i] < sp) sp = kmin[i];
-        if(kmax[i] > ep) ep = kmax[i];
-      }
-      if(sp < 1)     sp = 1;
-      if(sp > M + 1) sp = M + 1;
-      if(ep < 0)     ep = 0;
-      if(ep > M)     ep = M;
-      cp9b->sp1 = cp9b->sp2 = sp;
-      cp9b->ep1 = cp9b->ep2 = ep;
-
-      if(cp9b->sp1 == M + 1) {
-        cp9b->Rmarg_imin = i0; cp9b->Rmarg_imax = j0;
-      } else {
-        int rmarg_imin = INT_MAX, rmarg_imax = INT_MIN;
-        if(cp9b->pn_min_m[sp] >= 0) rmarg_imin = ESL_MIN(rmarg_imin, cp9b->pn_min_m[sp]);
-        if(cp9b->pn_min_i[sp] >= 0) rmarg_imin = ESL_MIN(rmarg_imin, cp9b->pn_min_i[sp]);
-        if(cp9b->pn_min_d[sp] >= 0) rmarg_imin = ESL_MIN(rmarg_imin, cp9b->pn_min_d[sp]);
-        if(rmarg_imin == INT_MAX) rmarg_imin = i0;
-        cp9b->Rmarg_imin = ESL_MAX(i0, ESL_MIN(j0 + 1, rmarg_imin));
-
-        if(cp9b->pn_max_m[sp] >= 0) rmarg_imax = ESL_MAX(rmarg_imax, cp9b->pn_max_m[sp]);
-        if(cp9b->pn_max_i[sp] >= 0) rmarg_imax = ESL_MAX(rmarg_imax, cp9b->pn_max_i[sp]);
-        if(cp9b->pn_max_d[sp] >= 0) rmarg_imax = ESL_MAX(rmarg_imax, cp9b->pn_max_d[sp]);
-        if(rmarg_imax == INT_MIN) rmarg_imax = j0 + 1;
-        cp9b->Rmarg_imax = ESL_MAX(i0, ESL_MIN(j0 + 1, rmarg_imax));
-      }
-
-      if(cp9b->ep1 == 0) {
-        cp9b->Lmarg_jmin = i0 - 1; cp9b->Lmarg_jmax = j0;
-      } else {
-        int lmarg_jmin = INT_MAX, lmarg_jmax = INT_MIN;
-        if(cp9b->pn_min_m[ep] >= 0) lmarg_jmin = ESL_MIN(lmarg_jmin, cp9b->pn_min_m[ep]);
-        if(cp9b->pn_min_i[ep] >= 0) lmarg_jmin = ESL_MIN(lmarg_jmin, cp9b->pn_min_i[ep]);
-        if(cp9b->pn_min_d[ep] >= 0) lmarg_jmin = ESL_MIN(lmarg_jmin, cp9b->pn_min_d[ep] - 1);
-        if(lmarg_jmin == INT_MAX) lmarg_jmin = i0 - 1;
-        cp9b->Lmarg_jmin = ESL_MAX(i0 - 1, ESL_MIN(j0, lmarg_jmin));
-
-        if(cp9b->pn_max_m[ep] >= 0) lmarg_jmax = ESL_MAX(lmarg_jmax, cp9b->pn_max_m[ep]);
-        if(cp9b->pn_max_i[ep] >= 0) lmarg_jmax = ESL_MAX(lmarg_jmax, cp9b->pn_max_i[ep]);
-        if(cp9b->pn_max_d[ep] >= 0) lmarg_jmax = ESL_MAX(lmarg_jmax, cp9b->pn_max_d[ep] - 1);
-        if(lmarg_jmax == INT_MIN) lmarg_jmax = j0;
-        cp9b->Lmarg_jmax = ESL_MAX(i0 - 1, ESL_MIN(j0, lmarg_jmax));
-      }
-    }
-
-    if((status = cp9_MarginalCandidatesFromStartEndPositions(cm, cp9b, pass_idx, errbuf)) != eslOK) return status;
-  } else {
-    esl_vec_ISet(cp9b->Jvalid, cm->M + 1, TRUE);
-    esl_vec_ISet(cp9b->Lvalid, cm->M + 1, FALSE);
-    esl_vec_ISet(cp9b->Rvalid, cm->M + 1, FALSE);
-    esl_vec_ISet(cp9b->Tvalid, cm->M + 1, FALSE);
-  }
-
-  /* HMM bands -> CM ij bands. brief 26_0821-069: doing_search threaded from
-   * the caller (not hardcoded) -- this function's sole call site is the
-   * env-gated P215_DIRECT diagnostic in cp9_IterateSeq2BandsP7B(), which
-   * already has doing_search in scope. */
-  if(do_old_hmm2ij) {
-    if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, doing_search, debug_level)) != eslOK) return status;
-  } else {
-    if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, i0, j0, doing_search, do_trunc, debug_level)) != eslOK) return status;
-  }
-
-  /* CM ij bands -> CM d bands */
-  if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) return status;
-  ij2d_bands(cm, cp9b, do_trunc, debug_level);
-
-#if eslDEBUGLEVEL >= 1
-  if((status = cp9_ValidateBands(cm, errbuf, cp9b, i0, j0, do_trunc)) != eslOK) return status;
-  ESL_DPRINTF1(("#DEBUG: p7bands_to_cp9bands bands validated.\n"));
-#endif
-  if(debug_level > 0) debug_print_ij_bands(cm);
-
-  return eslOK;
 }
 
 
@@ -4367,14 +3868,14 @@ p7bands_to_cp9bands(CM_t *cm, char *errbuf, int *kmin, int *kmax, int L,
  *           The p7 glocal F and B matrices are computed during F5 (envelope
  *           definition) and are already available in pli->gxfb / pli->gxbb.
  *           This approach gives tighter bands than the Viterbi-inversion in
- *           p7bands_to_cp9bands() because posteriors concentrate probability
+ *           the former p7bands_to_cp9bands() because posteriors concentrate probability
  *           mass near the most likely alignment path, while still bypassing
  *           the O(L*M) CP9 F/B DP.
  *
  *           Delete bands are set equal to match bands for each node k (D
  *           states do not emit, so we mirror the match coverage).
  *
- *           The i=0 special case is handled identically to p7bands_to_cp9bands:
+ *           The i=0 special case is handled as in the former p7bands_to_cp9bands():
  *           M_0 (begin state) is always at position 0; D_k for k in the first
  *           band row may be active at position 0.
  *
@@ -4523,7 +4024,7 @@ p7banded_post_to_cp9bands(CM_t *cm, char *errbuf,
     }
   }
 
-  /* Handle i=0 special case (same logic as p7bands_to_cp9bands):
+  /* Handle i=0 special case (as in the former p7bands_to_cp9bands()):
    *   M_0 (begin state) is always at position 0.
    *   D_k for k in first_kac..first_kbc may be active at position 0
    *   (entering the model via begin -> delete transitions). */
@@ -5731,7 +5232,6 @@ cm_CYKPerstatePadCompute(CM_t *cm, CP9Bands_t *cp9b, int additive_pad, int maxpa
     5.0000   /* EL */
   };
 
-  int n_capped = 0;
   int v;
   for (v = 0; v < M; v++) {
     int stt = cm->sttype[v];
@@ -5753,32 +5253,10 @@ cm_CYKPerstatePadCompute(CM_t *cm, CP9Bands_t *cp9b, int additive_pad, int maxpa
     int p = (int)ceil(predicted);
     if (p < 0) p = 0;
     p += additive_pad;
-    if (maxpad > 0 && p > maxpad) { p = maxpad; n_capped++; }
+    if (maxpad > 0 && p > maxpad) p = maxpad;
     pad_arr[v] = p;
   }
 
-  /* Distribution diagnostic so the sweep can tell "cap was active" from "no-op". */
-  {
-    int *sorted = malloc(sizeof(int) * M);
-    if (sorted != NULL) {
-      int i;
-      for (i = 0; i < M; i++) sorted[i] = pad_arr[i];
-      /* simple insertion sort -- M is small enough not to matter for diagnostic */
-      for (i = 1; i < M; i++) {
-        int key = sorted[i]; int j = i - 1;
-        while (j >= 0 && sorted[j] > key) { sorted[j+1] = sorted[j]; j--; }
-        sorted[j+1] = key;
-      }
-      int min_pad    = sorted[0];
-      int max_pad    = sorted[M-1];
-      int median_pad = sorted[M/2];
-      int p90_pad    = sorted[(int)((M-1)*0.90)];
-      int p99_pad    = sorted[(int)((M-1)*0.99)];
-      if(cm_StageVerbose()) fprintf(stderr, "#P7PB_PERSTATE M=%d min=%d median=%d p90=%d p99=%d max=%d capped=%d\n",
-              M, min_pad, median_pad, p90_pad, p99_pad, max_pad, n_capped);
-      free(sorted);
-    }
-  }
 
   return pad_arr;
 }
@@ -7143,14 +6621,6 @@ cm_p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P
   esl_stopwatch_Stop(s2b_watch);
 
   /* Debug: print pins with isc scores before pruning */
-  if(status == eslOK && getenv("MSVBAND_DBG")) {
-    int dbg_i;
-    for(dbg_i = 1; dbg_i <= L; dbg_i++) {
-      if(i2k[dbg_i] != -1) {
-        fprintf(stderr, "#MSVBAND_DBG: isc pin i=%5d k=%4d isc=%7.4f\n", dbg_i, i2k[dbg_i], isc[dbg_i]);
-      }
-    }
-  }
 
   /* Step 3: prune pins */
   esl_stopwatch_Start(s2b_watch);
@@ -7302,9 +6772,6 @@ cm_p7_Seq2BandsVit(char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE
       if (i >= 1 && i <= L && k >= 1 && k <= M)
 	i2k[i] = k;
     }
-  }
-  if (getenv("VITBAND_MULTIHIT_DBG")) {
-    fprintf(stderr, "#VITBAND_MULTIHIT L=%d M=%d nhit=%d nM=%d sc=%.2f\n", L, M, nB, nM, sc);
   }
 
   /* Step 3b: Optional vitend pruning. Drop the first <vitend> and last
@@ -9625,9 +9092,6 @@ cm_p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm,
   if (opt_st) cm_p7_decstats_Init(opt_st);
   if ((status = p7b_backdecode  (dsq, gm, g, seed, fwdsc, pp, opt_st)) != eslOK) goto ERROR;
 
-  if (getenv("INFERNAL_CKPT_VERBOSE"))
-    fprintf(stderr, "# p7_GCheckptFBDecode_Banded: M=%d L=%d nrow=%d B=%d nblk=%d fwdsc=%.6f\n",
-            gm->M, L, g->nrow, g->B, g->nblk, fwdsc);
 
   for (b = 0; b < g->nblk; b++) if (seed[b].dp) free(seed[b].dp);
   free(seed);
@@ -10435,9 +9899,6 @@ cm_p7_GCheckptFBDecodeOA_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm,
   ppw->st = NULL;       /* ... not again in the traceback's recompute */
   if ((status = p7b_oa_trace(gm, g, &view, ppw, oaseed, tr))     != eslOK) goto ERROR;
 
-  if (getenv("INFERNAL_CKPT_VERBOSE"))
-    fprintf(stderr, "# p7_GCheckptFBDecodeOA_Banded: M=%d L=%d nrow=%d B=%d nblk=%d maxnc=%d fwdsc=%.6f oasc=%.6f\n",
-            gm->M, L, g->nrow, g->B, g->nblk, g->maxnc, fwdsc, oasc);
 
   for (b = 0; b < g->nblk; b++) { if (fseed[b].dp)  free(fseed[b].dp);
                                   if (bseed[b].dp)  free(bseed[b].dp);
