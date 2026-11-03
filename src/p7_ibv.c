@@ -69,7 +69,7 @@
  * 26_0821-144; the SSE kernels use 2-lane __m128d). The old guard here
  * (fail if |optimal| > margin * 2^19) modeled only the final comparison's
  * rounding, not accumulation along L, and never fired. It is replaced by the
- * drift detector in IBV_ROWSTATS, reported under --devdiag. */
+ * drift detector in IBV_ROWSTATS. */
 typedef struct {
   double   optimal;      /* global optimum, for the drift detector               */
   int64_t nrows;        /* row scans (the D&C scans each midrow twice)          */
@@ -98,22 +98,15 @@ ibv_rowstats_add(IBV_ROWSTATS *st, double rowmax)
   if (d < st->drift_min) st->drift_min = d;
 }
 
-/* One developer line per band. An empty row (no finite through-score) cannot
- * happen when the optimum is finite, since the optimal path crosses every row;
- * ibv_rowstats_check() makes it an error. */
+/* Keep the last band's stats for the unit test. An empty row (no finite
+ * through-score) cannot happen when the optimum is finite, since the optimal
+ * path crosses every row; ibv_rowstats_check() makes it an error. */
 static IBV_ROWSTATS ibv_last_rowstats;   /* the last band's stats, for the unit test */
 
 static void
 ibv_rowstats_report(const IBV_ROWSTATS *st, const char *path, int L, int M, double margin, int64_t ncells)
 {
   ibv_last_rowstats = *st;
-  if (! cm_StageVerbose()) return;
-  fprintf(stderr, "#IBVBAND path=%s L=%d M=%d margin_bits=%.3f optimal_bits=%.3f scans=%lld empty_rows=%lld drift_max_bits=%.3f drift_min_bits=%.3f ncells=%lld\n",
-          path, L, M, margin / P7IBV_INTSCALE, st->optimal / P7IBV_INTSCALE,
-          (long long) st->nrows, (long long) st->empty_rows,
-          (st->nrows > st->empty_rows) ? st->drift_max / P7IBV_INTSCALE : 0.,
-          (st->nrows > st->empty_rows) ? st->drift_min / P7IBV_INTSCALE : 0.,
-          (long long) ncells);
 }
 
 /* D&C adaptive base_slab: when the caller passes base_slab <= 0, pick the
@@ -796,17 +789,6 @@ cm_p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_
    * (DELTA untouched).  Must run before ncells is summed. */
   ibv_connectivity_guard(L, M, ibv_mode, kmin, kmax);
 
-  /* brief 26_0430-298 EXPLORATORY probe (P298_INS0, DEFAULT OFF, not a proposed
-   * fix): the IBV band never admits k=0 on rows i>=1, so the CP9's I_0 state
-   * (leading/5'-flanking inserts, before consensus column 1) is banded out on
-   * every emitting row.  This probe admits it, to measure how much of the
-   * post-P298_ROW0D residual is attributable to I_0.  Widening k=0 into rows
-   * i>=1 touches many INBAND(i,0) special cases in the CP9 kernels, so this is
-   * a MEASUREMENT switch only -- do not ship it without a separate audit. */
-  { static int p298_ins0 = -1;
-    if(p298_ins0 < 0) { char *s = getenv("P298_INS0"); p298_ins0 = (s != NULL && atoi(s) != 0) ? 1 : 0; }
-    if(p298_ins0) { for (i = 1; i <= L; i++) kmin[i] = 0; } }
-
   /* briefs 26_0821-099/26_0821-100: count in int64 and saturate the int
    * ret_ncells at INT_MAX, as p7_pins2bands() does (brief 26_0628-027). A
    * genome-scale IBV band can exceed 2^31 cells; the int32 sum wrapped
@@ -817,8 +799,6 @@ cm_p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_
     for (i = 1; i <= L; i++)
       ncells64 += (int64_t) (kmax[i] - kmin[i] + 1);
     if (ncells64 > (int64_t) INT_MAX) {
-      if(cm_StageVerbose()) fprintf(stderr, "#NCELLS64 p7_Seq2BandsIBV L=%d M=%d ncells=%lld (saturated to INT_MAX in int32 ret_ncells)\n",
-              L, M, (long long) ncells64);
       ncells = INT_MAX;
     }
     else ncells = (int) ncells64;
@@ -826,33 +806,6 @@ cm_p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_
   }
   if ((status = ibv_rowstats_check(&rowstats, errbuf)) != eslOK) goto ERROR;
 
-  {
-    const char *dump = getenv("P7IBV_DUMP_BAND");
-    if (dump != NULL && *dump != '\0') {
-      FILE *fp = fopen(dump, "w");
-      if (fp != NULL) {
-        fprintf(fp, "# M=%d L=%d delta=%d optimal_milli=%.6f thr_milli=%.6f ncells=%d\n",
-                M, L, delta_milli, (double) optimal, (double) thr, ncells);
-        fprintf(fp, "# i\tkmin\tkmax\twidth\ti2k\n");   /* brief 26_0430-142: + i2k (argmax-k pin) */
-        for (i = 1; i <= L; i++)
-          fprintf(fp, "%d\t%d\t%d\t%d\t%d\n", i, kmin[i], kmax[i], kmax[i] - kmin[i] + 1, i2k[i]);
-        fclose(fp);
-      }
-    }
-  }
-
-  /* Brief 26_0430-142: per-row band dump to stderr (multi-seq safe; one block/seq). */
-  {
-    const char *p142 = getenv("P142_DUMP_BANDS");
-    if (p142 != NULL && *p142 != '\0') {
-      fprintf(stderr, "#P142_BAND_BEGIN M=%d L=%d delta=%d optimal_milli=%.6f thr_milli=%.6f ncells=%d path=flat\n",
-              M, L, delta_milli, (double) optimal, (double) thr, ncells);
-      for (i = 1; i <= L; i++)
-        fprintf(stderr, "#P7BAND_DUMP i=%d i2k=%d kmin=%d kmax=%d width=%d\n",
-                i, i2k[i], kmin[i], kmax[i], kmax[i] - kmin[i] + 1);
-      fprintf(stderr, "#P142_BAND_END L=%d\n", L);
-    }
-  }
 
 #undef F_M
 #undef F_I
@@ -1333,18 +1286,6 @@ cm_p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
    * (DELTA untouched).  Must run before ncells is summed. */
   ibv_connectivity_guard(L, M, ibv_mode, kmin_arr, kmax_arr);
 
-  /* brief 26_0430-298 EXPLORATORY probe (P298_INS0, DEFAULT OFF, not a proposed
-   * fix), ported to _dnc by brief 26_0430-301: the IBV band never admits k=0 on
-   * rows i>=1, so the CP9's I_0 state (leading/5'-flanking inserts, before
-   * consensus column 1) is banded out on every emitting row. This probe admits
-   * it to measure how much of the post-P298_ROW0D residual is attributable to
-   * I_0. Widening k=0 into rows i>=1 touches many INBAND(i,0) special cases in
-   * the CP9 kernels, so this is a MEASUREMENT switch only -- do not ship it
-   * without a separate audit. */
-  { static int p298_ins0 = -1;
-    if(p298_ins0 < 0) { char *s = getenv("P298_INS0"); p298_ins0 = (s != NULL && atoi(s) != 0) ? 1 : 0; }
-    if(p298_ins0) { for (i = 1; i <= L; i++) kmin_arr[i] = 0; } }
-
   /* briefs 26_0821-099/26_0821-100: count in int64 and saturate the int
    * ret_ncells at INT_MAX, as p7_pins2bands() does (brief 26_0628-027). A
    * genome-scale IBV band can exceed 2^31 cells; the int32 sum wrapped
@@ -1355,8 +1296,6 @@ cm_p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
     for (i = 1; i <= L; i++)
       ncells64 += (int64_t) (kmax_arr[i] - kmin_arr[i] + 1);
     if (ncells64 > (int64_t) INT_MAX) {
-      if(cm_StageVerbose()) fprintf(stderr, "#NCELLS64 p7_Seq2BandsIBV_dnc L=%d M=%d ncells=%lld (saturated to INT_MAX in int32 ret_ncells)\n",
-              L, M, (long long) ncells64);
       ncells = INT_MAX;
     }
     else ncells = (int) ncells64;
@@ -1364,33 +1303,6 @@ cm_p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
   }
   if ((status = ibv_rowstats_check(&ctx.st, errbuf)) != eslOK) goto ERROR;
 
-  {
-    const char *dump = getenv("P7IBV_DUMP_BAND");
-    if (dump != NULL && *dump != '\0') {
-      FILE *fp = fopen(dump, "w");
-      if (fp != NULL) {
-        fprintf(fp, "# M=%d L=%d delta=%d optimal_milli=%.6f thr_milli=%.6f ncells=%d\n",
-                M, L, delta_milli, (double) optimal, (double) thr, ncells);
-        fprintf(fp, "# i\tkmin\tkmax\twidth\ti2k\n");   /* brief 26_0430-142: + i2k (argmax-k pin) */
-        for (i = 1; i <= L; i++)
-          fprintf(fp, "%d\t%d\t%d\t%d\t%d\n", i, kmin_arr[i], kmax_arr[i], kmax_arr[i] - kmin_arr[i] + 1, i2k[i]);
-        fclose(fp);
-      }
-    }
-  }
-
-  /* Brief 26_0430-142: per-row band dump to stderr (multi-seq safe; one block/seq). */
-  {
-    const char *p142 = getenv("P142_DUMP_BANDS");
-    if (p142 != NULL && *p142 != '\0') {
-      fprintf(stderr, "#P142_BAND_BEGIN M=%d L=%d delta=%d optimal_milli=%.6f thr_milli=%.6f ncells=%d path=dnc\n",
-              M, L, delta_milli, (double) optimal, (double) thr, ncells);
-      for (i = 1; i <= L; i++)
-        fprintf(stderr, "#P7BAND_DUMP i=%d i2k=%d kmin=%d kmax=%d width=%d\n",
-                i, i2k[i], kmin_arr[i], kmax_arr[i], kmax_arr[i] - kmin_arr[i] + 1);
-      fprintf(stderr, "#P142_BAND_END L=%d\n", L);
-    }
-  }
 
   free(ctx.MM_t); free(ctx.MI_t); free(ctx.MD_t);
   free(ctx.IM_t); free(ctx.II_t); free(ctx.DM_t); free(ctx.DD_t);
