@@ -90,8 +90,7 @@ rung4_trpins_from_cyk(CM_t *cm, Parsetree_t *tr,
 
 /* brief 26_0430-234: total d-band cell count across all CM states -- a proxy for
  * pass-2's HB DP work.  Mirrors the inline band-area loop the --cykbands pre-pass
- * uses (cm_alndata.c ~L940), factored out so the CKPT_CYKBANDS piggyback can
- * report the pre/post-tighten reduction with identical methodology to brief 233. */
+ * used, factored out; cykbands_tighten_bounded() uses it for its blowup guard. */
 static double
 ckpt_cykbands_cellcount(CM_t *cm)
 {
@@ -113,7 +112,7 @@ ckpt_cykbands_cellcount(CM_t *cm)
  * so the unvisited-state full-envelope fallback (project_cykbands_h5_cache_verdict)
  * could inflate the pass-2 matrix without bound and outright fail at genome scale
  * (brief 26_0430-242: band_area_ratio up to 145924x, 343 GB matrix, 4 dengue
- * cells ESL_XFAIL'd).  The CKPT_CYKBANDS path never blew up because it already
+ * cells ESL_XFAIL'd).  The --ckpt-cykbands path never blew up because it already
  * had the never-loosen bounding (brief 26_0430-238); this helper hands that same
  * bounding to --cykbands.
  *
@@ -260,46 +259,6 @@ cykbands_tighten_bounded(CM_t *cm, char *errbuf, Parsetree_t *tr, int L, int pas
     tight = orig;   /* effective (post-revert) cell count */
   }
 
-  /* brief 26_0430-243 VALIDATION instrumentation (env-gated, diagnostic-only,
-   * zero effect on bands/output -- Gate 0 byte-identity is preserved).
-   * CYKBANDS_SUBSET_CHECK: assert the never-loosen bounded-by-construction
-   *   invariant -- every state's final i/j band must be a SUBSET of the
-   *   pre-tighten baseline snapshot (imin>=base, imax<=base, jmin>=base,
-   *   jmax<=base). Counts + prints any violation (should be exactly 0).
-   * CYKBANDS_DUMP_TIGHT=<file>: dump per-state final tightened band AND the
-   *   baseline snapshot band, so the fixed --cykbands path and the CKPT_CYKBANDS
-   *   path (both call this helper) can be diffed for cross-path band equivalence. */
-  if(getenv("CYKBANDS_SUBSET_CHECK") != NULL) {
-    int v, nviol = 0;
-    for(v = 0; v < M; v++) {
-      if(cm->cp9b->imin[v] < s_imin[v] || cm->cp9b->imax[v] > s_imax[v] ||
-         cm->cp9b->jmin[v] < s_jmin[v] || cm->cp9b->jmax[v] > s_jmax[v]) {
-        nviol++;
-        if(nviol <= 10)
-          fprintf(stderr, "#CYKBANDS_SUBSET VIOLATION v=%d tight[%d,%d][%d,%d] base[%d,%d][%d,%d]\n",
-                  v, cm->cp9b->imin[v], cm->cp9b->imax[v], cm->cp9b->jmin[v], cm->cp9b->jmax[v],
-                  s_imin[v], s_imax[v], s_jmin[v], s_jmax[v]);
-      }
-    }
-    fprintf(stderr, "#CYKBANDS_SUBSET_CHECK M=%d L=%d violations=%d (0 == bounded-by-construction OK)\n",
-            cm->M, L, nviol);
-  }
-  {
-    const char *df = getenv("CYKBANDS_DUMP_TIGHT");
-    if(df != NULL) {
-      FILE *fp = fopen(df, "w");
-      if(fp != NULL) {
-        int v;
-        fprintf(fp, "v\ttimin\ttimax\ttjmin\ttjmax\tbimin\tbimax\tbjmin\tbjmax\n");
-        for(v = 0; v < M; v++)
-          fprintf(fp, "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", v,
-                  cm->cp9b->imin[v], cm->cp9b->imax[v], cm->cp9b->jmin[v], cm->cp9b->jmax[v],
-                  s_imin[v], s_imax[v], s_jmin[v], s_jmax[v]);
-        fclose(fp);
-      }
-    }
-  }
-
   free(s_imin); free(s_imax); free(s_jmin); free(s_jmax); free(s_hddn);
   if(ret_orig)         *ret_orig         = orig;
   if(ret_tight)        *ret_tight        = tight;
@@ -327,8 +286,8 @@ cykbands_tighten_bounded(CM_t *cm, char *errbuf, Parsetree_t *tr, int L, int pas
  * computed and discarded anyway (only its bifurcation k* pins are used today).
  * This is NOT the separate --cykbands mechanism (which runs its own extra, full-
  * memory, non-checkpointed CYK pre-pass, defeating --ckpt's whole point); this
- * reuses the checkpointed pass-1 tree already in hand.  Off by default; opt-in
- * diagnostic env var CKPT_CYKBANDS (pad override via CKPT_CYKBANDS_PAD).
+ * reuses the checkpointed pass-1 tree already in hand.  Off by default; on with
+ * --ckpt-cykbands.
  *
  * <preserve_valid> TRUE for the truncated rung-4 path.  cm_BandsFromCYKParsetree's
  * do_trunc branch declares truncated bands "not supported" and clobbers
@@ -355,8 +314,8 @@ cykbands_tighten_bounded(CM_t *cm, char *errbuf, Parsetree_t *tr, int L, int pas
  * in cm_BandsFromCYKParsetree can INFLATE the band area by 30x-40000x (O(L^2)
  * d-cells per fallback state), producing a hundreds-of-billions-of-cell pass-2
  * matrix that hangs or OOM-kills the process. Guard: after tightening, if the
- * cell count exceeds <maxratio> x the untightened baseline (default 3.0, env
- * CKPT_CYKBANDS_MAXRATIO), REVERT to the snapshotted untightened --ckpt bands.
+ * cell count exceeds <maxratio> x the untightened baseline (3.0),
+ * REVERT to the snapshotted untightened --ckpt bands.
  *
  * Returns eslOK (bands tightened, or reverted-to-untightened if the guard fired;
  * *ret_orig/*ret_tight set to pre/post d-cell counts, *ret_tight == *ret_orig on
@@ -373,28 +332,11 @@ ckpt_cykbands_tighten(CM_t *cm, char *errbuf, Parsetree_t *tr, int L, int pass_i
                                                  * (5S_rRNA pad=8, brief 236); low-coverage blowup is
                                                  * 30x-40000x (brief 237); 3.0 cleanly separates them.
                                                  * With never-loosen this is a pure backstop. */
-  const char *pad_env  = getenv("CKPT_CYKBANDS_PAD");
-  const char *mr_env   = getenv("CKPT_CYKBANDS_MAXRATIO"); /* <=0 disables the guard */
-  int64_t     n_cp9_sentinel = 0, n_real_empty = 0;
-  double      revert_ratio   = 0.;
-
-  /* CKPT_CYKBANDS-only env overrides (the shared core is env-agnostic; brief 26_0430-243). */
-  if(pad_env != NULL) pad      = atoi(pad_env);
-  if(mr_env  != NULL) maxratio = atof(mr_env);
 
   status = cykbands_tighten_bounded(cm, errbuf, tr, L, pass_idx, preserve_valid,
                                     pad, maxratio, ret_orig, ret_tight,
-                                    &n_cp9_sentinel, &n_real_empty, &revert_ratio);
-  if(status != eslOK) return status;
-
-  if((n_cp9_sentinel > 0 || n_real_empty > 0) && (getenv("INFERNAL_CKPT_VERBOSE") || getenv("CKPT_CYKBANDS_VERBOSE")))
-    fprintf(stderr, "#CKPT_CYKBANDS never-loosen: %" PRId64 " state(s) CP9-sentinel (expected, zero-cost) + "
-            "%" PRId64 " state(s) real-empty-intersection (accuracy-risk fallback) (M=%d L=%d)\n",
-            n_cp9_sentinel, n_real_empty, cm->M, L);
-  if(revert_ratio > 0. && (getenv("INFERNAL_CKPT_VERBOSE") || getenv("CKPT_CYKBANDS_VERBOSE")))
-    fprintf(stderr, "#CKPT_CYKBANDS blowup-guard REVERTED: tight/orig=%.1f > %.1f, kept untightened bands (M=%d L=%d)\n",
-            revert_ratio, maxratio, cm->M, L);
-  return eslOK;
+                                    NULL, NULL, NULL);
+  return status;
 }
 
 /*****************************************************************
@@ -424,10 +366,6 @@ ckpt_cykbands_tighten(CM_t *cm, char *errbuf, Parsetree_t *tr, int L, int pass_i
  * message giving the --mxsize that would fit: --mxsize is a limit the
  * user chose, and this stage can go no lower.
  *
- * Developer override: environment variable INFERNAL_CP9_CKPT set to 1
- * (0) always (never) uses the checkpointed calculation, with no
- * --mxsize check.
- *
  * Returns eslOK, or eslERANGE (errbuf filled) if no CP9 band
  * calculation fits <mxsize>.
  */
@@ -437,20 +375,15 @@ plain_cp9_engine(CM_t *cm, char *errbuf, ESL_SQ *sq, float mxsize, int nmx, int 
   float       dense_Mb = (float) nmx * SizeNeededCP9Matrix(sq->L, cm->cp9->M, NULL, NULL);
   float       ckpt_Mb  = cp9_CheckptSeq2BandsMbNeeded(cm, sq->L, do_iterate, cm->maxtau);
   int         usable   = cp9_CheckptBandsUsable(cm, FALSE);
-  const char *force    = getenv("INFERNAL_CP9_CKPT");
   int         use_ckpt = (usable && dense_Mb > mxsize) ? TRUE : FALSE;
+  float       need_Mb  = use_ckpt ? ckpt_Mb : dense_Mb;
 
-  if(usable && force != NULL) use_ckpt = (atoi(force) != 0) ? TRUE : FALSE;
-  if(cm_StageVerbose()) fprintf(stderr, "#CP9ENGINE seq=%s L=%d M=%d engine=%s dense_Mb=%.1f ckpt_Mb=%.1f mxsize=%.1f%s\n",
-                                sq->name, (int) sq->L, cm->cp9->M, use_ckpt ? "ckpt" : "dense", dense_Mb, ckpt_Mb, mxsize,
-                                (force != NULL) ? " forced" : "");
+  if(cm_StageVerbose()) fprintf(stderr, "#CP9ENGINE seq=%s L=%d M=%d engine=%s dense_Mb=%.1f ckpt_Mb=%.1f mxsize=%.1f\n",
+                                sq->name, (int) sq->L, cm->cp9->M, use_ckpt ? "ckpt" : "dense", dense_Mb, ckpt_Mb, mxsize);
   *ret_use_ckpt = use_ckpt;
-  if(force == NULL) {
-    float need_Mb = use_ckpt ? ckpt_Mb : dense_Mb;
-    if(need_Mb > mxsize)
-      ESL_FAIL(eslERANGE, errbuf, "HMM band calculation needs %.0f Mb > %.0f Mb limit.\nUse --mxsize %d.",
-               need_Mb, mxsize, (int) (floor(need_Mb / 1024.) + 1.) * 1024);
-  }
+  if(need_Mb > mxsize)
+    ESL_FAIL(eslERANGE, errbuf, "HMM band calculation needs %.0f Mb > %.0f Mb limit.\nUse --mxsize %d.",
+             need_Mb, mxsize, (int) (floor(need_Mb / 1024.) + 1.) * 1024);
   return eslOK;
 }
 
@@ -1050,34 +983,12 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
       }
     }
     else { /* use HMM bands */
-      /* brief 26_0628-059: declared here (this scope encloses BOTH the
-       * if(!cp9b_valid){...do_p7band derivation...} block below AND the later
-       * CP9-iterate/CYK-prepass/CM-alignment-DP code that follows it -- the
-       * latter runs even when cp9b_valid is TRUE, i.e. bands already computed
-       * by a prior call, so declaring inside if(!cp9b_valid) put these out of
-       * scope for the alignment-DP timing). _p7b_kind stays NULL unless the
-       * do_p7band branch actually runs, so the final #STAGETIME print (gated
-       * on _p7b_kind != NULL) only fires for the do_p7band derivers this brief
-       * targets (--p7ibv/--p7kmerchain). */
+      /* _p7b_kind names the p7 band deriver that ran (NULL unless the
+       * do_p7band branch below runs); used by #P7BAND_TIME and by the
+       * no-parse fallback. */
       const char *_p7b_kind = NULL;
-      int    _st059_on = (getenv("BRIEF059_STAGETIME") != NULL);
-      double _st059_a_s = 0., _st059_b_s = 0., _st059_bd_s = 0., _st059_c_s = 0., _st059_d_s = 0., _st059_ab_total_s = 0.;
-      int    _st059_ab_split = FALSE;
       if(! cp9b_valid) {
 	if(cm->cp9b != NULL) cm->cp9b->hmm_sc = -eslINFINITY; /* set again by the band calculation, for centering */
-	/* TODO #9 mitigation: --p7band produces too-narrow k-envelopes for small-M
-	 * models (M < ~200), causing accuracy regression on rmark4e (Lacto-usp, atoC,
-	 * snoZ152, ar45, SNORA47). Fall back to unbanded CP9 F/B for small CMs; the
-	 * absolute wall savings from --p7band on tiny CMs is negligible. See brief 26_0430-059. */
-#define P7BAND_MIN_M 0   /* was 200; gate was introduced in brief 26_0430-062 (session 19) for
-                            an earlier band-derivation path. The current F+B IBV
-                            (briefs 26_0430-116-126) is a different algorithm; gate removed per
-                            brief 26_0430-141. */
-	if(do_p7band && cm->fp7 != NULL && cm->fp7->M < P7BAND_MIN_M) {
-	  if(cm_StageVerbose()) fprintf(stderr, "#P7BAND_SKIP M=%d reason=small_M_acc_gap (threshold=%d)\n",
-		  cm->fp7->M, P7BAND_MIN_M);
-	  do_p7band = FALSE;
-	}
 	if(do_p7band && cm->fp7 != NULL) {
 	  /* p7-derived bands: Viterbi trace -> kmin/kmax -> banded CP9 F/B -> CM bands */
 	  P7_PROFILE *gm_p7b  = NULL;
@@ -1121,9 +1032,6 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	  /* Derive p7 bands: IBV (--p7ibv), k-mer chain (--p7kmerchain), or
 	   * full unbanded p7_GViterbi trace. */
 	  struct timespec _ta_p7b, _tb_p7b;
-	  /* _p7b_kind and the _st059_* stage-timing vars are declared up at the
-	   * enclosing if(! cp9b_valid) scope (brief 26_0628-059) so they stay in
-	   * scope through the shared CP9-iterate/CYK-prepass/CM-align-DP code below. */
 	  clock_gettime(CLOCK_MONOTONIC, &_ta_p7b);
 	  if (cm->p7_use_ibv) {
 	    _p7b_kind = "p7ibv";
@@ -1169,21 +1077,18 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	      status = p7_Seq2BandsKmerChain(cm, errbuf, sq->dsq, sq->L, local_nodepad,
 	                                     do_trunc, /* brief 26_0628-033 */
 	                                     &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells,
-	                                     _st059_on ? &_st059_a_s : NULL, _st059_on ? &_st059_b_s : NULL,
-	                                     _st059_on ? &_st059_bd_s : NULL,
+	                                     NULL, NULL, NULL,
 	                                     (elr != NULL && elr->capture) ? &p7_raw : NULL);
 	      /* first pass of a local alignment: keep the band and the raw pins for
 	       * DispatchSqAlignment()'s EL check (briefs 26_0821-128/26_0821-132) */
 	      if (status == eslOK && p7_raw != NULL) status = elr_band_keep(elr, sq->L, p7_raw, p7_i2k, p7_kmin, p7_kmax);
 	    }
-	    if (_st059_on) _st059_ab_split = TRUE; /* provisional; cleared below if a fallback fires */
 	    /* ncells==0 => M-gate/N-gate fired, or no usable chain. Brief 26_0628-047:
 	     * default fallback is now --p7ibv's D&C deriver (this file's own
 	     * --p7ibv-mem branch above, same defaults/params), instead of a
 	     * Vit-trace band; --p7kmerchain-fbvit reverts to
 	     * the old p7_Seq2BandsVit fallback. */
 	    if (status == eslOK && p7_ncells == 0) {
-	      _st059_ab_split = FALSE; /* brief 26_0628-059: a_s/b_s only cover the failed kmerchain attempt, not the fallback -- report combined ab_s instead */
 	      /* brief 26_0430-260: chain=NONE (zero k-mer anchors) fallback is a
 	       * mutually-exclusive 3-way selector: native CP9 banding (DEFAULT) |
 	       * --p7kmerchain-fbibv (--p7ibv D&C deriver) | --p7kmerchain-fbvit
@@ -1222,11 +1127,6 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 					 0, 0, &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
 	      } else {
 		_p7b_kind = "kmerchain->native";
-		/* one-line firing diagnostic so tests can count native-fallback
-		 * invocations directly (the authoritative counter; the cosmetic
-		 * "#P7BAND ... FAILED" line below just reflects p7_ncells==0). */
-		if(cm_StageVerbose()) fprintf(stderr, "#NATIVE_FALLBACK seq=%s L=%d M=%d\n",
-			sq->name, (int)sq->L, cm->fp7 ? cm->fp7->M : 0);
 		/* status stays eslOK, p7_ncells stays 0 -> falls through to the
 		 * native cp9_Seq2Bands fallback below. Do nothing else here. */
 	      }
@@ -1244,13 +1144,12 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	  {
 	    double _p7b_s = (_tb_p7b.tv_sec - _ta_p7b.tv_sec) +
 	                    (_tb_p7b.tv_nsec - _ta_p7b.tv_nsec) / 1e9;
-	    _st059_ab_total_s = _p7b_s; /* brief 26_0628-059: authoritative a+b total, robust across fallbacks */
 	    if(cm_StageVerbose()) fprintf(stderr, "#P7BAND_TIME %s kind=%s L=%d M=%d t=%.6f ncells=%d ibvmode=%d ibvwidth=%d ibvdelta=%d\n",
 	            sq->name, _p7b_kind, (int)sq->L, cm->fp7->M, _p7b_s,
 	            p7_ncells, cm->p7_ibv_mode, cm->p7_ibv_width, cm->p7_ibv_delta); /* brief 26_0430-140: ncells = band-size discriminator */
 	  }
 
-	  /* Debug: report Viterbi band stats */
+	  /* --devdiag: report the band, or that the deriver failed */
 	  if(status == eslOK && p7_ncells > 0) {
 	    int dbg_npin = 0, dbg_minpin = sq->L+1, dbg_maxpin = 0;
 	    int dbg_i;
@@ -1272,8 +1171,6 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 
 	  if(status == eslOK && p7_ncells > 0) {
 	    /* Use p7 bands to derive CM bands via p7-banded CP9 F/B with tau-ratcheting */
-	    struct timespec _ta_cp9, _tb_cp9;
-	    clock_gettime(CLOCK_MONOTONIC, &_ta_cp9);
 	    if(p7b_end_at_M) cm_p7_bands_ReachModelEnd(p7_kmax, sq->L, cm->cp9->M); /* brief 26_0821-100 */
 	    status = cp9_IterateSeq2BandsP7B(cm, errbuf, sq->dsq, sq->L, p7_kmin, p7_kmax,
 					     1, sq->L, pass_idx, mxsize,
@@ -1289,10 +1186,6 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	     * before -- a blacklist would need re-auditing every time the call graph
 	     * grows; this doesn't. */
 	    p7b_iterate_ran = (status == eslOK || status == eslERANGE) ? TRUE : FALSE;
-	    clock_gettime(CLOCK_MONOTONIC, &_tb_cp9);
-	    double _cp9_s = (_tb_cp9.tv_sec - _ta_cp9.tv_sec) + (_tb_cp9.tv_nsec - _ta_cp9.tv_nsec)/1e9;
-	    _st059_c_s = _cp9_s; /* brief 26_0628-059: stage (c) band construction = HMM-band -> CM v/j-band conversion */
-	    if(cm_StageVerbose()) fprintf(stderr, "#P7PB_POST M=%d L=%d cp9_iterate=%.4f\n", cm->fp7->M, (int)sq->L, _cp9_s);
 	  }
 	  else {
 	    /* Viterbi found no path or error; fall back to standard cp9 bands */
@@ -1371,12 +1264,8 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	                           (strcmp(_p7b_kind, "kmerchain") == 0)  ? "--p7kmerchain"            :
 	                           "default p7 Viterbi-trace";
 	      if(cm->p7_use_ibv || (_p7b_kind != NULL && strcmp(_p7b_kind, "kmerchain->p7ibv") == 0)) {
-	        if(cm_StageVerbose()) /* brief 26_0821-133: the error below carries the cause */
-	          fprintf(stderr, "# no-parse p7 band from --p7ibv for %s; IBV is the last-resort band deriver, no retry\n", sq->name);
 	        ESL_XFAIL(eslENORESULT, errbuf, "no-parse p7 band from --p7ibv (CP9 F/B total impossible); no further fallback");
 	      }
-	      if(cm_StageVerbose()) /* brief 26_0821-133: informational, developer-only */
-	        fprintf(stderr, "# no-parse p7 band from %s for %s; retrying with --p7ibv-mem bands\n", np_src, sq->name);
 	      p7_i2k = p7_kmin = p7_kmax = NULL; /* freed above */
 	      p7_ncells = 0;
 	      if((status = p7_Seq2BandsIBV_dnc(cm, errbuf, sq->dsq, sq->L,
@@ -1394,8 +1283,6 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	      free(p7_kmin); p7_kmin = NULL;
 	      free(p7_kmax); p7_kmax = NULL;
 	      if(status == eslENORESULT) {
-	        if(cm_StageVerbose()) /* brief 26_0821-133: the error from errbuf carries the cause */
-	          fprintf(stderr, "# no-parse p7 band from %s for %s, and from its --p7ibv-mem retry\n", np_src, sq->name);
 	        snprintf(errbuf, eslERRBUFSIZE, "no-parse p7 band from %s and from its --p7ibv-mem retry (CP9 F/B total impossible)", np_src);
 	        goto ERROR;
 	      }
@@ -1483,41 +1370,9 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	thresh2 = cm->cp9b->thresh2;
 	/* note: we don't set these three if cp9b_valid is TRUE */
 
-	/* developer: dump the bands, to check that the checkpointed and full-matrix
-	 * CP9 band calculations give the same bands (INFERNAL_CP9_CKPT) */
-	if(getenv("INFERNAL_CP9BANDS_DUMP") != NULL) {
-	  FILE *dfp = fopen(getenv("INFERNAL_CP9BANDS_DUMP"), "a");
-	  if(dfp != NULL) {
-	    CP9Bands_t *b = cm->cp9b;
-	    int k, v;
-	    fprintf(dfp, "# %s L=%d tau=%g thresh1=%.2f thresh2=%.2f sp1=%d sp2=%d ep1=%d ep2=%d Rmarg_i=%d..%d Lmarg_j=%d..%d\n",
-		    sq->name, (int) sq->L, cm->tau, b->thresh1, b->thresh2, b->sp1, b->sp2, b->ep1, b->ep2,
-		    b->Rmarg_imin, b->Rmarg_imax, b->Lmarg_jmin, b->Lmarg_jmax);
-	    for(k = 0; k <= b->hmm_M; k++)
-	      fprintf(dfp, "k %d %d %d %d %d %d %d\n", k, b->pn_min_m[k], b->pn_max_m[k], b->pn_min_i[k], b->pn_max_i[k], b->pn_min_d[k], b->pn_max_d[k]);
-	    for(v = 0; v < cm->M; v++)
-	      fprintf(dfp, "v %d %d %d %d %d %d%d%d%d\n", v, b->imin[v], b->imax[v], b->jmin[v], b->jmax[v], b->Jvalid[v], b->Lvalid[v], b->Rvalid[v], b->Tvalid[v]);
-	    fclose(dfp);
-	  }
-	}
-
 	/* brief 26_0821-116: band calculation is done; free its CP9 matrices before
 	 * the CM DP, so peak memory is the larger of the two stages, not their sum. */
 	shrink_cp9_matrices(cm);
-      }
-
-      /* DIAGNOSTIC: CP9 banded matrix cell count (whether cykbands is on
-       * or off) so we can compare CP9-only vs cykbands runs. */
-      if(cm_StageVerbose()) {
-        double _cp9_cells = 0.;
-        CP9Bands_t *_cp9b = cm->cp9b;
-        int _v, _jp;
-        for(_v = 0; _v < cm->M; _v++)
-          for(_jp = 0; _jp <= _cp9b->jmax[_v] - _cp9b->jmin[_v]; _jp++)
-            if(hd_min(_cp9b, _v, _jp) <= hd_max(_cp9b, _v, _jp))
-              _cp9_cells += hd_max(_cp9b, _v, _jp) - hd_min(_cp9b, _v, _jp) + 1;
-        fprintf(stderr, "#P7PB_POST M=%d L=%d cp9_band_cells=%.0f\n",
-                (cm->fp7 ? cm->fp7->M : 0), (int)sq->L, _cp9_cells);
       }
 
       /* Center the CM DP scores (see Purpose), from here through every CM
@@ -1529,20 +1384,6 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 
       /* CYK pre-pass: run CYK on CP9 bands, derive tighter per-state bands before Inside/Outside */
       if(cm->p7_use_cykbands) {
-	struct timespec _ta_cyk, _tb_cyk;
-	clock_gettime(CLOCK_MONOTONIC, &_ta_cyk);
-
-	/* measure original band area (total d-band cells across all states) */
-	double _orig_cells = 0.;
-	{
-	  CP9Bands_t *_cp9b = cm->cp9b;
-	  int _v, _jp;
-	  for(_v = 0; _v < cm->M; _v++)
-	    for(_jp = 0; _jp <= _cp9b->jmax[_v] - _cp9b->jmin[_v]; _jp++)
-	      if(hd_min(_cp9b, _v, _jp) <= hd_max(_cp9b, _v, _jp))
-		_orig_cells += hd_max(_cp9b, _v, _jp) - hd_min(_cp9b, _v, _jp) + 1;
-	}
-
 	Parsetree_t *_cyk_tr = NULL;
 	float        _cyk_sc  = 0.;
 	int          _cyk_ok  = FALSE;
@@ -1563,30 +1404,16 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	 * tiers: the pre-pass matrix is transient (allocated, consumed for the parsetree,
 	 * freed before the main Inside/Outside/OA/Posterior alignment), so it is never
 	 * concurrent with the main alignment's own matrices -- sequential, not additive. */
-	char  _cykpp_engine  = 'f'; /* 'f' = full-matrix (tier a), 'd' = D&C (tier b), 'x' = neither fits */
 	float _cykpp_est_std = 0., _cykpp_est_dnc = 0.;
-	int   _cykpp_use_dnc = FALSE;
+	int   _cykpp_use_dnc = FALSE; /* FALSE: full-matrix (tier a) */
 
-	if(cm->p7_cykbands_no_dnc) {
-	  _cykpp_engine = 'f'; /* legacy: always attempt the full-matrix engine below */
-	}
-	else if(getenv("CYKPP_FORCE_DNC") != NULL) {
-	  /* brief 26_0430-273 gate (a): force the D&C engine regardless of the estimate, so
-	   * the choice can be isolated from --mxsize (which also drives the SEPARATE mxesc
-	   * tier selector for the main alignment, brief 26_0430-269, a few hundred lines
-	   * above this block in the same function) -- debug/gate-only, not for production use. */
-	  _cykpp_engine = 'd'; _cykpp_use_dnc = TRUE;
-	}
-	else {
+	if(! cm->p7_cykbands_no_dnc) { /* --no-cykbands-dnc: always attempt the full-matrix engine below */
 	  int _cykpp_status;
 	  if(do_trunc) _cykpp_status = cm_TrAlignSizeNeededHB(cm, errbuf, sq->L, mxsize, FALSE/*do_sample*/, FALSE/*do_post*/,
 	                                                      NULL, NULL, NULL, NULL, &_cykpp_est_std, NULL);
 	  else         _cykpp_status = cm_AlignSizeNeededHB  (cm, errbuf, sq->L, mxsize, FALSE/*do_sample*/, FALSE/*do_post*/,
 	                                                      NULL, NULL, NULL, NULL, &_cykpp_est_std, NULL);
-	  if(_cykpp_status == eslOK) {
-	    _cykpp_engine = 'f';
-	  }
-	  else {
+	  if(_cykpp_status != eslOK) {
 	    errbuf[0] = '\0'; /* clear the eslERANGE message; tier (a) simply doesn't fit */
 	    float _cykpp_dnc_vjd = 0., _cykpp_dnc_sh = 0.;
 	    int _cykpp_dnc_status;
@@ -1600,14 +1427,9 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	      _cykpp_dnc_status = cm_DnCAlignSizeNeededHB(cm, errbuf, sq->L, &_cykpp_dnc_vjd, &_cykpp_dnc_sh, &_cykpp_est_dnc);
 	    }
 	    if(_cykpp_dnc_status != eslOK) goto ERROR;
-	    if(_cykpp_est_dnc <= mxsize) { _cykpp_engine = 'd'; _cykpp_use_dnc = TRUE; }
-	    else                         { _cykpp_engine = 'x'; }
+	    if(_cykpp_est_dnc <= mxsize) _cykpp_use_dnc = TRUE; /* D&C (tier b); else neither fits */
 	  }
 	}
-
-	if(cm_StageVerbose()) fprintf(stderr, "#CYKPP_ENGINE seq=%s L=%d M=%d trunc=%d engine=%c est_std=%.1f est_dnc=%.1f mxsize=%.1f\n",
-	        sq->name, (int)sq->L, (cm->fp7 ? cm->fp7->M : cm->clen), do_trunc, _cykpp_engine,
-	        _cykpp_est_std, _cykpp_est_dnc, (float)mxsize);
 
 	if(_cykpp_use_dnc) {
 	  /* HMM-banded D&C-CYK floor: CYKDivideAndConquerHB()/TrCYKDivideAndConquerHB()
@@ -1654,20 +1476,18 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	  }
 	}
 
-	double _tight_cells = _orig_cells;
 	if(_cyk_ok) {
 	  /* brief 26_0430-243: tighten via the SHARED bounded helper
 	   * (cykbands_tighten_bounded: baseline snapshot + never-loosen intersection
-	   * + bounded hd-recompute + backstop) -- the EXACT mechanism CKPT_CYKBANDS
+	   * + bounded hd-recompute + backstop) -- the EXACT mechanism --ckpt-cykbands
 	   * uses (brief 26_0430-238).  This replaces the old raw cm_BandsFromCYKParsetree()
 	   * call, whose unvisited-state full-envelope fallback could inflate the pass-2
 	   * band area WITHOUT BOUND and outright fail at genome scale (brief 26_0430-242:
 	   * band_area_ratio up to 145924x -> 343 GB matrix -> 4 dengue cells ESL_XFAIL'd).
 	   * The intersection bounds every state's i/j band to the pre-tighten CP9/kmerchain
 	   * baseline that cm->cp9b holds right here, so the result is bounded-by-construction.
-	   *   pad      = cm->p7_cykbands_pad (from --cykpad); NOT CKPT_CYKBANDS_PAD.
-	   *   maxratio = 3.0 plain-constant backstop; NOT CKPT_CYKBANDS_MAXRATIO -- the
-	   *              --cykbands path must not read the CKPT_* env vars (constraint 1).
+	   *   pad      = cm->p7_cykbands_pad (from --cykpad).
+	   *   maxratio = 3.0 plain-constant backstop.
 	   *              With never-loosen this backstop should never fire.
 	   *   preserve_valid = do_trunc: cm_BandsFromCYKParsetree clobbers marginal
 	   *              validity to J-only in truncated mode, which pass-2's cm_TrAlignHB
@@ -1675,25 +1495,12 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	   *              in the old raw-call trunc path).
 	   * Per-state pad was archived 2026-05-19 (see cm_CYKPerstatePadCompute doc
 	   * comment for failure analysis). Production uses uniform pad. */
-	  double  _oc = 0., _tc = 0., _rr = 0.;
-	  int64_t _ns = 0, _nre = 0;
-	  if(cykbands_tighten_bounded(cm, errbuf, _cyk_tr, (int) sq->L, pass_idx,
-				      do_trunc/*preserve_valid*/, cm->p7_cykbands_pad, 3.0/*maxratio backstop*/,
-				      &_oc, &_tc, &_ns, &_nre, &_rr) == eslOK) {
-	    _tight_cells = _tc;
-	    if((_ns > 0 || _nre > 0 || _rr > 0.) && getenv("CYKBANDS_VERBOSE"))
-	      fprintf(stderr, "#CYKBANDS never-loosen: %" PRId64 " state(s) CP9-sentinel + %" PRId64
-		      " state(s) real-empty%s (M=%d L=%d)\n",
-		      _ns, _nre, (_rr > 0. ? " + blowup-guard REVERTED" : ""), cm->M, (int) sq->L);
-	  }
+	  /* on failure the CP9 bands are kept */
+	  (void) cykbands_tighten_bounded(cm, errbuf, _cyk_tr, (int) sq->L, pass_idx,
+					  do_trunc/*preserve_valid*/, cm->p7_cykbands_pad, 3.0/*maxratio backstop*/,
+					  NULL, NULL, NULL, NULL, NULL);
 	  FreeParsetree(_cyk_tr);
 	}
-
-	clock_gettime(CLOCK_MONOTONIC, &_tb_cyk);
-	double _cyk_s   = (_tb_cyk.tv_sec  - _ta_cyk.tv_sec)  + (_tb_cyk.tv_nsec  - _ta_cyk.tv_nsec) /1e9;
-	double _b_ratio = (_orig_cells > 0.) ? _tight_cells / _orig_cells : 1.0;
-	if(cm_StageVerbose()) fprintf(stderr, "#P7PB_POST M=%d L=%d cyk_prepass=%.4f band_area_ratio=%.4f orig_cells=%.0f tight_cells=%.0f\n",
-		(cm->fp7 ? cm->fp7->M : 0), (int)sq->L, _cyk_s, _b_ratio, _orig_cells, _tight_cells);
       }
 
       /* --dump-bands: write per-(v,j) band TSV before cm_AlignHB/cm_TrAlignHB */
@@ -1718,8 +1525,6 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
       }
 
       if(w != NULL) esl_stopwatch_Start(w);
-	  struct timespec _ta_cm, _tb_cm;
-	  clock_gettime(CLOCK_MONOTONIC, &_ta_cm);
 	CM_ALIGN_HB_RETRY:
 	  /* brief 26_0430-269: --mxsize engine auto-escalation. Bands (cm->cp9b) are now
 	   * derived (possibly maxtau-wide). Pick the cheapest engine whose estimated CM-DP
@@ -1793,8 +1598,6 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	        endhull_tried = TRUE;
 	        if((status = cp9_EndHullRetryBands(cm, errbuf, cm->cp9b, sq->L, pass_idx, &eh_changed)) != eslOK) goto ERROR;
 	        if(eh_changed) {
-	          if(cm_StageVerbose()) fprintf(stderr, "#ENDHULL_RETRY seq=%s L=%d trunc=%d dnc_floor=%.1f mxsize=%.1f\n",
-	                  sq->name, (int)sq->L, do_trunc, mb_tot, (float)mxsize);
 	          goto CM_ALIGN_HB_RETRY;
 	        }
 	      }
@@ -1829,10 +1632,6 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	        /* CYKDivideAndConquerHB() cm_Fail()s internally on error; a returned tr is valid. */
 	        sc = CYKDivideAndConquerHB(cm, sq->dsq, sq->L, 0, 1, sq->L, &tr, cm->cp9b);
 	      }
-	      if(getenv("INFERNAL_CKPT_VERBOSE"))
-	        fprintf(stderr, "# mxesc tier (c) D&C-CYK floor engaged: M=%d L=%d trunc=%d (%s)\n",
-	                (cm->fp7 ? cm->fp7->M : cm->clen), (int)sq->L, do_trunc,
-	                (cm->flags & (CMH_LOCAL_BEGIN|CMH_LOCAL_END)) ? "local" : "global");
 	      goto MXESC_ALN_DONE;
 	    }
 	  }
@@ -1872,74 +1671,34 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 					       cm->trhb_emx, do_post ? &ppstr : NULL, &tr, NULL, &pp, &sc);
 		}
 		else if(do_trckpt_r4) {
-		  /* brief 26_0610-094: rung-4 runtime engine selector.  Default (unset/0)
-		   * = the sqrt(M) combined-mode (J/L/R/T) checkpointed CYK sweep,
-		   * cm_CheckptTrCYKAlignHB() (brief 080, R3): the only sqrt(M) way to
-		   * resolve the mode for a STRUCTURED CM (an unpinned sqrt(M) bifurcation
-		   * Inside hits the brief-017 2D-coupling wall).  Set
-		   * INFERNAL_CKPT_FORCE_DNC to force the alternative, now-fully-bug-fixed
-		   * (briefs 081-093) per-candidate-mode TrCYKDivideAndConquerHB ncand-loop
-		   * instead -- a smaller-footprint fallback/comparison engine, re-routed
-		   * here unchanged rather than reimplemented.  Both paths resolve the same
-		   * (mode, bkind/kpin/bbmode/blmode/brmode) pins and feed the identical
-		   * pass-2 checkpointed pinned posterior + OptAcc + traceback below;
-		   * only pass-1 mode/pin resolution differs. */
+		  /* brief 26_0610-094: rung-4 pass 1 = the sqrt(M) combined-mode (J/L/R/T)
+		   * checkpointed CYK sweep, cm_CheckptTrCYKAlignHB() (brief 080, R3): the
+		   * only sqrt(M) way to resolve the mode for a STRUCTURED CM (an unpinned
+		   * sqrt(M) bifurcation Inside hits the brief-017 2D-coupling wall). It
+		   * resolves the (mode, bkind/kpin/bbmode/blmode/brmode) pins for the
+		   * pass-2 checkpointed pinned posterior + OptAcc + traceback below. */
 		  int   *bkind = NULL, *kpin = NULL;
 		  char  *bbmode = NULL, *blmode = NULL, *brmode = NULL;
 		  Parsetree_t *tr_best = NULL;
 		  char   r4_mode = TRMODE_UNKNOWN;
 		  float  r4_cyk  = IMPOSSIBLE, r4_Z = 0.;
-		  int    use_dnc_r4 = (getenv("INFERNAL_CKPT_FORCE_DNC") != NULL) ? TRUE : FALSE;
 		  ESL_ALLOC(bkind,  sizeof(int)  * cm->M);
 		  ESL_ALLOC(kpin,   sizeof(int)  * cm->M);
 		  ESL_ALLOC(bbmode, sizeof(char) * cm->M);
 		  ESL_ALLOC(blmode, sizeof(char) * cm->M);
 		  ESL_ALLOC(brmode, sizeof(char) * cm->M);
-		  if(use_dnc_r4) {
-		    /* D&C ncand-loop path (from trcyk-dnc-localbug-impl, briefs 081-093):
-		     * run TrCYKDivideAndConquerHB once per root-valid marginal mode; the
-		     * argmax penalty-folded root score picks the mode (each score ==
-		     * the oracle cm_TrCYKInsideAlignHB()'s {J,L,R,T}alpha[0][L][L]),
-		     * and that mode's parse supplies the (kind,k*,modes) pins. */
-		    char cand[4]; int ncand = 0, m;
-		    if(cm->cp9b->Jvalid[0]) cand[ncand++] = TRMODE_J;
-		    if(cm->cp9b->Lvalid[0]) cand[ncand++] = TRMODE_L;
-		    if(cm->cp9b->Rvalid[0]) cand[ncand++] = TRMODE_R;
-		    if(cm->cp9b->Tvalid[0]) cand[ncand++] = TRMODE_T;
-		    for(m = 0; m < ncand; m++) {
-		      Parsetree_t *tr_m = NULL; char mm = TRMODE_UNKNOWN;
-		      float sc_m = TrCYKDivideAndConquerHB(cm, sq->dsq, sq->L, 0, 1, sq->L, pass_idx, cand[m], &mm, &tr_m, cm->cp9b);
-		      if(sc_m > r4_cyk) { r4_cyk = sc_m; r4_mode = cand[m]; if(tr_best) FreeParsetree(tr_best); tr_best = tr_m; }
-		      else if(tr_m) FreeParsetree(tr_m);
-		    }
-		    if(tr_best == NULL) {
-		      free(bkind); free(kpin); free(bbmode); free(blmode); free(brmode);
-		      ESL_XFAIL(eslEINCOMPAT, errbuf, "rung-4 --ckpt (INFERNAL_CKPT_FORCE_DNC): no root-valid truncation mode for %s", sq->name);
-		    }
-		    status = eslOK;
-		  }
-		  else {
-		    status = cm_CheckptTrCYKAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, pass_idx, &tr_best, &r4_mode, &r4_cyk);
-		  }
+		  status = cm_CheckptTrCYKAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, pass_idx, &tr_best, &r4_mode, &r4_cyk);
 		  if(status != eslOK) { free(bkind); free(kpin); free(bbmode); free(blmode); free(brmode); goto CM_ALIGN_HB_CHECK_FB; }
 		  rung4_trpins_from_cyk(cm, tr_best, bkind, kpin, bbmode, blmode, brmode);
-		  /* brief 26_0430-234: opt-in CKPT_CYKBANDS -- tighten pass-2 bands from
+		  /* brief 26_0430-234: opt-in --ckpt-cykbands -- tighten pass-2 bands from
 		   * this same (truncated) pass-1 CYK tree before freeing it.  preserve_valid
 		   * TRUE: cm_BandsFromCYKParsetree clobbers marginal validity to J-only in
 		   * do_trunc mode; save/restore keeps the resolved r4_mode valid (see helper
 		   * doc). Only spatial i/j/hd bands tighten. */
-		  /* brief 26_0430-271 item 2: --ckpt-cykbands promotes this env-only diagnostic
-		   * to a real CLI flag; the env var is still honored as a sweep override. */
-		  if((getenv("CKPT_CYKBANDS") != NULL) || (cm->align_opts & CM_ALIGN_CKPT_CYKBANDS)) {
-		    double _oc = 0., _tc = 0.;
-		    if(ckpt_cykbands_tighten(cm, errbuf, tr_best, (int) sq->L, pass_idx,
-					     TRUE/*preserve_valid*/, &_oc, &_tc) == eslOK &&
-		       (getenv("INFERNAL_CKPT_VERBOSE") || getenv("CKPT_CYKBANDS_VERBOSE")))
-		      fprintf(stderr, "#CKPT_CYKBANDS rung=4 M=%d L=%d mode=%c band_area_ratio=%.4f orig_cells=%.0f tight_cells=%.0f\n",
-			      cm->M, (int) sq->L,
-			      (r4_mode==TRMODE_J)?'J':(r4_mode==TRMODE_L)?'L':(r4_mode==TRMODE_R)?'R':'T',
-			      (_oc > 0. ? _tc/_oc : 1.0), _oc, _tc);
-		  }
+		  /* brief 26_0430-271 item 2: --ckpt-cykbands. On failure the bands are kept. */
+		  if(cm->align_opts & CM_ALIGN_CKPT_CYKBANDS)
+		    (void) ckpt_cykbands_tighten(cm, errbuf, tr_best, (int) sq->L, pass_idx,
+						 TRUE/*preserve_valid*/, NULL, NULL);
 		  FreeParsetree(tr_best); tr_best = NULL;
 		  /* pass 2: checkpointed pinned truncated posterior -> emit_mx, then checkpointed
 		   * pinned truncated OptAcc + pinned-tree traceback -> parsetree + PP.  sc = the
@@ -1953,11 +1712,6 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 		  sc = r4_Z;
 		  free(bkind); free(kpin); free(bbmode); free(blmode); free(brmode);
 		  if(status != eslOK) goto CM_ALIGN_HB_CHECK_FB;
-		  if(getenv("INFERNAL_CKPT_VERBOSE"))
-		    fprintf(stderr, "# rung-4 checkpointed structured truncated OptAcc engaged: M=%d L=%d mode=%c engine=%s (%s, truncated, bps>0)\n",
-			    cm->M, (int) sq->L, (r4_mode==TRMODE_J)?'J':(r4_mode==TRMODE_L)?'L':(r4_mode==TRMODE_R)?'R':'T',
-			    use_dnc_r4 ? "dnc" : "ckpt",
-			    (cm->flags & (CMH_LOCAL_BEGIN|CMH_LOCAL_END)) ? "local" : "global");
 		}
 		else {
 	      	  status = cm_TrAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, mode, pass_idx,
@@ -2015,50 +1769,27 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	   * artifact).  Skip it: go straight to the all-(-1) pin set pass-2 would
 	   * derive from it anyway. */
 	  int has_bif = (CMCountStatetype(cm, B_st) > 0);
-	  /* pass 1: HMM-banded CYK parse -> k* pins.  brief 26_0610-098: rung-3
-	   * runtime engine selector, UNIFIED with rung-4's (same INFERNAL_CKPT_FORCE_DNC
-	   * env var -- one meaning, "use D&C", at every rung it applies to).
-	   * Default (unset/0) = the checkpointed sqrt(M)-memory CYK engine
-	   * (cm_CheckptCYKAlignHB, brief 26_0610-084 R1-L), which closed the pass-1
-	   * memory floor (briefs 26_0610-040/041) so the whole rung-3 pipeline is
-	   * checkpointed.  Set INFERNAL_CKPT_FORCE_DNC to force the D&C alternative
-	   * CYKDivideAndConquerHB (brief 26_0610-041/098) -- a smaller-footprint
-	   * fallback that carries the CP9 bands down a divide-and-conquer recursion.
-	   * Both engines produce the SAME exact-CYK parse (single-optimum max-DP), so
-	   * both feed the identical pass-2 checkpointed pinned posterior + OptAcc +
-	   * traceback below via the same generic Parsetree_t -> rung3_kpin_from_cyk;
-	   * only pass-1 k*-pin resolution differs. */
-	  int    use_dnc_r3 = (getenv("INFERNAL_CKPT_FORCE_DNC") != NULL) ? TRUE : FALSE;
+	  /* pass 1: HMM-banded CYK parse -> k* pins, with the checkpointed
+	   * sqrt(M)-memory CYK engine (cm_CheckptCYKAlignHB, brief 26_0610-084 R1-L),
+	   * which closed the pass-1 memory floor (briefs 26_0610-040/041) so the
+	   * whole rung-3 pipeline is checkpointed. The pins feed the pass-2
+	   * checkpointed pinned posterior + OptAcc + traceback below via
+	   * rung3_kpin_from_cyk. */
 	  if(! has_bif) {
 	    int kv; for (kv = 0; kv < cm->M; kv++) kpin[kv] = -1;
 	    status = eslOK;
 	  }
 	  else {
-	    if(use_dnc_r3) {
-	      /* CYKDivideAndConquerHB() has no status/errbuf return -- it cm_Fail()s
-	       * internally on its trust-but-verify root-state checks -- so a returned
-	       * tr is always valid; treat as eslOK. */
-	      (void) CYKDivideAndConquerHB(cm, sq->dsq, sq->L, 0, 1, sq->L, &tr_cyk, cm->cp9b);
-	      status = eslOK;
-	    }
-	    else {
-	      status = cm_CheckptCYKAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, &tr_cyk, NULL);
-	    }
+	    status = cm_CheckptCYKAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, &tr_cyk, NULL);
 	    if(status == eslOK) {
 	      rung3_kpin_from_cyk(cm, tr_cyk, kpin);
-	      /* brief 26_0430-234: opt-in CKPT_CYKBANDS -- tighten pass-2 bands from
+	      /* brief 26_0430-234: opt-in --ckpt-cykbands -- tighten pass-2 bands from
 	       * this same (non-truncated) pass-1 CYK tree before freeing it. No
 	       * valid-flag save/restore needed (rung-3 is non-truncated). */
-	      /* brief 26_0430-271 item 2: --ckpt-cykbands promotes this env-only diagnostic
-	       * to a real CLI flag; the env var is still honored as a sweep override. */
-	      if((getenv("CKPT_CYKBANDS") != NULL) || (cm->align_opts & CM_ALIGN_CKPT_CYKBANDS)) {
-		double _oc = 0., _tc = 0.;
-		if(ckpt_cykbands_tighten(cm, errbuf, tr_cyk, (int) sq->L, pass_idx,
-					 FALSE/*preserve_valid*/, &_oc, &_tc) == eslOK &&
-		   (getenv("INFERNAL_CKPT_VERBOSE") || getenv("CKPT_CYKBANDS_VERBOSE")))
-		  fprintf(stderr, "#CKPT_CYKBANDS rung=3 M=%d L=%d band_area_ratio=%.4f orig_cells=%.0f tight_cells=%.0f\n",
-			  cm->M, (int) sq->L, (_oc > 0. ? _tc/_oc : 1.0), _oc, _tc);
-	      }
+	      /* brief 26_0430-271 item 2: --ckpt-cykbands. On failure the bands are kept. */
+	      if(cm->align_opts & CM_ALIGN_CKPT_CYKBANDS)
+		(void) ckpt_cykbands_tighten(cm, errbuf, tr_cyk, (int) sq->L, pass_idx,
+					     FALSE/*preserve_valid*/, NULL, NULL);
 	      FreeParsetree(tr_cyk); tr_cyk = NULL;
 	    }
 	  }
@@ -2072,10 +1803,6 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	  sc = r3_Z;
 	  free(kpin);
 	  if(status != eslOK) goto CM_ALIGN_HB_CHECK_FB;
-	  if(getenv("INFERNAL_CKPT_VERBOSE"))
-	    fprintf(stderr, "# rung-3 checkpointed structured OptAcc engaged: M=%d L=%d engine=%s (%s, non-truncated, bps>0)\n", cm->M, (int) sq->L,
-		    (! has_bif) ? "skip-p1(bif0)" : (use_dnc_r3 ? "dnc" : "ckpt"),
-		    (cm->flags & (CMH_LOCAL_BEGIN|CMH_LOCAL_END)) ? "local" : "global");
 	}
 	else {
 	  status = cm_AlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, do_optacc, do_sample, cm->hb_mx, cm->hb_shmx,
@@ -2090,8 +1817,6 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
        * around the p7-Viterbi trace) and retry the CM alignment once.
        */
       if (status != eslOK && cm->p7_use_ibv && !ibv_fallback_used) {
-	if(cm_StageVerbose()) fprintf(stderr, "#P7IBV_FALLBACK %s L=%d M=%d status=%d errbuf='%s'\n",
-		sq->name, (int)sq->L, (cm->fp7 ? cm->fp7->M : 0), status, errbuf);
 	ibv_fallback_used = TRUE;
 	errbuf[0] = '\0';
 	status    = eslOK;
@@ -2160,35 +1885,6 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	goto CM_ALIGN_HB_RETRY;
       }
       if (status != eslOK) goto ERROR;
-      clock_gettime(CLOCK_MONOTONIC, &_tb_cm);
-      double _cm_s = (_tb_cm.tv_sec - _ta_cm.tv_sec) + (_tb_cm.tv_nsec - _ta_cm.tv_nsec)/1e9;
-      _st059_d_s = _cm_s; /* brief 26_0628-059: stage (d) CM alignment DP itself */
-      if(cm_StageVerbose()) fprintf(stderr, "#P7PB_POST M=%d L=%d cm_align_hb=%.4f%s\n",
-              (cm->fp7 ? cm->fp7->M : 0), (int)sq->L, _cm_s,
-              ibv_fallback_used ? " ibv_fallback=1" : "");
-      /* brief 26_0628-059: single per-sequence 4-stage timing line, gated by
-       * BRIEF059_STAGETIME (silent no-op by default). See the declaration
-       * comment above (near _ta_p7b) for the a_s/b_s vs ab_s convention.
-       * _p7b_kind != NULL guards against the do_xtau/plain-CP9 branches
-       * (this shared cm-align-DP code also runs for those, but they never
-       * went through a do_p7band deriver, so there's no method to report). */
-      if (_st059_on && _p7b_kind != NULL) {
-        if (_st059_ab_split)
-          /* 2026-07-11 (brief 190 follow-up): bd_s = converting the winning
-           * kmerchain chain's pins into HMM bands (p7_pins2bands_nodepad),
-           * split out of what was previously folded into b_s. bd_s is 0 (and
-           * meaningless) for non-kmerchain methods (p7ibv/etc.),
-           * which don't route through p7_Seq2BandsKmerChain at all. */
-          fprintf(stderr, "#STAGETIME seq=%s L=%d M=%d method=%s a_s=%.6f b_s=%.6f bd_s=%.6f c_s=%.6f d_s=%.6f tot_s=%.6f\n",
-                  sq->name, (int)sq->L, cm->fp7->M, _p7b_kind,
-                  _st059_a_s, _st059_b_s, _st059_bd_s, _st059_c_s, _st059_d_s,
-                  _st059_a_s + _st059_b_s + _st059_bd_s + _st059_c_s + _st059_d_s);
-        else
-          fprintf(stderr, "#STAGETIME seq=%s L=%d M=%d method=%s ab_s=%.6f c_s=%.6f d_s=%.6f tot_s=%.6f\n",
-                  sq->name, (int)sq->L, cm->fp7->M, _p7b_kind,
-                  _st059_ab_total_s, _st059_c_s, _st059_d_s,
-                  _st059_ab_total_s + _st059_c_s + _st059_d_s);
-      }
     }
   }
 
@@ -2727,7 +2423,7 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   char         errbuf2[eslERRBUFSIZE];
   float        best_psc = -eslINFINITY, psc2;
   double       sum[3]   = { 0., 0., 0. };   /* bands, alignment, total seconds over every pass */
-  int          nel = 0, ntrig, k, ua, ub, Ka, Kb, a, b, nrow;
+  int          nel = 0, ntrig, k, ua, ub, a, b, nrow;
   int          ncand = 0, npos = 0, ncorr = 0, gate, nkept = 0, nretry = 0;
 
   /* Not for a sampled alignment (keeping the higher-scoring of two samples
@@ -2752,11 +2448,9 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
     ESL_ALLOC(klo, sizeof(int) * (L+1));
     esl_vec_ISet(klo, L+1, 0);
     nrow = elr_tail_edit(cm, emap, eb.raw, eb.kmin, eb.kmax, L, klo, &K);
-    if(cm_StageVerbose()) fprintf(stderr, "#ELRETRY seq=%s L=%d refused arm=T K=%d rows=%d\n", sq->name, L, K, nrow);
     if(nrow > 0) {
       rq.mode = ELR_MODE_EDIT; rq.L = L; rq.i2k = eb.i2k; rq.kmin = eb.kmin; rq.kmax = eb.kmax; rq.klo = klo;
       status2 = dispatch_sq_alignment_core(cm, errbuf2, sq, idx, mxsize, mode, pass_idx, cp9b_valid, w, w_tot, r, &rq, &data2);
-      if(cm_StageVerbose()) fprintf(stderr, "#ELRETRY seq=%s arm=T status=%d\n", sq->name, status2);
       if(status2 == eslOK) {
         data2->secs_tot += t_first;
         best = data2; data2 = NULL;
@@ -2790,31 +2484,22 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
     if((status = elr_estimate(cm, emap, best->tr, sq->dsq, L, eb.raw, &el[k], ua, ub, &da[k], &db[k])) != eslOK) goto ERROR;
     if(da[k] > -eslINFINITY || db[k] > -eslINFINITY) ncand++;
     if(da[k] > 0.           || db[k] > 0.)           npos++;
-    if(cm_StageVerbose()) fprintf(stderr, "#ELRETRY_EL seq=%s L=%d nd=%d el=[%d,%d] npin=%d nrun=%d pinrows=[%d,%d] pincols=[%d,%d] ua=%d delta_a=%.1f ub=%d delta_b=%.1f\n",
-                                  sq->name, L, el[k].nd, el[k].e1, el[k].e2, el[k].npin, el[k].nrun, el[k].ra, el[k].rb, el[k].ca, el[k].cb,
-                                  ua, da[k], ub, db[k]);
   }
   if((status = elr_corroborated_runs(cm, emap, best->tr, eb.raw, L, &ncorr)) != eslOK) goto ERROR;
   gate = (ncorr > 0) ? TRUE : FALSE;   /* apply the estimate only where its model holds */
-  if(cm_StageVerbose()) fprintf(stderr, "#ELRETRY seq=%s L=%d nel=%d ntrig=%d ncand=%d npos=%d ncorr=%d gate=%d sc=%.2f psc=%.2f\n",
-                                sq->name, L, nel, ntrig, ncand, npos, ncorr, gate, best->sc, best_psc);
 
   /* R1: the topology band edit */
   esl_vec_ISet(klo, L+1, 0);
-  nrow = 0; Ka = Kb = -1;
+  nrow = 0;
   for(k = 0; k < nel; k++) {
     if(el[k].nrun == 0) continue;
     nrow += elr_r1_edit(cm, emap, &el[k], eb.kmin, eb.kmax, L, klo, (! gate) || da[k] > 0., (! gate) || db[k] > 0., &ua, &ub, &a, &b);
-    if(a > 0) Ka = a;
-    if(b > 0) Kb = b;
   }
   if(nrow > 0) {
     rq.mode = ELR_MODE_EDIT; rq.L = L; rq.i2k = eb.i2k; rq.kmin = eb.kmin; rq.kmax = eb.kmax; rq.klo = klo;
     status2 = dispatch_sq_alignment_core(cm, errbuf2, sq, idx, mxsize, mode, pass_idx, cp9b_valid, w, w_tot, r, &rq, &data2);
     nretry++;
     if(elr_consider(cm, sq, status2, &data2, &best, &best_psc, sum, &psc2)) nkept++;
-    if(cm_StageVerbose()) fprintf(stderr, "#ELRETRY seq=%s arm=R1 Ka=%d Kb=%d rows=%d status=%d psc=%.2f kept=%d\n",
-                                  sq->name, Ka, Kb, nrow, status2, psc2, nkept);
   }
   /* R2: native CP9 bands, if R1 was not kept. Skipped when the estimate
    * applies, the topology offered an alternative EL and every estimate
@@ -2824,7 +2509,6 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
     status2 = dispatch_sq_alignment_core(cm, errbuf2, sq, idx, mxsize, mode, pass_idx, cp9b_valid, w, w_tot, r, &rq, &data2);
     nretry++;
     if(elr_consider(cm, sq, status2, &data2, &best, &best_psc, sum, &psc2)) nkept++;
-    if(cm_StageVerbose()) fprintf(stderr, "#ELRETRY seq=%s arm=R2 status=%d psc=%.2f kept=%d\n", sq->name, status2, psc2, nkept);
   }
 
  DONE:
