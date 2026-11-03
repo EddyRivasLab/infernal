@@ -1197,43 +1197,19 @@ cm_TrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char
   if(do_optacc && post_mx == NULL)   ESL_FAIL(eslEINCOMPAT, errbuf, "cm_TrAlignHB(), do_optacc is TRUE, but post_mx == NULL.\n");
   if(do_sample && r       == NULL)   ESL_FAIL(eslEINCOMPAT, errbuf, "cm_TrAlignHB(), do_sample but r is NULL.");
 
-  /* Temporary sub-stage timing instrumentation for efficiency review.
-   * Outputs "#CM_TR_ALIGN_HB_SUBSTAGE M=<M> L=<L> stage=<name> s=<seconds>" to stderr
-   * when INFERNAL_STAGE_VERBOSE is set.
-   */
-  struct timespec _ta_trsub, _tb_trsub;
-#define CM_TR_ALIGN_SUBSTAGE_START()  clock_gettime(CLOCK_MONOTONIC, &_ta_trsub)
-#define CM_TR_ALIGN_SUBSTAGE_END(tag) do { \
-    clock_gettime(CLOCK_MONOTONIC, &_tb_trsub); \
-    double _ss = (_tb_trsub.tv_sec - _ta_trsub.tv_sec) + (_tb_trsub.tv_nsec - _ta_trsub.tv_nsec)/1e9; \
-    if(cm_StageVerbose()) { \
-      fprintf(stderr, "#CM_TR_ALIGN_HB_SUBSTAGE M=%d L=%d stage=%s s=%.6f\n", \
-              (cm->fp7 ? cm->fp7->M : 0), L, (tag), _ss); \
-      fflush(stderr); \
-    } \
-  } while(0)
-
   /* if do_post, fill Inside, Outside, Posterior matrices, in that order */
   /* if do_sample (and !do_post) fill Inside and sample from it */
   if(do_post || do_sample) {
-    CM_TR_ALIGN_SUBSTAGE_START();
     if((status = cm_TrInsideAlignHB (cm, errbuf, dsq, L, size_limit, preset_mode, pass_idx, mx, &mode, &ins_sc)) != eslOK) return status;
     /* mode will equal preset_mode unless preset_mode is TRMODE_UNKNOWN, in which case it will be mode that gives max inside score  */
-    CM_TR_ALIGN_SUBSTAGE_END("inside");
     if(do_sample) {
-      CM_TR_ALIGN_SUBSTAGE_START();
       if((status = cm_TrStochasticParsetreeHB(cm, errbuf, dsq, L, preset_mode, pass_idx, mx, r, &tr, &mode, &sc)) != eslOK) return status;
       /* mode may be changed if preset_mode is TRMODE_UNKNOWN, else it will equal preset mode */
-      CM_TR_ALIGN_SUBSTAGE_END("sample_trace");
     }
     if(do_post) { /* Inside was called above, now do Outside, then Posterior, then EmitterPosterior */
-      CM_TR_ALIGN_SUBSTAGE_START();
       if((status = cm_TrOutsideAlignHB    (cm, errbuf, dsq, L, size_limit, mode, pass_idx, (cm->align_opts & CM_ALIGN_CHECKINOUT), post_mx, mx)) != eslOK) return status;
-      CM_TR_ALIGN_SUBSTAGE_END("outside");
-      CM_TR_ALIGN_SUBSTAGE_START();
       if((status = cm_TrPosteriorHB       (cm, errbuf,      L, size_limit, mode, mx, post_mx, post_mx)) != eslOK) return status;
       if((status = cm_TrEmitterPosteriorHB(cm, errbuf,      L, size_limit, mode, (cm->align_opts & CM_ALIGN_CHECKINOUT), post_mx, emit_mx)) != eslOK) return status;
-      CM_TR_ALIGN_SUBSTAGE_END("posterior");
     }
   }
   else {
@@ -1241,19 +1217,12 @@ cm_TrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char
   }
 
   if(!do_sample) { /* if do_sample, we already have a parsetree */
-    CM_TR_ALIGN_SUBSTAGE_START();
     if((status = cm_tr_alignT_hb(cm, errbuf, dsq, L, size_limit, mode, pass_idx, do_optacc, mx, shmx, emit_mx, &tr, &mode, (do_optacc) ? NULL : &sc)) != eslOK) return status;
-    CM_TR_ALIGN_SUBSTAGE_END("traceback");
   }
 
   if(have_ppstr || do_optacc) {
-    CM_TR_ALIGN_SUBSTAGE_START();
     if((status = cm_TrPostCodeHB(cm, errbuf, L, emit_mx, tr, (have_ppstr) ? &ppstr : NULL, &avgpp)) != eslOK) return status;
-    CM_TR_ALIGN_SUBSTAGE_END("postcode");
   }
-
-#undef CM_TR_ALIGN_SUBSTAGE_START
-#undef CM_TR_ALIGN_SUBSTAGE_END
 
 #if eslDEBUGLEVEL >= 2
   /* Uncomment to dump emitmap and parsetree */
@@ -3180,13 +3149,6 @@ cm_CheckptTrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   }
 
   /* ROOT_S band sanity */
-  if (getenv("INFERNAL_CKPT_VERBOSE")) {
-    int jp0dbg = (cx.jmax[0] >= L && cx.jmin[0] <= L) ? (L - cx.jmin[0]) : -1;
-    fprintf(stderr, "#TRCKPT-DBG entry: M=%d L=%d  ROOT_S j[%d..%d]  d[%d..%d]@jp_0=%d  Jv0=%d Lv0=%d Rv0=%d\n",
-            M, L, cx.jmin[0], cx.jmax[0],
-            (jp0dbg>=0?hd_min(cp9b, 0, jp0dbg):-999), (jp0dbg>=0?hd_max(cp9b, 0, jp0dbg):-999), jp0dbg,
-            cx.Jv[0], cx.Lv[0], cx.Rv[0]);
-  }
   if (cx.jmin[0] > L || cx.jmax[0] < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptTrAlignHB(): L (%d) outside ROOT_S j band [%d..%d]", L, cx.jmin[0], cx.jmax[0]);
   int jp_0 = L - cx.jmin[0];
   if (hd_min(cp9b, 0, jp_0) > L || hd_max(cp9b, 0, jp_0) < L) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_CheckptTrAlignHB(): L (%d) outside ROOT_S d band [%d..%d]", L, hd_min(cp9b, 0, jp_0), hd_max(cp9b, 0, jp_0));
@@ -3194,7 +3156,6 @@ cm_CheckptTrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   /* deck geometry + child/parent reach */
   ESL_ALLOC(cx.deck_nc,  sizeof(int64_t) * M);
   ESL_ALLOC(cx.deck_njr, sizeof(int)     * M);
-  int64_t Jcells = 0, Lcells = 0, Rcells = 0;
   int Delta = 0, Delta_p = 0;
   for (v = 0; v < M; v++) {
     int njr = cx.jmax[v] - cx.jmin[v] + 1; if (njr < 0) njr = 0;
@@ -3202,9 +3163,6 @@ cm_CheckptTrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
     int64_t nc = 0; int jp;
     for (jp = 0; jp < njr; jp++) { int w = hd_max(cp9b, v, jp)-hd_min(cp9b, v, jp)+1; if (w>0) nc += w; }
     cx.deck_nc[v] = nc;
-    if (cx.Jv[v]) Jcells += nc;
-    if (cx.Lv[v]) Lcells += nc;
-    if (cx.Rv[v]) Rcells += nc;
     if (cm->sttype[v] != E_st) {
       int ymax = cm->cfirst[v] + cm->cnum[v] - 1;
       if (ymax - v > Delta) Delta = ymax - v;
@@ -3214,7 +3172,6 @@ cm_CheckptTrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
       if (v - ymin_par > Delta_p) Delta_p = v - ymin_par;
     }
   }
-  int64_t full_cube_cells = Jcells + Lcells + Rcells;
   int B = (int) (sqrt((double)M) + 0.5); if (B < 1) B = 1;
 
   /* R-L.3 EL: J-mode DZero (d==0 shadow init) all-deletes-to-E vs EL compare,
@@ -3625,13 +3582,6 @@ cm_CheckptTrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   /* per-residue PP string + avg PP from the emit matrix */
   if ((status = cm_TrPostCodeHB(cm, errbuf, L, emit_mx, tr, (ret_ppstr != NULL) ? &ppstr : NULL, &avgpp)) != eslOK) goto ERROR;
 
-  if (getenv("INFERNAL_CKPT_VERBOSE")) {
-    double full_mb = 2.0 * full_cube_cells * 4 / (1024.0*1024.0);
-    double peak_mb = cx.peak_bytes / (1024.0*1024.0);
-    fprintf(stderr, "# cm_CheckptTrAlignHB engaged: M=%d L=%d B=%d mode=%c Z=%.4f  CM-DP peak=%.2f Mb  full-cube(2x)=%.2f Mb  win~%.1fx\n",
-            M, L, B, (mode_ckpt==TRMODE_J)?'J':(mode_ckpt==TRMODE_L)?'L':(mode_ckpt==TRMODE_R)?'R':'?',
-            Z_ckpt, peak_mb, full_mb, (peak_mb>0.) ? full_mb/peak_mb : 0.);
-  }
 
   /* free seed stores + scratch */
   for (v = 0; v < M; v++) { if (JAoa[v]) trckpt_deck_free(&cx, v, JAoa[v]); if (LAoa[v]) trckpt_deck_free(&cx, v, LAoa[v]); if (RAoa[v]) trckpt_deck_free(&cx, v, RAoa[v]); }
@@ -4697,9 +4647,6 @@ cm_CheckptTrCYKAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_l
   if (cx.fill_R && cx.Rv[0] && R0 > sc)  { sc = R0; mode = TRMODE_R; b = Rb; }
   if (cx.fill_T && cx.Tv[0] && T0 > sc)  { sc = T0; mode = TRMODE_T; b = Tb; }
   if (mode == TRMODE_UNKNOWN || b < 0) {
-    if (getenv("INFERNAL_CKPT_VERBOSE"))
-      fprintf(stderr, "#TRCKPT-DBG root-fail: J0=%.3f L0=%.3f R0=%.3f T0=%.3f Jv0=%d Lv0=%d Rv0=%d Tv0=%d Jb=%d Lb=%d Rb=%d Tb=%d\n",
-              J0, L0, R0, T0, cx.Jv[0], cx.Lv[0], cx.Rv[0], cx.Tv[0], Jb, Lb, Rb, Tb);
     ESL_XFAIL(eslEINCOMPAT, errbuf, "cm_CheckptTrCYKAlignHB(): no root-valid truncation mode for L=%d", L);
   }
 
@@ -4729,13 +4676,6 @@ cm_CheckptTrCYKAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_l
       if (tLs[w]) { trckpt_cdeck_free(&cx, w, tLs[w]); tLs[w] = NULL; }
       if (tRs[w]) { trckpt_cdeck_free(&cx, w, tRs[w]); tRs[w] = NULL; } } }
 
-  if (getenv("INFERNAL_CKPT_VERBOSE")) {
-    int64_t full_cube_cells = 0; for (v = 0; v < M; v++) full_cube_cells += cx.deck_nc[v];
-    double full_mb = full_cube_cells * 4 * 3 / (1024.0*1024.0); /* J+L+R (T is B-state-only, negligible) */
-    double peak_mb = cx.peak_bytes / (1024.0*1024.0);
-    fprintf(stderr, "# cm_CheckptTrCYKAlignHB (R2): M=%d L=%d B=%d mode=%c sc=%.5f  CYK-DP peak=%.2f Mb  full-cube(1x)=%.2f Mb  win~%.1fx\n",
-            M, L, B, MarginalMode(mode)[0], sc, peak_mb, full_mb, (peak_mb>0.) ? full_mb/peak_mb : 0.);
-  }
 
   for (v = 0; v < M; v++) {
     if (JCY[v]) trckpt_deck_free(&cx, v, JCY[v]);
@@ -5114,7 +5054,6 @@ cm_CheckptTrPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_
   /* deck geometry + linear child/parent reach (B-aware, per 038) */
   ESL_ALLOC(cx.deck_nc,  sizeof(int64_t) * M);
   ESL_ALLOC(cx.deck_njr, sizeof(int)     * M);
-  int64_t full_cube_cells = 0, root_cells = 0, bstate_cells = 0;
   int Delta = 0, Delta_p = 0;
   for (v = 0; v < M; v++) {
     int njr = cx.jmax[v] - cx.jmin[v] + 1; if (njr < 0) njr = 0;
@@ -5122,11 +5061,6 @@ cm_CheckptTrPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_
     int64_t nc = 0; int jp;
     for (jp = 0; jp < njr; jp++) { int w = hd_max(cp9b, v, jp)-hd_min(cp9b, v, jp)+1; if (w>0) nc += w; }
     cx.deck_nc[v] = nc;
-    int modes = (cx.Jv[v] ? 1 : 0) + ((cx.Lv[v] && fill_L) ? 1 : 0) + ((cx.Rv[v] && fill_R) ? 1 : 0);
-    if (cm->sttype[v] == B_st && cx.Tv[v] && fill_T) modes += 1;
-    full_cube_cells += (int64_t) modes * nc;
-    if (cm->stid[v] == ROOT_S || cm->stid[v] == BEGL_S || cm->stid[v] == BEGR_S) root_cells += nc;
-    if (cm->sttype[v] == B_st) bstate_cells += nc;
     /* child reach: skip B (cnum[B] = BEGR index, not a count) and E */
     if (cm->sttype[v] != E_st && cm->sttype[v] != B_st) {
       int ymax = cm->cfirst[v] + cm->cnum[v] - 1;
@@ -5442,15 +5376,6 @@ cm_CheckptTrPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_
     }
   }
 
-  if (getenv("INFERNAL_CKPT_VERBOSE")) {
-    double  full_mb = 2.0 * full_cube_cells * 4 / (1024.0*1024.0);
-    double  peak_mb = cx.peak_bytes / (1024.0*1024.0);
-    int64_t ecells  = emit_mx->l_ncells_valid + emit_mx->r_ncells_valid;
-    fprintf(stderr, "# cm_CheckptTrPostAlignHB: M=%d L=%d B=%d mode=%c Z=%.4f  CM-DP peak=%.2f Mb  full-IO-cube(2x)=%.2f Mb  win~%.1fx  emit_mx=%.2f Mb  root-cells(1x)=%.2f Mb  Bstate-cells(1x)=%.2f Mb\n",
-            M, L, B, (preset_mode==TRMODE_J)?'J':(preset_mode==TRMODE_L)?'L':(preset_mode==TRMODE_R)?'R':'T',
-            Z, peak_mb, full_mb, (peak_mb>0.) ? full_mb/peak_mb : 0.,
-            ecells*4.0/(1024.0*1024.0), root_cells*4.0/(1024.0*1024.0), bstate_cells*4.0/(1024.0*1024.0));
-  }
 
   for (v = 0; v < M; v++) { if (JA[v]) trckpt_deck_free(&cx, v, JA[v]); if (LA[v]) trckpt_deck_free(&cx, v, LA[v]); if (RA[v]) trckpt_deck_free(&cx, v, RA[v]); }
   free(JA); free(LA); free(RA); free(TAtmp);
@@ -5893,12 +5818,6 @@ cm_PinTrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_li
 
   if ((status = cm_TrPostCodeHB(cm, errbuf, L, emit_mx, tr, (ret_ppstr != NULL) ? &ppstr : NULL, &avgpp)) != eslOK) goto ERROR;
 
-  if (getenv("INFERNAL_CKPT_VERBOSE")) {
-    int64_t cube=0; for (v=0;v<M;v++) cube += cx.deck_nc[v];
-    fprintf(stderr, "# cm_PinTrOptAccAlignHB: M=%d L=%d mode=%c pp=%.5f  full-OA-cube(1x)=%.2f Mb\n",
-            M, L, (preset_mode==TRMODE_J)?'J':(preset_mode==TRMODE_L)?'L':(preset_mode==TRMODE_R)?'R':'T',
-            pp, cube*4.0/(1024.0*1024.0));
-  }
 
   for (v = 0; v < M; v++) {
     if (Joa[v]) trckpt_deck_free(&cx, v, Joa[v]);
@@ -6027,7 +5946,6 @@ cm_CheckptTrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float siz
 
   ESL_ALLOC(cx.deck_nc,  sizeof(int64_t) * M);
   ESL_ALLOC(cx.deck_njr, sizeof(int)     * M);
-  int64_t full_cube_cells = 0, root_cells = 0;
   int Delta = 0;
   for (v = 0; v < M; v++) {
     int njr = cx.jmax[v] - cx.jmin[v] + 1; if (njr < 0) njr = 0;
@@ -6035,9 +5953,6 @@ cm_CheckptTrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float siz
     int64_t nc = 0; int jp;
     for (jp = 0; jp < njr; jp++) { int w = hd_max(cp9b, v, jp)-hd_min(cp9b, v, jp)+1; if (w>0) nc += w; }
     cx.deck_nc[v] = nc;
-    int modes = (cx.Jv[v]?1:0) + ((cx.Lv[v]&&fill_L)?1:0) + ((cx.Rv[v]&&fill_R)?1:0);
-    full_cube_cells += (int64_t) modes * nc;
-    if (cm->stid[v]==ROOT_S || cm->stid[v]==BEGL_S || cm->stid[v]==BEGR_S) root_cells += nc;
     if (cm->sttype[v] != E_st && cm->sttype[v] != B_st) {
       int ymax = cm->cfirst[v] + cm->cnum[v] - 1;
       if (ymax - v > Delta) Delta = ymax - v;
@@ -6168,15 +6083,6 @@ cm_CheckptTrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float siz
 
   if ((status = cm_TrPostCodeHB(cm, errbuf, L, emit_mx, tr, (ret_ppstr != NULL) ? &ppstr : NULL, &avgpp)) != eslOK) goto ERROR;
 
-  if (getenv("INFERNAL_CKPT_VERBOSE")) {
-    double  full_mb = full_cube_cells * 4 / (1024.0*1024.0);
-    double  peak_mb = cx.peak_bytes / (1024.0*1024.0);
-    int64_t ecells  = emit_mx->l_ncells_valid + emit_mx->r_ncells_valid;
-    fprintf(stderr, "# cm_CheckptTrOptAccAlignHB: M=%d L=%d B=%d mode=%c pp=%.5f  OA-DP peak=%.2f Mb  full-OA-cube(1x)=%.2f Mb  win~%.1fx  emit_mx=%.2f Mb  root-cells(1x)=%.2f Mb\n",
-            M, L, B, (preset_mode==TRMODE_J)?'J':(preset_mode==TRMODE_L)?'L':(preset_mode==TRMODE_R)?'R':'T',
-            pp, peak_mb, full_mb, (peak_mb>0.)?full_mb/peak_mb:0.,
-            ecells*4.0/(1024.0*1024.0), root_cells*4.0/(1024.0*1024.0));
-  }
 
   for (v = 0; v < M; v++) { if (JAoa[v]) trckpt_deck_free(&cx,v,JAoa[v]); if (LAoa[v]) trckpt_deck_free(&cx,v,LAoa[v]); if (RAoa[v]) trckpt_deck_free(&cx,v,RAoa[v]); if (Toa[v]) trckpt_deck_free(&cx,v,Toa[v]); }
   free(JAoa); free(LAoa); free(RAoa); free(Toa); free(tJa); free(tLa); free(tRa); free(tJs); free(tLs); free(tRs);

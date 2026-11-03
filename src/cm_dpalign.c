@@ -797,60 +797,29 @@ cm_AlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do
 
   /* PrintDPCellsSaved_jd(cm, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, L); */
 
-  /* Sub-stage timing instrumentation.
-   * Outputs "#CM_ALIGN_HB_SUBSTAGE M=<M> L=<L> stage=<name> s=<seconds>" to stderr
-   * when INFERNAL_STAGE_VERBOSE is set.
-   */
-  struct timespec _ta_sub, _tb_sub;
-#define CM_ALIGN_SUBSTAGE_START()  clock_gettime(CLOCK_MONOTONIC, &_ta_sub)
-#define CM_ALIGN_SUBSTAGE_END(tag) do { \
-    clock_gettime(CLOCK_MONOTONIC, &_tb_sub); \
-    double _ss = (_tb_sub.tv_sec - _ta_sub.tv_sec) + (_tb_sub.tv_nsec - _ta_sub.tv_nsec)/1e9; \
-    if(cm_StageVerbose()) { \
-      fprintf(stderr, "#CM_ALIGN_HB_SUBSTAGE M=%d L=%d stage=%s s=%.6f\n", \
-              (cm->fp7 ? cm->fp7->M : 0), L, (tag), _ss); \
-      fflush(stderr); \
-    } \
-  } while(0)
-
   /* if do_post:   fill Inside, Outside, Posterior matrices, in that order.
    * if do_sample: fill Inside and sample from it.
    */
   if(do_post || do_sample) {
-    CM_ALIGN_SUBSTAGE_START();
     if((status = cm_InsideAlignHB (cm, errbuf, dsq, L, size_limit, mx, &ins_sc)) != eslOK) return status;
-    CM_ALIGN_SUBSTAGE_END("inside");
     if(do_sample) {
-      CM_ALIGN_SUBSTAGE_START();
       if((status = cm_StochasticParsetreeHB(cm, errbuf, dsq, L, mx, r, &tr, &sc)) != eslOK) return status;
-      CM_ALIGN_SUBSTAGE_END("sample_trace");
     }
     if(do_post) { /* Inside was called above, now do Outside, then Posterior */
-      CM_ALIGN_SUBSTAGE_START();
       if((status = cm_OutsideAlignHB(cm, errbuf, dsq, L, size_limit, ((cm->align_opts & CM_ALIGN_CHECKINOUT) && (! (cm->flags & CMH_LOCAL_END))), post_mx, mx, NULL)) != eslOK) return status;
-      CM_ALIGN_SUBSTAGE_END("outside");
       /* Note: we can only check the posteriors in cm_OutsideAlignHB() if local begin/ends are off */
-      CM_ALIGN_SUBSTAGE_START();
       if((status = cm_PosteriorHB       (cm, errbuf, L, size_limit, mx, post_mx, post_mx)) != eslOK) return status;
       if((status = cm_EmitterPosteriorHB(cm, errbuf, L, size_limit, post_mx, emit_mx, (cm->align_opts & CM_ALIGN_CHECKINOUT))) != eslOK) return status;
-      CM_ALIGN_SUBSTAGE_END("posterior");
     }
   }
 
   if(!do_sample) { /* if do_sample, we already have a parsetree */
-    CM_ALIGN_SUBSTAGE_START();
     if((status = cm_alignT_hb(cm, errbuf, dsq, L, size_limit, do_optacc, mx, shmx, emit_mx, &tr, (do_optacc) ? NULL : &sc)) != eslOK) return status;
-    CM_ALIGN_SUBSTAGE_END("traceback");
   }
 
   if(have_ppstr || do_optacc) {
-    CM_ALIGN_SUBSTAGE_START();
     if((status = cm_PostCodeHB(cm, errbuf, L, emit_mx, tr, (have_ppstr) ? &ppstr : NULL, &avgpp)) != eslOK) return status;
-    CM_ALIGN_SUBSTAGE_END("postcode");
   }
-
-#undef CM_ALIGN_SUBSTAGE_START
-#undef CM_ALIGN_SUBSTAGE_END
 
   /* Uncomment to dump emit map and parse tree */
   /* CMEmitMap_t *emap;
@@ -2032,7 +2001,6 @@ cm_CheckptAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   /* deck geometry + child/parent reach */
   ESL_ALLOC(cx.deck_nc,  sizeof(int64_t) * M);
   ESL_ALLOC(cx.deck_njr, sizeof(int)     * M);
-  int64_t full_cube_cells = 0;
   int Delta = 0, Delta_p = 0;
   for (v = 0; v < M; v++) {
     int njr = cx.jmax[v] - cx.jmin[v] + 1; if (njr < 0) njr = 0;
@@ -2041,7 +2009,6 @@ cm_CheckptAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
     int jp;
     for (jp = 0; jp < njr; jp++) { int w = hd_max(cp9b, v, jp)-hd_min(cp9b, v, jp)+1; if (w>0) nc += w; }
     cx.deck_nc[v] = nc;
-    full_cube_cells += nc;
     if (cm->sttype[v] != E_st) {
       int ymax = cm->cfirst[v] + cm->cnum[v] - 1;
       if (ymax - v > Delta) Delta = ymax - v;
@@ -2282,20 +2249,6 @@ cm_CheckptAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
   /* per-residue PP string + avg PP from the emit matrix */
   if ((status = cm_PostCodeHB(cm, errbuf, L, emit_mx, tr, (ret_ppstr != NULL) ? &ppstr : NULL, &avgpp)) != eslOK) goto ERROR;
 
-  if (getenv("INFERNAL_CKPT_VERBOSE")) {
-    double full_mb = 2.0 * full_cube_cells * 4 / (1024.0*1024.0);
-    double peak_mb = cx.peak_bytes / (1024.0*1024.0);
-    fprintf(stderr, "# cm_CheckptAlignHB engaged: M=%d L=%d B=%d Z=%.4f  CM-DP peak=%.2f Mb  full-cube(2x)=%.2f Mb  win~%.1fx\n",
-            M, L, B, Z_ckpt, peak_mb, full_mb, (peak_mb>0.) ? full_mb/peak_mb : 0.);
-    if (cx.have_el && cx.eldmax != NULL) { /* R-L.2: EL-deck banding footprint */
-      int64_t elcells = 0; int j;
-      for (j = 0; j <= L; j++) if (cx.eldmax[j] >= 0) elcells += (cx.eldmax[j] + 1);
-      double unbanded_mb = ((double)(L+1) * (double)(L+2) / 2.0) * 4 / (1024.0*1024.0); /* full O(L^2/2) per EL deck */
-      double banded_mb   = (double) elcells * 4 / (1024.0*1024.0);
-      fprintf(stderr, "#   EL-deck: banded=%.3f Mb/deck (%lld cells) vs unbanded O(L^2/2)=%.3f Mb/deck  reduction~%.1fx\n",
-              banded_mb, (long long) elcells, unbanded_mb, (banded_mb>0.)? unbanded_mb/banded_mb : 0.);
-    }
-  }
 
   /* free seed stores + scratch */
   for (v = 0; v < M; v++) { if (Astore[v]) ckpt_deck_free(&cx, v, Astore[v]); if (OAstore[v]) ckpt_deck_free(&cx, v, OAstore[v]); }
@@ -2466,14 +2419,6 @@ if ((status = cm_hb_mx_GrowTo(cm, omx, errbuf, cm->cp9b, L, size_limit)) != eslO
   if ((status = cm_PosteriorHB(cm, errbuf, L, size_limit, imx, omx, omx)) != eslOK) goto ERROR;
   if ((status = cm_EmitterPosteriorHB(cm, errbuf, L, size_limit, omx, emit_mx, FALSE)) != eslOK) goto ERROR;
 
-  if (getenv("INFERNAL_CKPT_VERBOSE")) {
-    int64_t cube=0; for (v=0;v<M;v++) cube += cx.deck_nc[v];
-    int64_t ecells = emit_mx->l_ncells_valid + emit_mx->r_ncells_valid;
-    /* largest bifurcation-free chain: contiguous non-B state run, cell count */
-    int64_t chain=0, best=0; for (v=0;v<M;v++){ if (cm->sttype[v]==B_st){ if(chain>best)best=chain; chain=0;} else chain+=cx.deck_nc[v]; } if(chain>best)best=chain;
-    fprintf(stderr, "# cm_PinPostAlignHB: M=%d L=%d Z=%.4f  full-IO-cube(2x)=%.2f Mb  emit_mx=%.2f Mb  largest-chain-cube=%.2f Mb (1x)\n",
-            M, L, Z, 2.0*cube*4/(1024.0*1024.0), ecells*4.0/(1024.0*1024.0), best*4.0/(1024.0*1024.0));
-  }
 
   cm_hb_mx_Destroy(imx); cm_hb_mx_Destroy(omx);
   free(cx.deck_nc); free(cx.deck_njr);
@@ -2575,7 +2520,6 @@ cm_CheckptPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_li
   /* deck geometry + linear child/parent reach (B-aware) */
   ESL_ALLOC(cx.deck_nc,  sizeof(int64_t) * M);
   ESL_ALLOC(cx.deck_njr, sizeof(int)     * M);
-  int64_t full_cube_cells = 0, root_cells = 0, bstate_cells = 0;
   int Delta = 0, Delta_p = 0;
   for (v = 0; v < M; v++) {
     int njr = cx.jmax[v] - cx.jmin[v] + 1; if (njr < 0) njr = 0;
@@ -2583,9 +2527,6 @@ cm_CheckptPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_li
     int64_t nc = 0; int jp;
     for (jp = 0; jp < njr; jp++) { int w = hd_max(cp9b, v, jp)-hd_min(cp9b, v, jp)+1; if (w>0) nc += w; }
     cx.deck_nc[v] = nc;
-    full_cube_cells += nc;
-    if (ckpt_is_chain_root(cm, v)) root_cells   += nc;
-    if (cm->sttype[v] == B_st)     bstate_cells += nc;
     /* child reach: skip B (cnum[B] = BEGR index, not a count) */
     if (cm->sttype[v] != E_st && cm->sttype[v] != B_st) {
       int ymax = cm->cfirst[v] + cm->cnum[v] - 1;
@@ -2776,14 +2717,6 @@ cm_CheckptPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_li
     }
   }
 
-  if (getenv("INFERNAL_CKPT_VERBOSE")) {
-    double  full_mb = 2.0 * full_cube_cells * 4 / (1024.0*1024.0);
-    double  peak_mb = cx.peak_bytes / (1024.0*1024.0);
-    int64_t ecells  = emit_mx->l_ncells_valid + emit_mx->r_ncells_valid;
-    fprintf(stderr, "# cm_CheckptPostAlignHB: M=%d L=%d B=%d Z=%.4f  CM-DP peak=%.2f Mb  full-IO-cube(2x)=%.2f Mb  win~%.1fx  emit_mx=%.2f Mb  root-cells(1x)=%.2f Mb  Bstate-cells(1x)=%.2f Mb\n",
-            M, L, B, Z_ckpt, peak_mb, full_mb, (peak_mb>0.) ? full_mb/peak_mb : 0.,
-            ecells*4.0/(1024.0*1024.0), root_cells*4.0/(1024.0*1024.0), bstate_cells*4.0/(1024.0*1024.0));
-  }
 
   for (v = 0; v < M; v++) if (Astore[v]) ckpt_deck_free(&cx, v, Astore[v]);
   free(Astore); free(ba); free(bb);
@@ -3097,11 +3030,6 @@ cm_PinOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
   /* per-residue PP string + avg PP from the emit matrix */
   if ((status = cm_PostCodeHB(cm, errbuf, L, emit_mx, tr, (ret_ppstr != NULL) ? &ppstr : NULL, &avgpp)) != eslOK) goto ERROR;
 
-  if (getenv("INFERNAL_CKPT_VERBOSE")) {
-    int64_t cube=0; for (v=0;v<M;v++) cube += cx.deck_nc[v];
-    fprintf(stderr, "# cm_PinOptAccAlignHB: M=%d L=%d pp=%.5f  full-OA-cube(1x)=%.2f Mb (+ yshadow ~%.2f Mb)\n",
-            M, L, pp, cube*4.0/(1024.0*1024.0), cube*1.0/(1024.0*1024.0));
-  }
 
   for (v = 0; v < M; v++) { if (OA[v]) ckpt_deck_free(&cx, v, OA[v]); if (ysh[v]) ckpt_cdeck_free(&cx, v, ysh[v]); }
   free(OA); free(ysh);
@@ -3194,7 +3122,6 @@ cm_CheckptOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_
   /* deck geometry + B-aware linear child reach (037/038 Delta-fix) */
   ESL_ALLOC(cx.deck_nc,  sizeof(int64_t) * M);
   ESL_ALLOC(cx.deck_njr, sizeof(int)     * M);
-  int64_t full_cube_cells = 0, root_cells = 0;
   int Delta = 0;
   for (v = 0; v < M; v++) {
     int njr = cx.jmax[v] - cx.jmin[v] + 1; if (njr < 0) njr = 0;
@@ -3202,8 +3129,6 @@ cm_CheckptOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_
     int64_t nc = 0; int jp;
     for (jp = 0; jp < njr; jp++) { int w = hd_max(cp9b, v, jp)-hd_min(cp9b, v, jp)+1; if (w>0) nc += w; }
     cx.deck_nc[v] = nc;
-    full_cube_cells += nc;
-    if (ckpt_is_chain_root(cm, v)) root_cells += nc;
     if (cm->sttype[v] != E_st && cm->sttype[v] != B_st) {
       int ymax = cm->cfirst[v] + cm->cnum[v] - 1;
       if (ymax - v > Delta) Delta = ymax - v;
@@ -3266,14 +3191,6 @@ cm_CheckptOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_
 
   if ((status = cm_PostCodeHB(cm, errbuf, L, emit_mx, tr, (ret_ppstr != NULL) ? &ppstr : NULL, &avgpp)) != eslOK) goto ERROR;
 
-  if (getenv("INFERNAL_CKPT_VERBOSE")) {
-    double full_mb = full_cube_cells * 4 / (1024.0*1024.0);   /* OA is 1 cube (vs posterior 2) */
-    double peak_mb = cx.peak_bytes / (1024.0*1024.0);
-    int64_t ecells = emit_mx->l_ncells_valid + emit_mx->r_ncells_valid;
-    fprintf(stderr, "# cm_CheckptOptAccAlignHB: M=%d L=%d B=%d pp=%.5f  OA-DP peak=%.2f Mb  full-OA-cube(1x)=%.2f Mb  win~%.1fx  emit_mx=%.2f Mb  root-cells(1x)=%.2f Mb\n",
-            M, L, B, pp, peak_mb, full_mb, (peak_mb>0.) ? full_mb/peak_mb : 0.,
-            ecells*4.0/(1024.0*1024.0), root_cells*4.0/(1024.0*1024.0));
-  }
 
   for (v = 0; v < M; v++) if (OAstore[v]) ckpt_deck_free(&cx, v, OAstore[v]);
   free(OAstore); free(tba); free(tysh);
@@ -3764,13 +3681,6 @@ cm_CheckptCYKAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
       if (tba[w])  { ckpt_deck_free (&cx, w, tba[w]);  tba[w]  = NULL; }
       if (tysh[w]) { ckpt_cdeck_free(&cx, w, tysh[w]); tysh[w] = NULL; } } }
 
-  if (getenv("INFERNAL_CKPT_VERBOSE")) {
-    int64_t full_cube_cells = 0; for (v = 0; v < M; v++) full_cube_cells += cx.deck_nc[v];
-    double full_mb = full_cube_cells * 4 / (1024.0*1024.0);
-    double peak_mb = cx.peak_bytes / (1024.0*1024.0);
-    fprintf(stderr, "# cm_CheckptCYKAlignHB (R1): M=%d L=%d B=%d sc=%.5f  CYK-DP peak=%.2f Mb  full-CYK-cube(1x)=%.2f Mb  win~%.1fx\n",
-            M, L, B, sc, peak_mb, full_mb, (peak_mb>0.) ? full_mb/peak_mb : 0.);
-  }
 
   for (v = 0; v < M; v++) if (CYstore[v]) ckpt_deck_free(&cx, v, CYstore[v]);
   free(CYstore); free(tba); free(tysh);
@@ -8167,62 +8077,17 @@ cm_OutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,
    * j-1: cells at d > d_max_nonimpos[j] are IMPOSSIBLE and propagate nothing.
    */
   if (cm->flags & CMH_LOCAL_END) {
-    if (getenv("EL_DMAX_DIAG")) {
-      int n_written_j = 0, d_max_total = 0, d_max_max = 0;
-      int n_nonimpos_j = 0, d_ni_total = 0, d_ni_max = 0;
-      for (j = 0; j <= L; j++) {
-        if (d_max_written[j] >= 0) {
-          n_written_j++;
-          d_max_total += d_max_written[j];
-          if (d_max_written[j] > d_max_max) d_max_max = d_max_written[j];
-        }
-        if (d_max_nonimpos[j] >= 0) {
-          n_nonimpos_j++;
-          d_ni_total += d_max_nonimpos[j];
-          if (d_max_nonimpos[j] > d_ni_max) d_ni_max = d_max_nonimpos[j];
-        }
+    for (j = L; j > 0; j--) {
+      if (d_max_written[j] < 0) continue; /* no EL writes for this j; skip */
+      if (d_max_nonimpos[j] < 0) {
+        /* all writes were IMPOSSIBLE; self-transition has no effect; skip */
+        continue;
       }
-      fprintf(stderr, "#EL_DMAX    M=%d L=%d n_written_j=%d avg_dmax_written=%.1f max_dmax_written=%d\n",
-              cm->M, L, n_written_j, n_written_j>0 ? (double)d_max_total/n_written_j : 0.0, d_max_max);
-      fprintf(stderr, "#EL_NONIMPOS M=%d L=%d n_nonimpos_j=%d avg_dmax_nonimpos=%.1f max_dmax_nonimpos=%d\n",
-              cm->M, L, n_nonimpos_j, n_nonimpos_j>0 ? (double)d_ni_total/n_nonimpos_j : 0.0, d_ni_max);
-      fflush(stderr);
-    }
-    /* DEBUG: verify d_max_nonimpos is correct before using it */
-    if (getenv("EL_DMAX_VERIFY")) {
-      for (j = 0; j <= L; j++) {
-        int true_dmax = -1;
-        for (d = (mx->el_banded ? d_max_written[j] : j); d >= 0; d--) { /* banded layout: no cells above d_max_written[j] */
-          if (NOT_IMPOSSIBLE(beta[cm->M][j][d])) { true_dmax = d; break; }
-        }
-        if (true_dmax != d_max_nonimpos[j]) {
-          fprintf(stderr, "BUG: j=%d d_max_nonimpos=%d true_dmax=%d\n",
-                  j, d_max_nonimpos[j], true_dmax);
-          fflush(stderr);
-        }
-      }
-    }
-    /* run the REFERENCE sweep (d_max_written) and save beta copy for comparison */
-    if (getenv("EL_SWEEP_COMPARE")) {
-      /* reference sweep */
-      for (j = L; j > 0; j--) {
-        if (d_max_written[j] < 0) continue;
-        for (d = d_max_written[j] - 1; d >= 0; d--)
-          beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[cm->M][j][d+1] + cm->el_selfsc));
-      }
-    } else {
-      for (j = L; j > 0; j--) {
-        if (d_max_written[j] < 0) continue; /* no EL writes for this j; skip */
-        if (d_max_nonimpos[j] < 0) {
-          /* all writes were IMPOSSIBLE; self-transition has no effect; skip */
-          continue;
-        }
-        /* sweep from d_max_nonimpos[j]-1 downward: the step at d_max_nonimpos[j] is always a
-         * no-op (beta[j][d_max_nonimpos[j]+1] is IMPOSSIBLE), so skip it and start one below.
-         * This also avoids a potential out-of-bounds access when d_max_nonimpos[j] == j. */
-        for (d = d_max_nonimpos[j] - 1; d >= 0; d--)
-          beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[cm->M][j][d+1] + cm->el_selfsc));
-      }
+      /* sweep from d_max_nonimpos[j]-1 downward: the step at d_max_nonimpos[j] is always a
+       * no-op (beta[j][d_max_nonimpos[j]+1] is IMPOSSIBLE), so skip it and start one below.
+       * This also avoids a potential out-of-bounds access when d_max_nonimpos[j] == j. */
+      for (d = d_max_nonimpos[j] - 1; d >= 0; d--)
+        beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[cm->M][j][d+1] + cm->el_selfsc));
     }
     free(d_max_written);
     d_max_written = NULL;

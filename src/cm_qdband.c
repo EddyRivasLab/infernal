@@ -11,10 +11,8 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <math.h>
 #include <float.h>
-#include <time.h>
 
 #include "easel.h"
 #include "esl_alphabet.h"
@@ -89,24 +87,6 @@ CalculateQueryDependentBands(CM_t *cm, char *errbuf, CM_QDBINFO *qdbinfo, double
    */
   Z = (cm->clen * 13) / 10;
 
-  /* ============ THROWAWAY INSTRUMENTATION (brief 26_0824-041) ============
-   * Entirely inert unless the env var is set to a NON-EMPTY value.
-   *   QDBZ_REPORT=<any> : print one "QDBZ ..." line per call to stderr,
-   *                       giving the wall-clock cost of this whole QDB call
-   *                       (all retries included) so the QDB window and the
-   *                       total cmbuild time come from the SAME run.
-   *   QDBBANDS_OUT=<f>  : append every state's dmin1/dmax1/dmin2/dmax2 to
-   *                       file <f>, for every QDB call (see the dump in
-   *                       BandCalculationEngine()).
-   * NOTE: getenv() returns a non-NULL pointer to "" for a set-but-empty
-   * variable, so every check below tests *e != '\0' as well.
-   * ====================================================================== */
-  {
-    struct timespec t0, t1;
-    const char     *rep = getenv("QDBZ_REPORT");
-    int             Zstart = Z, nretry = 0;
-    if(rep != NULL && *rep != '\0') clock_gettime(CLOCK_MONOTONIC, &t0);
-
   while((status = BandCalculationEngine(cm, Z, qdbinfo, beta_W, ret_W, NULL, ret_gamma0_loc, ret_gamma0_glb)) != eslOK) {
     if(status == eslEMEM)     ESL_FAIL(status, errbuf, "Calculating QDBs, out of memory");
     if(status != eslERANGE)   ESL_FAIL(status, errbuf, "Calculating QDBs, unexpected error");
@@ -116,19 +96,7 @@ CalculateQueryDependentBands(CM_t *cm, char *errbuf, CM_QDBINFO *qdbinfo, double
       int znew = (Z * 8) / 5;
       Z = (znew > Z) ? znew : (Z + 1);
     }
-    nretry++;
     if(Z > (cm->clen * 1000)) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "Calculating QDBs, Z got insanely large (> 1000*clen)");
-  }
-
-    if(rep != NULL && *rep != '\0') {
-      const char *tag = getenv("QDBZ_TAG");
-      clock_gettime(CLOCK_MONOTONIC, &t1);
-      fprintf(stderr, "QDBZ tag=%s clen=%d M=%d Zstart=%d Zfinal=%d retries=%d W=%d elapsed=%.4f\n",
-              (tag == NULL || *tag == '\0') ? "-" : tag, cm->clen, cm->M, Zstart, Z, nretry,
-              (ret_W == NULL ? -1 : *ret_W),
-              (double)(t1.tv_sec - t0.tv_sec) + 1e-9*(double)(t1.tv_nsec - t0.tv_nsec));
-      fflush(stderr);
-    }
   }
 
   if(ret_Z != NULL) *ret_Z = Z;
@@ -265,15 +233,10 @@ BandCalculationEngine(CM_t *cm, int Z, CM_QDBINFO *qdbinfo, double beta_W,
    * state contributes non-negligible mass at, by exactly the standard the
    * function-level truncation check below already applies.  Once n*_y is
    * known for a state's children, the parent's own recursion loops can be
-   * bounded instead of running the full 0..Z range.  eb_on is a
-   * development-only A/B switch (QDBTRUNC=0 restores the old full-range
-   * behavior in the same binary); it defaults to on.
+   * bounded instead of running the full 0..Z range.
    */
   int     *eb_nstar    = NULL;   /* eb_nstar[v] = n*_v, or -1 if gamma[v] is everywhere negligible */
-  int      eb_on       = TRUE;   /* FALSE reverts to the pre-041 full 0..Z loops */
-  int      eb_guard    = TRUE;   /* brief 26_0824-042: FALSE reverts the truncation threshold to 041's max_beta */
   double   eb_thresh   = 0.;     /* the truncation's negligibility standard; see the block comment below */
-  const char *eb_env;
 
   if(qdbinfo != NULL && ((qdbinfo->beta2 - qdbinfo->beta1) > 1E-20)) return eslEINVAL;
   max_beta = beta_W;
@@ -304,15 +267,10 @@ BandCalculationEngine(CM_t *cm, int Z, CM_QDBINFO *qdbinfo, double beta_W,
    * verdict is unchanged rather than fabricated.
    */
   {
-    const char *g = getenv("QDBGUARD");
-    if(g != NULL && g[0] == '0') eb_guard = FALSE;
-  }
-  if(eb_guard) {
     double min_beta = beta_W;
     if(qdbinfo != NULL) min_beta = ESL_MIN(min_beta, ESL_MIN(qdbinfo->beta1, qdbinfo->beta2));
     eb_thresh = min_beta * DBL_EPSILON;
   }
-  else eb_thresh = max_beta * DBL_EPSILON;
 
   /* Make copies of cm->t, cm->begin and cm->trbegin, so we can 
    * modify the copies without changing the originals. 
@@ -348,8 +306,6 @@ BandCalculationEngine(CM_t *cm, int Z, CM_QDBINFO *qdbinfo, double beta_W,
   beamstack = esl_stack_PCreate();
 
   /* brief 26_0824-041: per-state early-truncation bookkeeping. */
-  eb_env = getenv("QDBTRUNC");
-  if(eb_env != NULL && eb_env[0] == '0') eb_on = FALSE;
   ESL_ALLOC(eb_nstar, sizeof(int) * cm->M);
   for (v = 0; v < cm->M; v++) eb_nstar[v] = -1;
 
@@ -408,19 +364,14 @@ BandCalculationEngine(CM_t *cm, int Z, CM_QDBINFO *qdbinfo, double beta_W,
        * this is an empirical argument, validated by byte-identity over the
        * gate panel, not a proof.
        */
-      int eb_lo = 0, eb_hi = Z, eb_ln = 0, eb_rn = 0;
+      int eb_hi, eb_ln, eb_rn;
       pdf = 0.;
-      if(eb_on) {
-	eb_ln = eb_nstar[cm->cfirst[v]]; if(eb_ln < 0) eb_ln = 0;
-	eb_rn = eb_nstar[cm->cnum[v]];   if(eb_rn < 0) eb_rn = 0;
-	eb_hi = ESL_MIN(Z, eb_ln + eb_rn);
-      }
-      for (n = eb_lo; n <= eb_hi; n++) { 
-	int llo = 0, lhi = n;
-	if(eb_on) { 
-	  llo = ESL_MAX(0, n - eb_rn);
-	  lhi = ESL_MIN(n, eb_ln);
-	}
+      eb_ln = eb_nstar[cm->cfirst[v]]; if(eb_ln < 0) eb_ln = 0;
+      eb_rn = eb_nstar[cm->cnum[v]];   if(eb_rn < 0) eb_rn = 0;
+      eb_hi = ESL_MIN(Z, eb_ln + eb_rn);
+      for (n = 0; n <= eb_hi; n++) { 
+	int llo = ESL_MAX(0, n - eb_rn);
+	int lhi = ESL_MIN(n, eb_ln);
 	for (leftn = llo; leftn <= lhi; leftn++) {
 	  gamma[v][n] += gamma[cm->cfirst[v]][leftn]*gamma[cm->cnum[v]][n-leftn];
 	}
@@ -462,8 +413,8 @@ BandCalculationEngine(CM_t *cm, int Z, CM_QDBINFO *qdbinfo, double beta_W,
        * below the same threshold.  As for bifurcations, gamma[v] is
        * zero-filled beforehand so skipped entries are exactly 0.0.
        */
-      int eb_nonself_bnd = Z;
-      if(eb_on) { 
+      int eb_nonself_bnd;
+      { 
 	int base = dv;
 	for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
 	  y = cm->cfirst[v] + yoffset;
@@ -493,23 +444,15 @@ BandCalculationEngine(CM_t *cm, int Z, CM_QDBINFO *qdbinfo, double beta_W,
       if (self_yoffset != -1) {
 	double aself    = (double) t_copy[v][self_yoffset];
 	double *gamma_v = gamma[v];
-	if(eb_on) { 
-	  int eb_K = 64;
-	  int eb_bnd = Z;
-	  for (n = dv; n <= Z; n++) {
-	    gamma_v[n] += aself * gamma_v[n-dv];
-	    if (n > eb_nonself_bnd && ((n - eb_nonself_bnd) % eb_K == 0)) {
-	      if (gamma_v[n] < eb_thresh) { eb_bnd = n; break; }
-	    }
+	int eb_K    = 64;
+	int eb_bnd  = Z;
+	for (n = dv; n <= Z; n++) {
+	  gamma_v[n] += aself * gamma_v[n-dv];
+	  if (n > eb_nonself_bnd && ((n - eb_nonself_bnd) % eb_K == 0)) {
+	    if (gamma_v[n] < eb_thresh) { eb_bnd = n; break; }
 	  }
-	  eb_final_bnd = eb_bnd;
 	}
-	else { 
-	  for (n = dv; n <= Z; n++) {
-	    gamma_v[n] += aself * gamma_v[n-dv];
-	  }
-	  eb_final_bnd = Z;
-	}
+	eb_final_bnd = eb_bnd;
       }
       for (n = dv; n <= eb_final_bnd; n++) {
 	pdf += gamma[v][n];
@@ -520,7 +463,7 @@ BandCalculationEngine(CM_t *cm, int Z, CM_QDBINFO *qdbinfo, double beta_W,
      * downward from Z; entries the bounded loops above skipped are exactly
      * 0.0 and so fall below the threshold, as intended.
      */
-    if(eb_on) { 
+    { 
       int    eb_ns     = -1;
       for (n = Z; n >= 0; n--) {
 	if (gamma[v][n] >= eb_thresh) { eb_ns = n; break; }
@@ -532,8 +475,8 @@ BandCalculationEngine(CM_t *cm, int Z, CM_QDBINFO *qdbinfo, double beta_W,
     if(begin_copy[v] > 0.) { /* standard local begin transition into v is possible */
       /* brief 26_0824-041: beyond n*_v this state contributes nothing
        * non-negligible to gamma[0] either. */
-      int eb_begin_bnd = Z;
-      if(eb_on) { int vn = eb_nstar[v]; if(vn < 0) vn = 0; eb_begin_bnd = ESL_MIN(Z, vn); }
+      int eb_begin_bnd;
+      { int vn = eb_nstar[v]; if(vn < 0) vn = 0; eb_begin_bnd = ESL_MIN(Z, vn); }
       for (n = 0; n <= eb_begin_bnd; n++) { 
 	gamma[0][n] += begin_copy[v] * gamma[v][n];
 	/* Note: we only consider possible standard local
@@ -664,47 +607,7 @@ BandCalculationEngine(CM_t *cm, int Z, CM_QDBINFO *qdbinfo, double beta_W,
       goto ERROR; 
     }
 
-  /* THROWAWAY (brief 26_0824-041): NEGATIVE CONTROL. Deliberately corrupt one
-   * band value so we can confirm the gate (both the .cm diff and the
-   * QDBBANDS_OUT per-state comparison) actually turns red when a band moves.
-   * QDBPERTURB=<v>[,<which>] where which is 1=dmin1 2=dmax1 3=dmin2 4=dmax2
-   * (default 4). Inert unless set to a non-empty value. */
-  {
-    const char *pb = getenv("QDBPERTURB");
-    if(pb != NULL && *pb != '\0' && qdbinfo != NULL) {
-      int pv = atoi(pb), pw = 4;
-      const char *comma = strchr(pb, ',');
-      if(comma != NULL) pw = atoi(comma+1);
-      if(pv >= 0 && pv < cm->M) {
-        if      (pw == 1) qdbinfo->dmin1[pv] += 1;
-        else if (pw == 2) qdbinfo->dmax1[pv] += 1;
-        else if (pw == 3) qdbinfo->dmin2[pv] += 1;
-        else              qdbinfo->dmax2[pv] += 1;
-      }
-    }
-  }
-
   if(qdbinfo != NULL) qdbinfo->setby = CM_QDBINFO_SETBY_BANDCALC;
-
-  /* THROWAWAY (brief 26_0824-041): dump all four band arrays for every
-   * state so an eb-on run can be compared against an eb-off run
-   * per-state, not just via the .cm file. Inert unless QDBBANDS_OUT is
-   * set to a non-empty path. */
-  {
-    const char *bd = getenv("QDBBANDS_OUT");
-    if(bd != NULL && *bd != '\0' && qdbinfo != NULL) {
-      const char *tag = getenv("QDBZ_TAG");
-      FILE *bfp = fopen(bd, "a");
-      if(bfp != NULL) {
-        fprintf(bfp, "# CALL tag=%s clen=%d M=%d Z=%d W=%d\n",
-                (tag == NULL || *tag == '\0') ? "-" : tag, cm->clen, cm->M, Z, W);
-        for (v = 0; v < cm->M; v++)
-          fprintf(bfp, "%d %d %d %d %d\n", v, qdbinfo->dmin1[v], qdbinfo->dmax1[v],
-                  qdbinfo->dmin2[v], qdbinfo->dmax2[v]);
-        fclose(bfp);
-      }
-    }
-  }
 
   /*if(qdbinfo != NULL) DumpCMQDBInfo(stdout, cm, qdbinfo);*/
 
