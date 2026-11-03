@@ -32,8 +32,8 @@
 
 static ESL_OPTIONS options[] = {
   /* name               type  default   env  range   toggles        reqs      incomp  help                                                         docgroup */
-  { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,       NULL, "show brief help and exit",                                         0 },
-  { "--version", eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,       NULL, "show version info and exit",                                       0 },
+  { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,       NULL, "show brief help and exit",                                         1 },
+  { "--version", eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,       NULL, "show version info and exit",                                       1 },
   { "--devhelp", eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,       NULL, "show list of otherwise hidden developer/expert options",           1 },
   { "-a",        eslARG_NONE,"default",NULL, NULL,   OUTOPTS,       NULL,       NULL, "ascii:  output models in Infernal ASCII format",                   1 },
   { "-b",        eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "binary: output models in Infernal binary format",                  1 },

@@ -123,7 +123,7 @@ static ESL_OPTIONS options[] = {
   { "-g",            eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "configure CM for global alignment [default: local]", 1 },
   { "--devhelp",     eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "show list of otherwise hidden developer/expert options", 1 },
   /* options controlling the alignment algorithm */
-  { "--optacc",      eslARG_NONE,   "default", NULL,        NULL,    ALGOPTS,        NULL,     "--small", "use the Holmes/Durbin optimal accuracy algorithm  [default]",     2 },
+  { "--optacc",      eslARG_NONE,   "default", NULL,        NULL,    ALGOPTS,        NULL,     "--small", "use the Holmes/Durbin optimal accuracy algorithm",                2 },
   { "--cyk",         eslARG_NONE,       FALSE, NULL,        NULL,    ALGOPTS,        NULL,          NULL, "use the CYK algorithm",                                           2 },
   { "--sample",      eslARG_NONE,       FALSE, NULL,        NULL,    ALGOPTS,        NULL,     "--small", "sample alignment of each seq from posterior distribution",        2 },
   { "--seed",         eslARG_INT,       "181", NULL,      "n>=0",       NULL,  "--sample",          NULL, "w/--sample, set RNG seed to <n> (if 0: one-time arbitrary seed)", 2 },
@@ -133,7 +133,7 @@ static ESL_OPTIONS options[] = {
   { "--hmmnoband",   eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--hmm",   "--hmmvit", "w/--hmm, do not use p7 bands for OA alignment",                  2 },
   { "--nohmm",       eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,        "--hmm", "do not auto-switch to HMM mode on 0-basepair CMs",               2 },
   /* options affecting speed and memory */
-  { "--hbanded",     eslARG_NONE,   "default", NULL,        NULL,    ACCOPTS,        NULL,                     NULL, "accelerate using CM plan 9 HMM derived bands [default: CLEN<=4000]", 3 },
+  { "--hbanded",     eslARG_NONE, "default: CLEN<=4000", NULL, NULL, ACCOPTS,        NULL,                     NULL, "accelerate using CM plan 9 HMM derived bands", 3 },
   { "--tau",         eslARG_REAL,      "1e-7", NULL, "1e-18<x<1",       NULL,        NULL,            "--nonbanded", "set tail loss prob for HMM bands to <x>",                    3 },
   { "--mxsize",      eslARG_REAL,    "1024.0", NULL,      "x>0.",       NULL,        NULL,                     NULL, "set maximum allowable DP matrix size to <x> Mb",             3 },
   { "--fixedtau",    eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,            "--nonbanded", "do not adjust tau (tighten bands) until mx < limit", 3 },
@@ -773,8 +773,9 @@ maybe_kmerchain_default(ESL_GETOPTS *go, CM_t *cm)
   }
   else {
     /* --hbanded is on by default and its default value is the string
-     * "default", which is also what typing it stores, so esl_opt_IsUsed()
-     * and esl_opt_IsDefault() can't tell typed from default; the setter can. */
+     * "default: CLEN<=4000" (shown by -h), which is also what typing it
+     * stores, so esl_opt_IsUsed() and esl_opt_IsDefault() can't tell typed
+     * from default; the setter can. */
     if ((esl_opt_GetSetter(go, "--hbanded") != eslARG_SETBY_DEFAULT && esl_opt_GetBoolean(go, "--hbanded")) ||
         esl_opt_GetBoolean(go, "--nonbanded") ||
         esl_opt_GetBoolean(go, "--p7band")  || esl_opt_GetBoolean(go, "--small")     ||
