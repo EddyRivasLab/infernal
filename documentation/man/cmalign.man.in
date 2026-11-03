@@ -60,13 +60,37 @@ less memory than the
 calculation. Use
 .B --hbanded
 to get the plan 9 HMM bands for such a model. Models with zero
-basepairs are aligned with the profile HMM alone (no CM) unless
+basepairs are aligned with the profile HMM alone (no CM), as with
+.B --hmm,
+unless
 .B --nohmm
-is used; above CLEN 4000 they also use the k-mer chain bands by
-default, and
+is used, or one of
+.B --cyk,
+.B --sample,
+.B --small
+or
+.B --p7band.
+Their bands are derived from the HMM's Forward and Backward
+posterior probabilities (as with
+.B --p7ibv)
+for models of CLEN 4000 or less, and from k-mer chains above
+that;
 .B --hmm --p7ibv
-selects the Forward/Backward-derived bands used for smaller models
-instead. The bands chosen are reported in the output header.
+selects the Forward/Backward bands for the longer models too. The
+alignment method and the bands chosen are reported in the output
+header.
+
+.PP
+The memory used to align each sequence is limited by the
+.B --mxsize
+option (1024 Mb by default). When the default algorithm would need
+more,
+.B cmalign
+switches automatically to versions of its algorithms that need less
+memory (see
+.B --mxsize
+for details), so that, for example, whole viral genomes can be
+aligned to models of whole viral genomes with default settings.
 
 .PP
 By default, 
@@ -231,6 +255,19 @@ columns in the RF line of the output alignment. The
 .B -g 
 option can be used to disallow these local ends.
 
+.TP
+.B --devhelp
+Print help, as with  
+.B "-h",
+but also include expert options that are not displayed with 
+.B "-h". 
+These expert options are not expected to be relevant for the vast
+majority of users and so are not described in the manual page.  The
+only resources for understanding what they actually do are the brief
+one-line descriptions output when
+.B "--devhelp"
+is enabled, and the source code.
+
 .SH OPTIONS FOR CONTROLLING THE ALIGNMENT ALGORITHM
 
 .TP
@@ -284,6 +321,60 @@ The default seed is 181.
 Turn off truncated alignment algorithms. 
 All sequences in the input file will be assumed to be full length.
 
+.TP
+.B --hmm
+Align with the model's profile HMM (its maximum likelihood p7 HMM)
+instead of the CM. Base pairing is not modeled, so the alignment
+uses only the primary sequence information in the model, but it is
+faster than CM alignment and needs less memory. This is the
+default for models with zero basepairs (see
+.B --nohmm).
+As with CM alignment, the default algorithm is optimal accuracy,
+constrained by bands: for models of CLEN 4000 or less, the bands are
+drawn around the HMM's Viterbi alignment of the sequence, and for
+longer models they are k-mer chain bands (see
+.B --p7kmerchain).
+.B --p7ibv
+selects Forward/Backward-derived bands instead.
+The scores reported are HMM bit scores, which are not comparable to
+CM bit scores. The output alignment includes the model's consensus
+secondary structure annotation, but the alignment does not take it
+into account.
+Truncated alignment is on by default, as for CM alignment, and in that
+mode
+.B -g
+has no effect; with
+.B --notrunc,
+.B -g
+configures the HMM for global alignment.
+.B --hmm
+cannot be combined with
+.B --small.
+
+.TP
+.B --hmmvit
+With
+.B --hmm,
+report the HMM's Viterbi (maximum likelihood) alignment instead of
+the optimal accuracy alignment. This is faster, but less accurate, and
+the alignment has no posterior probability annotation.
+
+.TP
+.B --hmmnoband
+With
+.B --hmm,
+compute the optimal accuracy alignment without bands. This guarantees
+the optimally accurate HMM alignment, at the cost of time and memory
+proportional to the product of the model length and the sequence
+length.
+
+.TP
+.B --nohmm
+Align models with zero basepairs with the CM, instead of switching
+automatically to HMM alignment
+.RB ( --hmm )
+for them.
+
 .SH OPTIONS FOR CONTROLLING SPEED AND MEMORY REQUIREMENTS
 
 .TP
@@ -335,42 +426,83 @@ bands.
 
 .TP
 .BI --mxsize " <x>"
-Set the maximum allowable total DP matrix size to 
+Set the maximum allowable total DP matrix size for aligning one
+sequence to
 .I <x>
 megabytes. By default this size is 1024 Mb. 
-This should be large enough for the vast majority of alignments,
-however if it is not 
-.B cmalign 
-will attempt to iteratively tighten the HMM bands it uses to constrain the
-alignment by raising the tau parameter and recalculating the bands
-until the total matrix size needed falls below 
+The limit applies to the alignment matrices, to the matrices of HMM
+alignment
+.RB ( --hmm ),
+and to the calculation of the plan 9 HMM bands of
+.B --hbanded.
+It does not limit the calculation of bands from the profile HMM with
+.B --p7band
+(see
+.B --p7ibv-mem).
+If the matrices for calculating the plan 9 HMM bands
+would exceed 
+.I <x>
+megabytes,
+.B cmalign
+calculates the same bands with a checkpointed version of the
+calculation, which needs less memory.
+
+If the banded CM alignment matrices would exceed
+.I <x>
+megabytes,
+.B cmalign
+first tightens the plan 9 HMM bands, by raising the tau parameter and
+recalculating the bands until the total matrix size needed falls below 
 .I <x>
 megabytes or the maximum allowable tau value (0.05 by default, but
 changeable with 
 .B --maxtau)
 is reached. At each iteration of band tightening, tau is multiplied by
-a 2.0. The band tightening strategy can be turned off with the 
+2.0. The band tightening strategy can be turned off with the 
 .B --fixedtau
-option.
-If the maximum tau is reached and the required matrix size still exceeds 
+option. Bands derived from the profile HMM
+.RB ( --p7band ,
+and the default k-mer chain bands for models with CLEN greater than
+4000) are not tightened, except with
+.B --cyk
+or
+.B --sample.
+If the matrices still exceed
 .I <x>
-or if HMM banding is not being used and the required matrix size exceeds
+megabytes,
+.B cmalign
+switches to an alignment algorithm that needs less memory: first a
+checkpointed version of the optimal accuracy algorithm (whose
+alignment can differ slightly from the standard one), and if that
+does not fit either, the divide and conquer CYK algorithm (see
+.B --small)
+within the bands, which reports the maximum likelihood alignment and no
+posterior probabilities for that sequence. These switches are made for
+each sequence separately, only for sequences that need them, and only
+with the default optimal accuracy algorithm with bands (not with
+.B --cyk,
+.B --sample,
+.B --nonbanded
+or
+.B --small).
+
+If no alignment algorithm fits within
 .I <x>
-then 
+megabytes, 
 .B cmalign 
-will exit prematurely and report an error message that 
-the matrix exceeded its maximum allowable size. In this case, the
+exits with an error message reporting the sizes needed, and
 .B --mxsize 
-can be used to raise the size limit or the maximum tau
-can be raised with
-.B --maxtau.
+can be used to raise the limit. If the band calculation itself does
+not fit, or if an HMM alignment (with
+.B --hmm)
+does not fit, the error message suggests a value of
+.B --mxsize
+that is large enough.
 The limit will commonly be exceeded when the 
 .B --nonbanded
 option is used without the
 .B --small 
-option, but can still occur when
-.B --nonbanded 
-is not used. Note that if 
+option. Note that if 
 .B cmalign
 is being run in 
 .I <n>
@@ -385,7 +517,10 @@ Mb at any given time.
 Turn off the HMM band tightening strategy described in the explanation
 of the 
 .B --mxsize
-option above.
+option above. Sequences that need more memory than the
+.B --mxsize
+limit are then aligned with the lower-memory algorithms described
+there instead.
 
 .TP
 .BI --maxtau " <x>"
@@ -409,6 +544,82 @@ option is recommended in combination with this option, because
 standard alignment without HMM banding requires a lot of memory (see
 .B --small
 ).
+
+.TP
+.B --p7band
+Derive the bands that constrain CM alignment from the model's profile
+HMM (its maximum likelihood p7 HMM) instead of from the CM plan 9 HMM
+used by
+.B --hbanded.
+By default the bands are drawn around the profile HMM's Viterbi
+alignment of the sequence, widened by a fixed number of positions;
+.B --p7ibv
+and
+.B --p7kmerchain
+select other ways of deriving them. For models with CLEN greater than
+4000,
+.B --p7band --p7kmerchain
+is the default (see DESCRIPTION). These bands are not tightened to fit
+the
+.B --mxsize
+limit (see
+.B --mxsize).
+
+.TP
+.B --p7ibv
+With
+.B --p7band
+or
+.B --hmm,
+derive the bands from the profile HMM's Forward and Backward
+calculations: each sequence position is allowed to align to the model
+positions through which an alignment scores within a fixed margin of
+the best one. Unlike the default bands of
+.B --p7band,
+which are drawn around a single alignment, these bands take all
+alignments of the sequence into account, but they take longer to
+calculate: for a 30 kb viral genome, about three times longer than
+the default
+.B --p7band
+bands, and about a hundred times longer than the k-mer chain bands of
+.B --p7kmerchain.
+With
+.B --hmm,
+the band calculation uses the low-memory method of
+.B --p7ibv-mem.
+
+.TP
+.B --p7ibv-mem
+With
+.B --p7ibv,
+calculate the same bands with a divide and conquer method that needs
+memory proportional to the model length times the logarithm of the
+sequence length, instead of to the model length times the sequence
+length. For a 30 kb viral genome it took about 1.5 times as long and a
+thirtieth of the memory (0.7 Gb instead of 21 Gb). It is always used with
+.B --hmm.
+
+.TP
+.B --p7kmerchain
+With
+.B --p7band
+or
+.B --hmm,
+derive the bands from exact k-mer matches between the sequence and the
+model's consensus sequence, chained into one colinear set of anchors.
+This band calculation is very fast and needs little memory, and is
+the default for models with CLEN greater than 4000. A sequence with no
+k-mer match long enough to anchor a chain is banded another way
+instead: with
+.B --p7band,
+with the plan 9 HMM bands of
+.B --hbanded;
+with
+.B --hmm,
+with the bands of
+.B --p7ibv.
+It cannot be combined with
+.B --p7ibv.
 
 .TP
 .B --small

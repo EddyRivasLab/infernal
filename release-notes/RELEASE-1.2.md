@@ -39,12 +39,27 @@
    to the null3-on parameters for a `--nonull3` search, with a
    one-time warning.
 
- * **New CM file format `INFERNAL1/d`**, which adds the null3-off
-   parameter block above and consensus pseudoknot annotation (`PKNOT`)
-   to the model header and node lines. Older Infernal binaries cleanly
-   reject an `INFERNAL1/d` binary CM file rather than misreading it;
-   the ASCII format identifier and CM files without either addition
-   are unaffected.
+ * **New CM file format `INFERNAL1/e`, written by `cmbuild`.** CM
+   files no longer store a separately built filter HMM after each CM.
+   The filter HMM is now the CM's maximum likelihood p7 HMM; it and
+   the HMM used for HMM-only search (`--hmmonly`) are derived from the
+   CM whenever the file is read, and the file stores only their
+   E-value parameters. The format also adds the null3-off E-value
+   parameters above and consensus pseudoknot annotation (`PKNOT`).
+   Infernal 1.1 cannot read `INFERNAL1/e` files: it stops with a file
+   format error rather than misreading them.
+
+   Infernal 1.2 still reads Infernal 1.1 (`INFERNAL1/a`) CM files, and
+   uses the filter HMM stored in them. `cmconvert` writes such a file
+   back in `INFERNAL1/a` by default, so Infernal 1.1 can still read
+   it; `cmconvert --upgrade` converts it to `INFERNAL1/e`, deriving and
+   calibrating the HMMs as `cmbuild` would. `cmconvert --outfmt 1/a`
+   writes an `INFERNAL1/e` model in a format Infernal 1.1 can read.
+   Infernal v1.0 CM files must still be converted with `cmconvert`,
+   which now writes them in `INFERNAL1/e`. The `cmbuild` options
+   `--p7ere`, `--p7prior`, `--p7hprior` and `--p7hemit`, which
+   controlled how the separate filter HMM was built, have been
+   removed; `--p7ml` is still accepted and has no effect.
 
  * **Known limitations of the new analytically-predicted E-values:**
    - Predicted `--nonull3` E-values are accurate for local-mode search
@@ -67,6 +82,52 @@
      the above and were validated to be effectively identical to prior
      `cmcalibrate`-derived values, including on the `rmark4h` benchmark.
 
+ * **`cmalign` can align whole viral genomes with default settings.**
+   In 1.1.5, aligning a SARS-CoV-2 genome (about 30 kb) to a model
+   built from one needed about 28 Gb for the HMM band calculation
+   alone, and was then refused at the default `--mxsize` after almost
+   an hour; longer genomes crashed (github issue #74). In 1.2 a
+   SARS-CoV-2 genome aligns to such a model in about 1 second using
+   0.2 Gb (with the default HMM alignment for a model with no
+   basepairs, below), or in 2 seconds using 0.4 Gb when aligned with
+   the CM (`--nohmm`). The changes that make this possible:
+   - For models with consensus length (CLEN) greater than 4000, the
+     bands that constrain the alignment are derived from exact k-mer
+     matches between each sequence and the model's consensus sequence,
+     chained into a colinear set of anchors (`--p7band --p7kmerchain`).
+     For the genome above, CM alignment with these bands was about 100
+     times faster than with the plan 9 HMM bands used for smaller
+     models, which `--hbanded` still selects.
+   - `--mxsize` now also limits the memory of the plan 9 HMM band
+     calculation, which is done in a checkpointed, lower-memory form
+     when the full matrices do not fit. When the alignment matrices
+     for a sequence do not fit, `cmalign` switches automatically, for
+     that sequence only, to a checkpointed version of the optimal
+     accuracy algorithm, and then to the divide-and-conquer CYK
+     algorithm, before it stops with an error.
+   - HMM alignment computes its Forward and Backward scores in double
+     precision, and CM alignment rescales its scores during the
+     calculation, so that single-precision rounding error no longer
+     accumulates along very long sequences.
+
+   The alignment method and bands used are reported in the `cmalign`
+   output header.
+
+ * **`cmalign` aligns models with no basepairs with their profile
+   HMM** instead of the CM, which is faster and needs less memory. The
+   new `--nohmm` option keeps such models on the CM. The new `--hmm`
+   option selects HMM alignment for any model, and `--hmmvit` and
+   `--hmmnoband` select its Viterbi alignment or its unbanded optimal
+   accuracy alignment. HMM alignment scores are HMM bit scores, and
+   are not comparable to CM bit scores.
+
+ * **New `cmalign` band options.** `--p7band` derives the bands for CM
+   alignment from the model's profile HMM instead of its plan 9 HMM;
+   `--p7ibv` (bands from Forward/Backward, with `--p7ibv-mem` for a
+   low-memory version) and `--p7kmerchain` (k-mer chain bands) choose
+   how. They also apply to HMM alignment (`--hmm`). See the `cmalign`
+   man page.
+
  * **`cmalign --sub` and `cmbuild --refine --sub` have been removed.**
    `--sub` aligned each sequence to a sub-CM covering the consensus
    columns that an HMM predicted for its first and last residues. It
@@ -77,6 +138,50 @@
    equivalent of `-g --sub --notrunc`, use `-g` without `--notrunc`.
    Command lines that pass `--sub` now fail with an unknown-option
    error.
+
+## Bug fixes:
+
+ * fixes `cmalign` crashing (segmentation fault, no error message)
+   when (sequence length + 1) x (model CLEN + 1) exceeds 2^31, for
+   example when aligning a genome to a genome-length model of more
+   than about 46 kb (github issue #74).
+
+ * fixes truncated alignment silently failing for models with a CLEN
+   of 46,341 or more, because of an integer overflow (github issue
+   #59).
+
+ * fixes `cmalign`'s HMM-banded Outside algorithm writing local-end
+   (EL) matrix cells outside their valid range, which changed some
+   local alignments (github issue #64).
+
+ * fixes `cmalign --nonbanded` crashing on a NaN score in truncated
+   alignment (github issue #52).
+
+ * fixes `cmalign --mapali` corrupting rows of the included alignment
+   that begin with `~` (github issue #61).
+
+ * fixes `cmbuild -O` intermittently writing one row of the resaved
+   alignment truncated and filled with stray bytes (github issue #66).
+
+ * fixes `cmbuild --eset 0` writing models that could not be read,
+   for alignments with no basepairs and for `--p7ml` builds (github
+   issue #57).
+
+ * fixes `cmbuild` aborting with "xl,xr do not bracket a root" during
+   entropy weighting for some alignments (github issue #71).
+
+ * fixes the `bias` column of HMM-only `cmsearch` and `cmscan` hits
+   being reported in nats instead of bits (github issue #55).
+
+ * fixes `cmsearch` and `cmscan` `--incT` working only when `-T` was
+   also used (github issue #40).
+
+ * fixes a `cmbuild --refine` bug related to fragments (github issue
+   #42).
+
+ * consensus structure lines now annotate single-stranded positions
+   between top-level stems as `:` (full WUSS notation) instead of `-`
+   or `,` (github issue #69).
 
 Infernal 1.2 is not yet released; this notes file will be finalized at
 release time.
