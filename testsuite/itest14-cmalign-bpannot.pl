@@ -169,10 +169,12 @@ reread_ok("$tmppfx.big.sto", "$tmppfx.big.sto.rr", "subtest 6 (multi-block, merg
 unlink "$tmppfx.big.sto.rr";
 
 ######################################################################
-# Subtest 7 (brief 023, Part A): --sub partial-span. Fragmentary targets that
-# cover only PART of the model build per-seq sub-CMs that span only a sub-range
-# of the consensus. The annotation is computed post-hoc against the FULL cm
-# (emap/ct/cmcons), so the marks must stay correct and the line re-readable:
+# Subtest 7 (brief 023, Part A): partial-span. Fragmentary targets that cover
+# only PART of the model, aligned glocally (-g) with truncation allowed, give
+# parses that span only a sub-range of the consensus. (This subtest used
+# -g --sub --notrunc until --sub was removed, brief 26_0821-173.) The
+# annotation is computed post-hoc against the FULL cm (emap/ct/cmcons), so the
+# marks must stay correct and the line re-readable:
 #   - the cpos!=clen RF-length guard must NOT trip on a legitimate partial-span
 #     parse (cmalign exits 0);
 #   - one dense combined PS line per seq, re-readable by the standard parser;
@@ -183,8 +185,8 @@ unlink "$tmppfx.big.sto.rr";
 # 5'-half and 3'-half fragments of the pknot model are the partial-span targets.
 ######################################################################
 write_halves("$tmppfx.pk.fa", "$tmppfx.sub.fa");
-run("$cmalign -g --sub --notrunc --cpu 0 --bpstatus --bpcons $tmppfx.pk.cm $tmppfx.sub.fa > $tmppfx.sub.sto 2>$tmppfx.log",
-    "subtest 7: cmalign -g --sub --notrunc --bpstatus --bpcons (partial-span) failed (cpos!=clen guard?)");
+run("$cmalign -g --cpu 0 --bpstatus --bpcons $tmppfx.pk.cm $tmppfx.sub.fa > $tmppfx.sub.sto 2>$tmppfx.log",
+    "subtest 7: cmalign -g --bpstatus --bpcons (partial-span) failed (cpos!=clen guard?)");
 my $nseq_sub = count_match("$tmppfx.sub.fa", qr/^>/);
 assert_count("$tmppfx.sub.sto", qr/^#=GR\s+\S+\s+PS\b/, $nseq_sub, "subtest 7: one combined PS line per partial-span seq");
 assert_dense_ps("$tmppfx.sub.sto", "subtest 7");
@@ -192,7 +194,7 @@ assert_dense_ps("$tmppfx.sub.sto", "subtest 7");
 ps_marks_include("$tmppfx.sub.sto", qr/-{8,}/, "subtest 7: out-of-span '-' placeholder run");
 # a boundary-straddling nested pair -> half-present 'v':
 ps_marks_include("$tmppfx.sub.sto", qr/v/,     "subtest 7: half-present nested 'v' on a span-boundary pair");
-reread_ok("$tmppfx.sub.sto", "$tmppfx.sub.rr", "subtest 7 (--sub partial-span)");
+reread_ok("$tmppfx.sub.sto", "$tmppfx.sub.rr", "subtest 7 (-g partial-span)");
 
 ######################################################################
 # Subtest 8 (brief 023, Part B): truncated-half '?' fidelity on truncated cmalign
@@ -370,8 +372,8 @@ sub reread_ok {
 
 # Read a FASTA file and write a new one holding the 5' half and the 3' half of
 # each sequence (named <name>_5half / <name>_3half). These fragmentary targets
-# cover only part of the model: under --sub they build partial-span sub-CMs;
-# under --miss (truncation on) they produce 5'/3'-truncated parses. Determinism
+# cover only part of the model: they produce 5'/3'-truncated parses, and
+# under --miss the truncated flanks are marked as missing data. Determinism
 # comes from the fixed-seed cmemit that produced the input.
 sub write_halves {
     my ($infa, $outfa) = @_;

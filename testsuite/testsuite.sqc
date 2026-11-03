@@ -70,7 +70,7 @@
 1 exercise  bug/i2-cmalign-leak   @src/cmalign@ --notrunc %CM% !testsuite/bug-i2.fa!
 1 exercise  bug/i11-bld-detach    !testsuite/bug-i11.pl! @src/cmbuild@ @src/cmalign@
 1 exercise  bug/i12-aln-outside   !testsuite/bug-i12.pl! @src/cmbuild@ @src/cmalign@
-1 exercise  bug/i13-aln-sub       !testsuite/bug-i13.pl! @src/cmbuild@ @src/cmalign@
+1 exercise  bug/i13-aln-adjpair   !testsuite/bug-i13.pl! @src/cmbuild@ @src/cmalign@
 1 exercise  bug/i14-aln-oa-zero   !testsuite/bug-i14.pl! @src/cmbuild@ @src/cmalign@ !testsuite/bug-i14.sto! !testsuite/bug-i14.fa!
 1 exercise  bug/i15-aln-bif-imp   !testsuite/bug-i15.pl! @src/cmbuild@ @src/cmalign@ !testsuite/bug-i15.sto! !testsuite/bug-i15.fa!
 1 exercise  bug/i28-srch-bndcln   !testsuite/bug-i28.pl! @src/cmsearch@ !testsuite/bug-i28.cm! !testsuite/bug-i28.fa!

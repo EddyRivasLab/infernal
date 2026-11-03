@@ -22,6 +22,11 @@
 #                  the bug does not manifest itself in this example in r3046,
 #                  even though it is there and could manifest itself in other
 #                  examples.)
+#
+# This test used to align with -g --sub --notrunc. cmalign --sub was
+# removed in 1.2 (brief 26_0821-173); the bug is in HMM banded optimal
+# accuracy on any CM, so the test now aligns to the full CM with
+# -g --notrunc and with -g (truncated alignment, which replaces --sub).
 
 $usage = "perl bug-i15.pl <cmbuild> <cmalign> <path to bug-i15.sto> <path to bug-i15.fa>\n";
 if ($#ARGV != 3) { die "Wrong argument number.\n$usage"; }
@@ -37,7 +42,11 @@ if ($ok) {
     if ($? != 0) { $ok = 0; }
 }
 if ($ok) {
-    system("$cmalign -g --sub --notrunc i15.cm $seqfile > /dev/null 2> /dev/null");
+    system("$cmalign -g --notrunc i15.cm $seqfile > /dev/null 2> /dev/null");
+    if ($? != 0) { $ok = 0; }
+}
+if ($ok) {
+    system("$cmalign -g i15.cm $seqfile > /dev/null 2> /dev/null");
     if ($? != 0) { $ok = 0; }
 }
 

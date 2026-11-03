@@ -128,8 +128,7 @@ static ESL_OPTIONS options[] = {
   { "--sample",      eslARG_NONE,       FALSE, NULL,        NULL,    ALGOPTS,        NULL,     "--small", "sample alignment of each seq from posterior distribution",        2 },
   { "--seed",         eslARG_INT,       "181", NULL,      "n>=0",       NULL,  "--sample",          NULL, "w/--sample, set RNG seed to <n> (if 0: one-time arbitrary seed)", 2 },
   { "--notrunc",     eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "do not use truncated alignment algorithm",                        2 },
-  { "--sub",         eslARG_NONE,       FALSE, NULL,        NULL,       NULL,"--notrunc,-g",        NULL, "build sub CM for columns b/t HMM predicted start/end points",     2 },
-  { "--hmm",         eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL, "--sub,--small", "align with the p7 HMM only, no CM; -g acts only w/--notrunc",    2 },
+  { "--hmm",         eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,       "--small", "align with the p7 HMM only, no CM; -g acts only w/--notrunc",    2 },
   { "--hmmvit",      eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--hmm", "--hmmnoband", "w/--hmm, use Viterbi traces (faster, less accurate)",               2 },
   { "--hmmnoband",   eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--hmm",   "--hmmvit", "w/--hmm, do not use p7 bands for OA alignment",                  2 },
   { "--nohmm",       eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,        "--hmm", "do not auto-switch to HMM mode on 0-basepair CMs",               2 },
@@ -166,7 +165,7 @@ static ESL_OPTIONS options[] = {
    * --ckpt's hard-force semantics are unchanged -- dev-only, not "prefer";
    * --no-mxesc's incompat list (below) is deliberately left untouched, see brief
    * 26_0430-303. */
-  { "--ckpt",        eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,"--cyk,--sample,--nonbanded,--small,--sub", "use checkpointed sqrt(M)-memory HMM-banded optacc engines", 7 },
+  { "--ckpt",        eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,"--cyk,--sample,--nonbanded,--small", "use checkpointed sqrt(M)-memory HMM-banded optacc engines", 7 },
   { "--devdiag",     eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "show developer stage/band diagnostics on stderr", 7 },
   { "--no-mxesc",    eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,     "--ckpt,--small,--nonbanded", "disable --mxsize engine auto-escalation", 7 },
   { "--no-mxesc-fixedtau", eslARG_NONE, FALSE, NULL,        NULL,       NULL,        NULL,     "--ckpt,--small,--nonbanded", "restore the p7-banded CP9 F/B tau-ratchet (fixed-tau is the default)", 7 },
@@ -708,10 +707,9 @@ maybe_hmm_autoswitch(ESL_GETOPTS *go, CM_t *cm)
   if (CMCountNodetype(cm, MATP_nd) != 0)  return; /* structured CM: leave untouched           */
   if (esl_opt_GetBoolean(go, "--nohmm"))  return; /* explicit override: force CM-DP            */
   if (esl_opt_GetBoolean(go, "--hmm"))    return; /* user already requested HMM mode           */
-  /* explicit CM-DP / sub-CM mode requests: respect them, don't auto-switch */
-  if (esl_opt_GetBoolean(go, "--sub")    || esl_opt_GetBoolean(go, "--small")  ||
-      esl_opt_GetBoolean(go, "--cyk")    || esl_opt_GetBoolean(go, "--sample") ||
-      esl_opt_GetBoolean(go, "--p7band")) return;
+  /* explicit CM-DP mode requests: respect them, don't auto-switch */
+  if (esl_opt_GetBoolean(go, "--small")  || esl_opt_GetBoolean(go, "--cyk")    ||
+      esl_opt_GetBoolean(go, "--sample") || esl_opt_GetBoolean(go, "--p7band")) return;
 
   autoswitch_force_opt(go, "--hmm", NULL);
   if (cm->clen <= CM_KMERCHAIN_DEFAULT_MINM && ! esl_opt_GetBoolean(go, "--p7ibv"))
@@ -747,8 +745,6 @@ maybe_hmm_autoswitch(ESL_GETOPTS *go, CM_t *cm)
  *     --hbanded (explicit) the opt-out; detected by its setter, as it is on by default
  *     --nonbanded          no bands at all
  *     --p7band             keeps its own builder (Viterbi trace unless told)
- *     --sub                the sub-CM is cut at CP9-predicted ends, and
- *                          kmerchain bands were never measured with it
  *     --small              d&c CYK; requires --nonbanded anyway
  *     --cyk, --sample      algorithm choices whose band source was not
  *                          measured with kmerchain: keep CP9 bands
@@ -781,9 +777,9 @@ maybe_kmerchain_default(ESL_GETOPTS *go, CM_t *cm)
      * and esl_opt_IsDefault() can't tell typed from default; the setter can. */
     if ((esl_opt_GetSetter(go, "--hbanded") != eslARG_SETBY_DEFAULT && esl_opt_GetBoolean(go, "--hbanded")) ||
         esl_opt_GetBoolean(go, "--nonbanded") ||
-        esl_opt_GetBoolean(go, "--p7band")  || esl_opt_GetBoolean(go, "--sub")       ||
-        esl_opt_GetBoolean(go, "--small")   || esl_opt_GetBoolean(go, "--cyk")       ||
-        esl_opt_GetBoolean(go, "--sample")  || esl_opt_GetBoolean(go, "--ckpt")) return;
+        esl_opt_GetBoolean(go, "--p7band")  || esl_opt_GetBoolean(go, "--small")     ||
+        esl_opt_GetBoolean(go, "--cyk")     || esl_opt_GetBoolean(go, "--sample")    ||
+        esl_opt_GetBoolean(go, "--ckpt")) return;
     autoswitch_force_opt(go, "--p7band", NULL); /* turns --hbanded off */
     autoswitch_force_opt(go, "--p7kmerchain", NULL);
   }
@@ -3904,7 +3900,6 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *sqfile, CM_t
     else                                       fprintf(ofp, "# random number seed set to:                   %d\n", esl_opt_GetInteger(go, "--seed"));
   }
   if (esl_opt_IsUsed(go, "--notrunc"))   {  fprintf(ofp, "# truncated sequence alignment mode:           off\n"); }
-  if (esl_opt_IsUsed(go, "--sub"))       {  fprintf(ofp, "# alternative truncated seq alignment mode:    on\n"); }
   if (esl_opt_IsUsed(go, "--hmm"))       {  fprintf(ofp, "# alignment method:                            p7 HMM only (no CM)%s\n",
                                                     hmm_autoswitched ? " [auto-selected for a 0-basepair CM; --nohmm to use the CM]" : ""); }
   if (esl_opt_IsUsed(go, "--hmmvit"))    {  fprintf(ofp, "# HMM alignment algorithm:                     Viterbi\n"); }
@@ -4119,7 +4114,6 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(  esl_opt_GetBoolean(go, "--p7band"))    { cm->align_opts |= CM_ALIGN_HBANDED; cm->align_opts |= CM_ALIGN_P7BANDED; }
   if(! esl_opt_GetBoolean(go, "--noprob"))      cm->align_opts |= CM_ALIGN_POST;
   if(! esl_opt_GetBoolean(go, "--notrunc"))     cm->align_opts |= CM_ALIGN_TRUNC;
-  if(  esl_opt_GetBoolean(go, "--sub"))         cm->align_opts |= CM_ALIGN_SUB;   /* --sub requires --notrunc */
   if(  esl_opt_GetBoolean(go, "--small"))       cm->align_opts |= CM_ALIGN_SMALL; /* --small requires --noprob --nonbanded --cyk */
   if(  esl_opt_GetBoolean(go, "--hmm"))         cm->align_opts |= CM_ALIGN_P7HMM;
   if(  esl_opt_GetBoolean(go, "--hmmvit"))       cm->align_opts |= CM_ALIGN_P7HMMVIT;
@@ -4127,7 +4121,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(  esl_opt_GetBoolean(go, "--ckpt"))        cm->align_opts |= CM_ALIGN_CHECKPT; /* --ckpt: sqrt(M)-mem optacc in local (default) or global (-g), truncated (default) or --notrunc modes */
   /* brief 26_0430-269: --mxsize auto-escalation is ON by default; --no-mxesc opts
    * out (restore pre-269 error-on-overflow behavior). Only the HB free-OptAcc path
-   * acts on it (DispatchSqAlignment() gates out --ckpt/--small/--nonbanded/--sample/--sub). */
+   * acts on it (DispatchSqAlignment() gates out --ckpt/--small/--nonbanded/--sample). */
   if(! esl_opt_GetBoolean(go, "--no-mxesc")) cm->align_opts |= CM_ALIGN_MXESC;
   /* brief 26_0430-271 item 1: fixed-tau is now the DEFAULT inside the mxesc
    * framework path; --no-mxesc-fixedtau restores the p7-banded CP9 F/B
@@ -4194,7 +4188,6 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   /* set up configuration options in cm->config_opts */
   if(  esl_opt_GetBoolean(go, "--nonbanded"))   cm->config_opts |= CM_CONFIG_NONBANDEDMX;
   if(! esl_opt_GetBoolean(go, "--notrunc"))     cm->config_opts |= CM_CONFIG_TRUNC;
-  if(  esl_opt_GetBoolean(go, "--sub"))         cm->config_opts |= CM_CONFIG_SUB;   /* --sub requires --notrunc */
   if(! use_glocal_config(go)) { /* -g is a no-op in truncation-aware --hmm mode */
     cm->config_opts |= CM_CONFIG_LOCAL;
     cm->config_opts |= CM_CONFIG_HMMLOCAL;
@@ -4608,7 +4601,6 @@ output_scores(FILE *ofp, CM_t *cm, char *errbuf, CM_ALNDATA **dataA, int ndata, 
   /* alignment options */
   int do_nonbanded = (cm->align_opts & CM_ALIGN_NONBANDED) ? TRUE : FALSE;
   int do_post      = (cm->align_opts & CM_ALIGN_POST)      ? TRUE : FALSE;
-  int do_sub       = (cm->align_opts & CM_ALIGN_SUB)       ? TRUE : FALSE;
   int do_trunc     = (cm->align_opts & CM_ALIGN_TRUNC)     ? TRUE  : FALSE;
 
   for(i = first_idx; i < ndata; i++) namewidth = ESL_MAX(namewidth, strlen(dataA[i]->sq->name));
@@ -4648,7 +4640,7 @@ output_scores(FILE *ofp, CM_t *cm, char *errbuf, CM_ALNDATA **dataA, int ndata, 
     if(dataA[i]->tr == NULL && (! do_trunc)) { 
       fprintf(ofp, "  %5s", "no");
     }
-    else if(do_sub || dataA[i]->tr == NULL) { 
+    else if(dataA[i]->tr == NULL) { 
       if     (dataA[i]->spos != 1 && dataA[i]->epos != cm->clen) fprintf(ofp, "  %5s", "5'&3'");
       else if(dataA[i]->spos == 1 && dataA[i]->epos != cm->clen) fprintf(ofp, "  %5s", "3'");
       else if(dataA[i]->spos != 1 && dataA[i]->epos == cm->clen) fprintf(ofp, "  %5s", "5'");
