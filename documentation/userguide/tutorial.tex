@@ -1620,10 +1620,10 @@ flags add it, all off by default (so default output is unchanged):
   The \otext{?} truncated-half mark requires \prog{--miss} (which renders a
   truncated flank as missing data \otext{\~{}}); without it a truncated flank is
   written with deletions, so a pair straddling the boundary is marked \otext{v}
-  (nested) or \otext{x} (pseudoknot) instead. Under \prog{--sub} the marks stay
-  relative to the full-CM consensus (a partial-span sub-CM only changes which
-  residues are present), and consensus columns outside a fragment's span carry the
-  \otext{-} no-residue placeholder rather than a spurious mark.
+  (nested) or \otext{x} (pseudoknot) instead. For a fragment that covers only
+  part of the model, the marks stay relative to the full-CM consensus, and
+  consensus columns outside the fragment's span carry the \otext{-} no-residue
+  placeholder rather than a spurious mark.
 \item[\emprog{--bpcons}]
   adds a single \otext{\#=GC bp\_cons} line: for each base pair (nested and
   pseudoknot), the fraction of sequences whose two aligned residues form a

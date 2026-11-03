@@ -88,15 +88,12 @@ length biological sequence are not present in the input sequence
 (see DL Kolbe and SR Eddy, Bioinformatics, 25:1236-1243, 2009). This
 behavior is on by default, but can be turned off with 
 .B --notrunc.
-In previous versions of 
-.B cmalign 
-the 
+The older 
 .B --sub
-option was required to appropriately handle truncated sequences. The
-.B --sub 
-option is still available in this version, but the new default method
-for handling truncated sequences should be as good or superior to the
-sub method in nearly all cases.
+option for truncated sequences was removed in Infernal 1.2; the default
+truncated alignment replaces it (add
+.B -g
+for glocal alignment).
 
 .PP
 The 
@@ -233,11 +230,6 @@ normal indels. These are annotated as "~"
 columns in the RF line of the output alignment. The
 .B -g 
 option can be used to disallow these local ends.
-The
-.B -g
-option is required if the 
-.B --sub 
-option is also used.
 
 .SH OPTIONS FOR CONTROLLING THE ALIGNMENT ALGORITHM
 
@@ -290,27 +282,7 @@ The default seed is 181.
 .TP
 .B --notrunc
 Turn off truncated alignment algorithms. 
-All sequences in the input file will be assumed to be full length, 
-unless 
-.B --sub
-is also used, in which case the program can still handle truncated
-sequences but will use an alternative strategy for their alignment.
-
-.TP
-.B --sub
-Turn on the sub model construction and alignment procedure. For each
-sequence, an HMM is first used to predict the model start and end
-consensus columns, and a new sub CM is constructed that only models
-consensus columns from start to end. The sequence is then aligned to
-this sub CM.  Sub alignment is an older method than the default one for aligning sequences
-that are possibly truncated. By default,
-.B cmalign 
-uses special DP algorithms to handle truncated sequences which should
-be more accurate than the sub method in most cases.
-.B --sub 
-is still included as an option mainly for testing against this default
-truncated sequence handling.  This "sub CM" procedure is not the same
-as the "sub CMs" described by Weinberg and Ruzzo.
+All sequences in the input file will be assumed to be full length.
 
 .SH OPTIONS FOR CONTROLLING SPEED AND MEMORY REQUIREMENTS
 
@@ -642,10 +614,8 @@ a truncated flank is written with deletions and a pair straddling it is marked
 .B v
 (nested) or
 .B x
-(pseudoknot) instead. Under
-.B --sub
-the marks remain relative to the full CM consensus (a partial-span sub-CM only
-changes which residues are present, not the consensus interpretation); consensus
+(pseudoknot) instead. For a fragment that covers only part of the model, the
+marks remain relative to the full CM consensus; consensus
 columns outside a fragment's span carry the
 .B \-
 no-residue placeholder, not a spurious mark.

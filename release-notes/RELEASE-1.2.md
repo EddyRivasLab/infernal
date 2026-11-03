@@ -67,5 +67,16 @@
      the above and were validated to be effectively identical to prior
      `cmcalibrate`-derived values, including on the `rmark4h` benchmark.
 
+ * **`cmalign --sub` and `cmbuild --refine --sub` have been removed.**
+   `--sub` aligned each sequence to a sub-CM covering the consensus
+   columns that an HMM predicted for its first and last residues. It
+   was an older method for partial sequences than truncated alignment,
+   which has been the default since 1.1 and handles partial sequences
+   as accurately, much faster and in far less memory (`--sub` could
+   need about 28 GB for one 30 kb viral genome). For the glocal
+   equivalent of `-g --sub --notrunc`, use `-g` without `--notrunc`.
+   Command lines that pass `--sub` now fail with an unknown-option
+   error.
+
 Infernal 1.2 is not yet released; this notes file will be finalized at
 release time.
