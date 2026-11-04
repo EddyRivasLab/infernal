@@ -19,6 +19,12 @@
 # 5. A v1.0 file converts to INFERNAL1/e without --upgrade, as with it;
 #    --cp9ascm writes INFERNAL1/e (no stored filter HMM), with no
 #    cmcalibrate E-value parameters. (brief 26_0821-171)
+# 6. A CM built with cmbuild --prior <f> upgrades only with --prior <f>
+#    (HP7 h3pri, as cmbuild wrote it) or --noprior (HP7 ml); with
+#    neither, cmconvert fails with an error naming both, and writes
+#    nothing else to stderr. --prior and --noprior are incompatible. A
+#    v1.0 CM upgraded by default is told to add --upgrade.
+#    (brief 26_0821-179)
 #
 # Usage:    ./itest19-cmconvert-upgrade.pl <builddir> <srcdir> <tmpfile prefix>
 # Example:  ./itest19-cmconvert-upgrade.pl ..         ..       tmpfoo
@@ -43,10 +49,12 @@ my $ali   = "$srcdir/testsuite/tRNA.sto";
 my $oldcm = "$srcdir/testsuite/4.c.cm";
 my $v1p0cm = "$srcdir/testsuite/4.1p0.cm";
 my $seqs  = "$srcdir/testsuite/1k-4.fa";
+my $prifile = "$srcdir/testsuite/plus1.prior";
 if (! -e $ali)   { die "FAIL: didn't find $ali\n"; }
 if (! -e $oldcm) { die "FAIL: didn't find $oldcm\n"; }
 if (! -e $v1p0cm) { die "FAIL: didn't find $v1p0cm\n"; }
 if (! -e $seqs)  { die "FAIL: didn't find $seqs\n"; }
+if (! -e $prifile) { die "FAIL: didn't find $prifile\n"; }
 
 my @tmpfiles = ();
 sub tmp { my $f = "$tmppfx.$_[0]"; push @tmpfiles, $f; unlink $f if -e $f; return $f; }
@@ -126,6 +134,41 @@ if (grep { /^ECM/ } read_lines($cp9)) { die "FAIL: subtest 5: --cp9ascm CM has c
 `$builddir/src/cmsearch --cpu 0 --hmmonly $cp9 $seqs > /dev/null 2>&1`;
 if ($? != 0) { die "FAIL: subtest 5: cmsearch --hmmonly on the --cp9ascm CMs failed\n"; }
 
+# 6.
+my $pdirect = tmp("pri.cm");
+my $pold    = tmp("pri.1b.cm");
+my $pout    = tmp("pri.up.cm");
+my $perr    = tmp("pri.err");
+`$builddir/src/cmbuild --cpu 1 -F --prior $prifile $pdirect $ali > /dev/null 2>&1`;
+if ($? != 0) { die "FAIL: subtest 6: cmbuild --prior failed\n"; }
+`$builddir/src/cmconvert --outfmt 1/b $pdirect > $pold 2> /dev/null`;
+if ($? != 0) { die "FAIL: subtest 6: cmconvert --outfmt 1/b failed\n"; }
+`$builddir/src/cmconvert --cpu 1 --upgrade $pold > $pout 2> $perr`;
+if ($? == 0) { die "FAIL: subtest 6: --upgrade of a --prior CM without --prior or --noprior didn't fail\n"; }
+if (-s $pout) { die "FAIL: subtest 6: failed --upgrade wrote output\n"; }
+check_prior_error($perr, "--prior <f>", "--noprior");
+`$builddir/src/cmconvert --cpu 1 --upgrade --prior $prifile $pold > $pout 2> $perr`;
+if ($? != 0) { die "FAIL: subtest 6: --upgrade --prior failed\n"; }
+if (-s $perr) { die "FAIL: subtest 6: --upgrade --prior wrote to stderr\n"; }
+if (stripped($pdirect) ne stripped($pout)) { die "FAIL: subtest 6: --upgrade --prior CM differs from cmbuild's\n"; }
+if ((header_value($pout, "HP7") // "") ne "h3pri") { die "FAIL: subtest 6: --upgrade --prior HP7 is not h3pri\n"; }
+`$builddir/src/cmconvert --cpu 1 --upgrade --noprior $pold > $pout 2> $perr`;
+if ($? != 0) { die "FAIL: subtest 6: --upgrade --noprior failed\n"; }
+if (-s $perr) { die "FAIL: subtest 6: --upgrade --noprior wrote to stderr\n"; }
+if ((header_value($pout, "HP7") // "") ne "ml") { die "FAIL: subtest 6: --upgrade --noprior HP7 is not ml\n"; }
+`$builddir/src/cmconvert --upgrade --prior $prifile --noprior $pold > /dev/null 2>&1`;
+if ($? == 0) { die "FAIL: subtest 6: --prior with --noprior not rejected\n"; }
+# a v1.0 CM whose cmbuild command had --prior, upgraded by default
+my $v1pri  = tmp("v1p0.pri.cm");
+write_lines($v1pri, map { s/^BCOM(\s+)\S+/BCOM$1cmbuild --prior my.prior/r } read_lines($v1p0cm));
+`$builddir/src/cmconvert --cpu 1 $v1pri > $pout 2> $perr`;
+if ($? == 0) { die "FAIL: subtest 6: default conversion of a v1.0 --prior CM didn't fail\n"; }
+check_prior_error($perr, "--upgrade --prior <f>", "--upgrade --noprior");
+`$builddir/src/cmconvert --cpu 1 --upgrade --noprior $v1pri > $pout 2> $perr`;
+if ($? != 0) { die "FAIL: subtest 6: --upgrade --noprior of a v1.0 --prior CM failed\n"; }
+if (-s $perr) { die "FAIL: subtest 6: --upgrade --noprior of a v1.0 --prior CM wrote to stderr\n"; }
+if (grep { /^HP7 / && ! /^HP7\s+ml\s*$/ } read_lines($pout)) { die "FAIL: subtest 6: v1.0 --noprior HP7 is not ml\n"; }
+
 foreach my $f (@tmpfiles) { unlink $f if -e $f; }
 print "ok\n";
 exit 0;
@@ -133,6 +176,13 @@ exit 0;
 sub read_lines  { my ($f) = @_; open(my $fh, "<", $f) || die "FAIL: couldn't open $f\n"; my @l = <$fh>; close $fh; return @l; }
 sub write_lines { my ($f, @l) = @_; open(my $fh, ">", $f) || die "FAIL: couldn't open $f\n"; print $fh @l; close $fh; }
 sub first_line  { my @l = read_lines($_[0]); return (scalar(@l) > 0) ? $l[0] : ""; }
+# stderr holds only cmconvert's error, which names the two ways out
+sub check_prior_error {
+    my ($f, $opt1, $opt2) = @_;
+    my @l = grep { /\S/ } read_lines($f);
+    if (scalar(@l) != 2 || $l[0] !~ /^Error: CM \S+ was built with cmbuild --prior/) { die "FAIL: subtest 6: unexpected stderr from a --prior CM:\n@l"; }
+    if (index($l[1], "Use $opt1 ") != 0 || index($l[1], " $opt2 ") < 0)          { die "FAIL: subtest 6: error doesn't name $opt1 and $opt2:\n@l"; }
+}
 sub stripped    { return join("", grep { ! /^(DATE|COM) / } read_lines($_[0])); }
 sub header_value {
     my ($f, $tag) = @_;
