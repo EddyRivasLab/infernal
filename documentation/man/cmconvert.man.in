@@ -214,9 +214,11 @@ a profile HMM, and
 filter HMM calibration options. If the CM was built with
 .B cmbuild --prior <f>,
 give the same prior file with
-.B --prior <f>;
-otherwise its HMM-only search HMM is its filter HMM, and a note is
-printed to stderr. Calibration takes about as long as it does in
+.B --prior <f>.
+Without it, converting the CM is an error unless
+.B --noprior
+is used, in which case its HMM-only search HMM is its filter HMM.
+Calibration takes about as long as it does in
 .B cmbuild:
 seconds for most CMs, and minutes for CMs of tens of thousands of
 positions or more.
@@ -228,6 +230,23 @@ With
 the CMs were built with
 .B cmbuild --prior <f>.
 The prior file's transition priors determine the HMM-only search HMM.
+
+.TP
+.B --noprior
+With
+.B --upgrade,
+convert CMs built with
+.B cmbuild --prior <f>
+without that prior file. Their HMM-only search HMM is then their filter
+HMM. Without
+.B --noprior
+or
+.B --prior <f>,
+upgrading such a CM is an error, and so is converting one from an
+Infernal v1.0 file (which is always upgraded); there, add
+.B --upgrade
+to use either option. Incompatible with
+.B --prior.
 
 .TP
 .BI --cpu " <n>"

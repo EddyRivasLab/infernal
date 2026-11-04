@@ -45,7 +45,8 @@ static ESL_OPTIONS options[] = {
   { "--outfmt",  eslARG_STRING, NULL,  NULL, NULL,      NULL,       NULL,"-1,--mlhmm,--fhmm,--cp9ascm", "output format 1/a, 1/b or 1/d (default: 1/e or the input's)", 1 },
   { "--dropknots",eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,       NULL, "allow dropping pseudoknots the output format can't store", 1 },
   { "--upgrade", eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,"-1,--mlhmm,--fhmm,--cp9ascm,--outfmt", "convert older-format CMs to the current format", 1 },
-  { "--prior",   eslARG_INFILE, NULL,  NULL, NULL,      NULL,"--upgrade",       NULL, "with --upgrade: CMs were built with prior file <f>",      1 },
+  { "--prior",   eslARG_INFILE, NULL,  NULL, NULL,      NULL,"--upgrade", "--noprior", "with --upgrade: CMs were built with prior file <f>",      1 },
+  { "--noprior", eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--upgrade",  "--prior", "with --upgrade: convert --prior-built CMs without their prior", 1 },
   { "--cpu",     eslARG_INT,  CMNCPU,"INFERNAL_NCPU","n>=0",NULL,       NULL,  CPUOPTS, "CPUs for calibration (--upgrade, v1.0 input)",  1 },
   /* options for controlling p7 per-node band pad computation: shown only by --devhelp */
   { "--p7pad",      eslARG_NONE,    FALSE, NULL, NULL,    NULL,  NULL,    "--no-p7pad", "compute p7 per-node band pads (O(M^2) memory)",   2 },
@@ -184,6 +185,21 @@ main(int argc, char **argv)
       int   is_v1p0_default = (cmfp->format == CM_FILE_1 && fmtcode == -1 &&
                                (esl_opt_GetBoolean(go, "-a") || esl_opt_GetBoolean(go, "-b"))) ? TRUE : FALSE;
       int   do_upgrade  = ((esl_opt_GetBoolean(go, "--upgrade") || is_v1p0_default) && ! (cm->flags & CMH_FP7_DERIVED)) ? TRUE : FALSE;
+
+      /* Upgrading a CM built with cmbuild --prior <f> needs that prior
+       * to derive its HMM-only search HMM; without it, that HMM can only
+       * be the filter HMM (HP7 ml). That's an error unless --noprior
+       * allows it, as --dropknots does for pknots (brief 26_0821-179).
+       * Checked before any other work on the CM. --prior and --noprior
+       * require --upgrade, so a v1.0 CM upgraded by default is told to
+       * add it. */
+      if (do_upgrade && user_pri == NULL && ! esl_opt_GetBoolean(go, "--noprior") &&
+          comlog_cmbuild_option(cm->comlog, "--prior", NULL))
+        cm_Fail("CM %s was built with cmbuild --prior, and converting it needs that prior file.\n"
+                "Use %s--prior <f> to give it, or %s--noprior to convert it anyway with its filter HMM as its HMM-only search HMM.",
+                cm->name,
+                esl_opt_GetBoolean(go, "--upgrade") ? "" : "--upgrade ",
+                esl_opt_GetBoolean(go, "--upgrade") ? "" : "--upgrade ");
 
       if(cmfp->format == CM_FILE_1 || esl_opt_GetBoolean(go, "--mlhmm") || esl_opt_GetBoolean(go, "--cp9ascm")) {
 	/* if format == CM_FILE_1, we need to calculate QDBs
@@ -375,9 +391,10 @@ configure_model(CM_t *cm, char *errbuf, int set_filter)
  *              v1.0 format file, or if the cmbuild COM line has --p56
  *              or --v1p0; else the default prior. If the COM line has
  *              --prior <f> and <user_pri> isn't given, the prior is
- *              unknown and the HMM-only HMM is the filter HMM (HP7 ml),
- *              with a note on stderr. (A recorded path isn't trusted to
- *              be readable, or to be the same file.)
+ *              unknown and the HMM-only HMM is the filter HMM (HP7 ml);
+ *              the caller allows that only with cmconvert --noprior.
+ *              (A recorded path isn't trusted to be readable, or to be
+ *              the same file.)
  *            - A CM with no basepairs built with the default zero-
  *              basepair (HMMER-like) prior, i.e. not from a v1.0 file
  *              and without --p56/--v1p0/--noh3pri/--prior on its
@@ -425,12 +442,7 @@ upgrade_model(const ESL_GETOPTS *go, CM_t *cm, int format, const Prior_t *user_p
 
   if      (pretend_cm_is_hmm)                                      cm->hp7_xform = CM_HP7_ML;
   else if (pri2use != NULL && Prior_HMMOnlyAlpha(pri2use, cm->hp7_alpha)) cm->hp7_xform = CM_HP7_H3PRI;
-  else {
-    cm->hp7_xform = CM_HP7_ML;
-    if (pri2use == NULL)
-      fprintf(stderr, "# cmconvert: CM %s was built with cmbuild --prior; without cmconvert --prior <f> for that prior,\n"
-              "#   its HMM-only search HMM is its filter HMM (HP7 ml).\n", cm->name);
-  }
+  else                                                             cm->hp7_xform = CM_HP7_ML;
   if (cm->hp7_xform == CM_HP7_ML) cm_p7_DefaultHMMOnlyAlpha(cm->hp7_alpha); /* unused; keep the in-memory default */
 
   do_sim = (user_pri != NULL || com_prior || cm->eff_nseq >= EFORCE_MAX_NEFF || comlog_cmbuild_option(cm->comlog, "--Esim", NULL)) ? TRUE : FALSE;
