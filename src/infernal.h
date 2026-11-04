@@ -2204,6 +2204,9 @@ typedef struct cm_file_s {
   /* If <is_pressed>, we can read HMM filters directly, via: */
   FILE         *ffp;		/* MSV part of the optimized profile HMM */
   FILE         *pfp;		/* rest of the optimized profile HMM     */
+  /* cmscan: open on the .i1hf/.i1hp files when models with 0 basepairs
+   * read their HMM-only HMMs (CM_HMMONLY_FILTERS_ZEROBP), else NULL */
+  struct cm_file_s *zcmfp;
 
 #ifdef HMMER_THREADS
   int              syncRead;
@@ -2213,6 +2216,11 @@ typedef struct cm_file_s {
   char          errbuf[eslERRBUFSIZE];
   char          msv_errbuf[eslERRBUFSIZE]; /* cm_p7_oprofile_ReadMSV uses this instead of errbuf, avoiding a thread race */
 } CM_FILE;
+
+/* which models cm_file_UseHMMOnlyFilters() switches to their HMM-only HMMs */
+#define CM_HMMONLY_FILTERS_NONE   0 /* none: every model uses its filter HMM */
+#define CM_HMMONLY_FILTERS_ALL    1 /* every model (cmscan --hmmonly) */
+#define CM_HMMONLY_FILTERS_ZEROBP 2 /* models with 0 basepairs (default cmscan) */
 
 /* note on <fname>, above:
  * this is the actual name of the CM file being read.
@@ -3219,7 +3227,7 @@ extern int     cm_file_CreateLock(CM_FILE *cmfp);
 extern int     cm_file_WriteASCII(FILE *fp, int format, CM_t *cm);
 extern int     cm_file_WriteBinary(FILE *fp, int format, CM_t *cm, off_t *opt_fp7_offset, off_t *opt_hp7_offset);
 extern int     cm_file_DefaultFormat(CM_t *cm);
-extern int     cm_file_UseHMMOnlyFilters(CM_FILE *cmfp, char *errbuf);
+extern int     cm_file_UseHMMOnlyFilters(CM_FILE *cmfp, int which, char *errbuf);
 extern int     cm_file_Read(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_cm);
 extern int     cm_file_PositionByKey(CM_FILE *cmfp, const char *key);
 extern int     cm_file_Position(CM_FILE *cmfp, const off_t offset);
@@ -3228,6 +3236,7 @@ extern int     cm_p7_oprofile_Write(FILE *ffp, FILE *pfp, off_t cm_offset, int c
 extern int     cm_p7_oprofile_ReadMSV(CM_FILE *cmfp, int read_scores, ESL_ALPHABET **byp_abc, off_t *ret_cm_offset, int *ret_cm_clen, int *ret_cm_W, int *ret_cm_nbp, float *ret_gfmu, float *ret_gflambda, P7_OPROFILE **ret_om);
 extern int     cm_p7_oprofile_ReadBlockMSV(CM_FILE *cmfp, int64_t cm_idx, ESL_ALPHABET **byp_abc, CM_P7_OM_BLOCK *hmmBlock);
 extern int     cm_p7_oprofile_Position(CM_FILE *cmfp, off_t offset);
+extern int     cm_p7_oprofile_PositionZeroBP(CM_FILE *cmfp, off_t offset);
 extern int     cm_file_Write1p0ASCII(FILE *fp, CM_t *cm);
 
 /* from cm_modelconfig.c */

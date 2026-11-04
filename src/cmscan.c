@@ -343,6 +343,7 @@ static int          output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile
 static int          read_glocal_list_file(char *filename, char *errbuf, CM_FILE *cmfp, ESL_KEYHASH **ret_glocal_kh);
 static int          read_clan_info_file(char *filename, char *errbuf, CM_FILE *cmfp, ESL_KEYHASH **ret_clan_name_kh, ESL_KEYHASH **ret_clan_fam_kh, int **ret_clan_mapA);
 static int          determine_clan_index(char *modelname, ESL_KEYHASH *clan_fam_kh, int *clan_mapA);
+static int          hmmonly_filters(ESL_GETOPTS *go);
 static void         duplicate_sq_for_thread(ESL_SQ *src_sq, ESL_SQ **ret_sq);
 static void         copy_sq_for_thread(ESL_SQ *src_sq, ESL_SQ *dest_sq);
 static READER_INFO *create_reader_info(int64_t nmodels, ESL_KEYHASH *clan_fam_kh, int *clan_mapA);
@@ -367,6 +368,7 @@ typedef struct {
   uint64_t  length; /* size of block */
   uint64_t  count;  /* number of profiles in block */
   uint64_t  idx0;   /* index of first profile in block (0 == first) */
+  uint64_t  zoffset;/* offset in .i1hf file for first profile in block, if cmfp->zcmfp (brief 26_0821-177) */
 } MSV_BLOCK;
 
 typedef struct {
@@ -653,8 +655,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
 	/* open the target profile database */
 	if ((status = cm_file_Open(cfg->cmfile, CMDBENV, FALSE, &cmfp, NULL)) != eslOK) cm_Fail("Unexpected error %d in opening cm file %s.\n%s", status, cfg->cmfile, cmfp->errbuf);  
-	/* --hmmonly: read each model's HMM-only search HMM, not its filter HMM (brief 26_0821-162) */
-	if (esl_opt_GetBoolean(go, "--hmmonly") && (status = cm_file_UseHMMOnlyFilters(cmfp, errbuf)) != eslOK) cm_Fail(errbuf);
+	/* read the HMM-only search HMM, not the filter HMM, of each model searched HMM-only (brief 26_0821-162, 26_0821-177) */
+	if ((status = cm_file_UseHMMOnlyFilters(cmfp, hmmonly_filters(go), errbuf)) != eslOK) cm_Fail(errbuf);
 #ifdef HMMER_THREADS
 	if (ncpus > 0) { /* if we are threaded, create locks to prevent multiple readers */
 	  if ((status = cm_file_CreateLock(cmfp)) != eslOK) cm_Fail("Unexpected error %d creating lock\n", status);
@@ -1372,7 +1374,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   if      (cmfp->do_gzip)          mpi_failure("Reading gzipped CM files is not supported");
   if      (cmfp->do_stdin)         mpi_failure("Reading CM files from stdin is not supported");
   if (! cmfp->is_pressed)          mpi_failure("Failed to open binary auxfiles for %s: use cmpress first\n",             cmfp->fname);
-  if (esl_opt_GetBoolean(go, "--hmmonly") && (status = cm_file_UseHMMOnlyFilters(cmfp, errbuf)) != eslOK) mpi_failure(errbuf);
+  if ((status = cm_file_UseHMMOnlyFilters(cmfp, hmmonly_filters(go), errbuf)) != eslOK) mpi_failure(errbuf);
   nmodels = (int64_t) cmfp->ssi->nprimary;
 
   hstatus = cm_file_Read(cmfp, FALSE, &abc, NULL);
@@ -1467,7 +1469,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	/* Open the target profile database */
 	status = cm_file_Open(cfg->cmfile, CMDBENV, FALSE, &cmfp, errbuf);
 	if (status != eslOK) mpi_failure("Unexpected error %d in opening cm file %s.\n%s", status, cfg->cmfile, errbuf);  
-	if (esl_opt_GetBoolean(go, "--hmmonly") && (status = cm_file_UseHMMOnlyFilters(cmfp, errbuf)) != eslOK) mpi_failure(errbuf);
+	if ((status = cm_file_UseHMMOnlyFilters(cmfp, hmmonly_filters(go), errbuf)) != eslOK) mpi_failure(errbuf);
 	pli->cmfp = cmfp;  /* for four-stage input, pipeline needs <cmfp> */
 	
 	cm_pli_NewSeq(pli, qsq, seq_idx);
@@ -1494,7 +1496,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 	  if (mpistatus.MPI_TAG != INFERNAL_READY_TAG)
 	    mpi_failure("Unexpected tag %d from %d\n", mpistatus.MPI_TAG, dest);
 	  
-	  MPI_Send(&block, 4, MPI_LONG_LONG_INT, dest, INFERNAL_BLOCK_TAG, MPI_COMM_WORLD);
+	  MPI_Send(&block, 5, MPI_LONG_LONG_INT, dest, INFERNAL_BLOCK_TAG, MPI_COMM_WORLD);
           cm_idx += block.count;
 	}
 	switch(hstatus)
@@ -1533,7 +1535,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 
 	for (dest = 1; dest < cfg->nproc; ++dest) {
 	  /* send an empty block to signal the worker they are done with this strand of this sequence */
-	  MPI_Send(&block, 4, MPI_LONG_LONG_INT, dest, INFERNAL_BLOCK_TAG, MPI_COMM_WORLD);
+	  MPI_Send(&block, 5, MPI_LONG_LONG_INT, dest, INFERNAL_BLOCK_TAG, MPI_COMM_WORLD);
 	}
 
 	cm_file_Close(cmfp);
@@ -1768,7 +1770,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   if      (cmfp->do_gzip)          mpi_failure("Reading gzipped CM files is not supported");
   if      (cmfp->do_stdin)         mpi_failure("Reading CM files from stdin is not supported");
   if (! cmfp->is_pressed)          mpi_failure("Failed to open binary auxfiles for %s: use cmpress first\n",             cmfp->fname);
-  if (esl_opt_GetBoolean(go, "--hmmonly") && (status = cm_file_UseHMMOnlyFilters(cmfp, errbuf)) != eslOK) mpi_failure(errbuf);
+  if ((status = cm_file_UseHMMOnlyFilters(cmfp, hmmonly_filters(go), errbuf)) != eslOK) mpi_failure(errbuf);
 
   hstatus = cm_file_Read(cmfp, FALSE, &abc, NULL);
   if(hstatus == eslEFORMAT)  mpi_failure("bad file format in CM file %s\n%s",           cfg->cmfile, cmfp->errbuf);
@@ -1856,13 +1858,13 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	/* Open the target profile database */
 	status = cm_file_Open(cfg->cmfile, CMDBENV, FALSE, &cmfp, errbuf);
 	if (status != eslOK) mpi_failure("Unexpected error %d in opening cm file %s.\n%s", status, cfg->cmfile, errbuf);  
-	if (esl_opt_GetBoolean(go, "--hmmonly") && (status = cm_file_UseHMMOnlyFilters(cmfp, errbuf)) != eslOK) mpi_failure(errbuf);
+	if ((status = cm_file_UseHMMOnlyFilters(cmfp, hmmonly_filters(go), errbuf)) != eslOK) mpi_failure(errbuf);
 	pli->cmfp = cmfp;  /* for four-stage input, pipeline needs <cmfp> */
 	
 	cm_pli_NewSeq(pli, qsq, seq_idx);
 
 	/* receive a block of models from the master */
-	MPI_Recv(&block, 4, MPI_LONG_LONG_INT, 0, INFERNAL_BLOCK_TAG, MPI_COMM_WORLD, &mpistatus);
+	MPI_Recv(&block, 5, MPI_LONG_LONG_INT, 0, INFERNAL_BLOCK_TAG, MPI_COMM_WORLD, &mpistatus);
 	while (block.count > 0)
 	  {
 	    uint64_t length  = 0;
@@ -1874,6 +1876,8 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	    if(do_read) { 
               hstatus = cm_p7_oprofile_Position(cmfp, block.offset);
               if (hstatus != eslOK) mpi_failure("Cannot position optimized model to %ld\n", block.offset);
+              hstatus = cm_p7_oprofile_PositionZeroBP(cmfp, block.zoffset);
+              if (hstatus != eslOK) mpi_failure("Cannot position HMM-only optimized model to %ld\n", block.zoffset);
             }
 
             hstatus = eslOK;
@@ -2022,7 +2026,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 	    MPI_Send(&status, 1, MPI_INT, 0, INFERNAL_READY_TAG, MPI_COMM_WORLD);
 	    
 	    /* wait for the next block of sequences */
-	    MPI_Recv(&block, 4, MPI_LONG_LONG_INT, 0, INFERNAL_BLOCK_TAG, MPI_COMM_WORLD, &mpistatus);
+	    MPI_Recv(&block, 5, MPI_LONG_LONG_INT, 0, INFERNAL_BLOCK_TAG, MPI_COMM_WORLD, &mpistatus);
 	  }
 	cm_file_Close(cmfp);
       } /* end loop over in_rc (reverse complement) */
@@ -2933,6 +2937,23 @@ determine_clan_index(char *modelname, ESL_KEYHASH *clan_fam_kh, int *clan_mapA)
   esl_keyhash_Lookup(clan_fam_kh, modelname, -1, &clan_fam_idx); /* clan_fam_idx will be set to -1 if modelname not found */
   return (clan_fam_idx == -1) ? -1 : clan_mapA[clan_fam_idx]; 
 }
+
+/* Function: hmmonly_filters
+ * Date:     EPN, Tue Nov  3 2026 (w/Claude)
+ * 
+ * Return the code telling cm_file_UseHMMOnlyFilters() which models
+ * to read HMM-only search HMMs for: the models the pipeline will
+ * search HMM-only (see cm_pli_NewModel()). That is the same rule
+ * cmsearch's setup_hmm_filter() uses, so cmscan and cmsearch search
+ * each model with the same HMM (brief 26_0821-177).
+ */
+int
+hmmonly_filters(ESL_GETOPTS *go)
+{
+  if (esl_opt_GetBoolean(go, "--nohmmonly") || esl_opt_GetBoolean(go, "--max") || esl_opt_GetBoolean(go, "--nohmm")) return CM_HMMONLY_FILTERS_NONE;
+  if (esl_opt_GetBoolean(go, "--hmmonly"))                                                                              return CM_HMMONLY_FILTERS_ALL;
+  return CM_HMMONLY_FILTERS_ZEROBP;
+}
  
 /* Function: duplicate_sq_for_thread
  * Date:     EPN, Thu Nov 20 09:40:32 2014
@@ -3194,16 +3215,18 @@ int mpi_next_block(CM_FILE *cmfp, BLOCK_LIST *list, int64_t bsize, uint64_t idx0
   ESL_ALPHABET  *abc      = NULL;
   int            status   = eslOK;
   off_t          prv_offset = 0;
+  off_t          prv_zoffset = 0; /* as prv_offset, in the .i1hf file, if cmfp->zcmfp */
 
   /* if the list has been calculated, use it instead of parsing the database */
   if (list->complete)
     {
       if (list->current == list->last)
 	{
-	  block->offset = 0;
-	  block->length = 0;
-	  block->count  = 0;
-          block->idx0   = 0;
+	  block->offset  = 0;
+	  block->length  = 0;
+	  block->count   = 0;
+          block->idx0    = 0;
+          block->zoffset = 0;
 
 	  status = eslEOF;
 	}
@@ -3211,10 +3234,11 @@ int mpi_next_block(CM_FILE *cmfp, BLOCK_LIST *list, int64_t bsize, uint64_t idx0
 	{
 	  int inx = list->current++;
 
-	  block->offset = list->blocks[inx].offset;
-	  block->length = list->blocks[inx].length;
-	  block->count  = list->blocks[inx].count;
-          block->idx0   = list->blocks[inx].idx0;
+	  block->offset  = list->blocks[inx].offset;
+	  block->length  = list->blocks[inx].length;
+	  block->count   = list->blocks[inx].count;
+          block->idx0    = list->blocks[inx].idx0;
+          block->zoffset = list->blocks[inx].zoffset;
 
 	  status = eslOK;
 	}
@@ -3222,18 +3246,21 @@ int mpi_next_block(CM_FILE *cmfp, BLOCK_LIST *list, int64_t bsize, uint64_t idx0
       return status;
     }
 
-  block->offset = 0;
-  block->length = 0;
-  block->count  = 0;
-  block->idx0   = idx0;
+  block->offset  = 0;
+  block->length  = 0;
+  block->count   = 0;
+  block->idx0    = idx0;
+  block->zoffset = 0;
   if((prv_offset = ftello(cmfp->ffp)) < 0) return eslESYS;
+  if(cmfp->zcmfp != NULL && (prv_zoffset = ftello(cmfp->zcmfp->ffp)) < 0) return eslESYS;
 
   while (block->count  < bsize          &&
          block->length < MAX_BLOCK_SIZE && 
 	 (status = cm_p7_oprofile_ReadMSV(cmfp, FALSE, &abc, NULL, NULL, NULL, NULL, NULL, NULL, &om)) == eslOK)
     {
-      if (block->count == 0) block->offset = prv_offset;
+      if (block->count == 0) { block->offset = prv_offset; block->zoffset = prv_zoffset; }
       if((prv_offset = ftello(cmfp->ffp)) < 0) return eslESYS;
+      if(cmfp->zcmfp != NULL && (prv_zoffset = ftello(cmfp->zcmfp->ffp)) < 0) return eslESYS;
       block->length = om->eoff - block->offset + 1;
       block->count++;
       p7_oprofile_Destroy(om);
@@ -3259,6 +3286,7 @@ int mpi_next_block(CM_FILE *cmfp, BLOCK_LIST *list, int64_t bsize, uint64_t idx0
       list->blocks[inx].length = block->length;
       list->blocks[inx].count  = block->count;
       list->blocks[inx].idx0   = block->idx0;
+      list->blocks[inx].zoffset = block->zoffset;
     }
 
   return status;

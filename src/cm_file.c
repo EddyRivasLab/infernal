@@ -220,6 +220,7 @@ cm_file_OpenBuffer(char *buffer, int size, int allow_1p0, CM_FILE **ret_cmfp)
   cmfp->efp           = NULL;
   cmfp->ffp           = NULL;
   cmfp->pfp           = NULL;
+  cmfp->zcmfp         = NULL;
   cmfp->ssi           = NULL;
   cmfp->hfp           = NULL;  /* no filter HMM can be read from a buffer: read it with <read_fp7> FALSE */
   cmfp->is_binary     = FALSE;
@@ -293,6 +294,7 @@ open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, in
   cmfp->hfp           = NULL;
   cmfp->ffp           = NULL;
   cmfp->pfp           = NULL;
+  cmfp->zcmfp         = NULL;
   cmfp->ssi           = NULL;
   cmfp->errbuf[0]     = '\0';
   cmfp->msv_errbuf[0] = '\0';
@@ -514,12 +516,29 @@ open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, in
 /* Function:  cm_file_UseHMMOnlyFilters()
  * Incept:    EPN, Fri Oct 30 2026 (w/Claude)
  *
- * Purpose:   For cmscan --hmmonly: if <cmfp> is a pressed database,
- *            read its profiles from the .i1hf/.i1hp files, which hold
- *            each model's HMM-only search HMM (cm->hp7, or the filter
- *            HMM if it has none), instead of from the .i1f/.i1p files,
- *            which hold the filter HMMs (brief 26_0821-162). Call it
+ * Purpose:   For cmscan: if <cmfp> is a pressed database, read the
+ *            profiles of the models that <which> selects from the
+ *            .i1hf/.i1hp files, which hold each model's HMM-only
+ *            search HMM (cm->hp7, or the filter HMM if it has none),
+ *            instead of from the .i1f/.i1p files, which hold the
+ *            filter HMMs (brief 26_0821-162). This makes cmscan search
+ *            each model searched HMM-only with the same HMM and
+ *            E-value parameters that cmsearch uses for it. Call it
  *            right after opening <cmfp>, before reading anything.
+ *
+ *            <which> is one of:
+ *            <CM_HMMONLY_FILTERS_NONE>:   do nothing.
+ *            <CM_HMMONLY_FILTERS_ALL>:    every model (--hmmonly); the
+ *                                         .i1hf/.i1hp files replace the
+ *                                         .i1f/.i1p files.
+ *            <CM_HMMONLY_FILTERS_ZEROBP>: models with 0 basepairs,
+ *                                         which the pipeline searches
+ *                                         HMM-only by default. A second
+ *                                         handle on the .i1hf/.i1hp
+ *                                         files (<cmfp->zcmfp>) is read
+ *                                         in step with the .i1f file by
+ *                                         cm_p7_oprofile_ReadMSV()
+ *                                         (brief 26_0821-177).
  *
  *            A database pressed by an older cmpress has no
  *            .i1hf/.i1hp files; its filter HMMs are its HMM-only HMMs
@@ -529,20 +548,25 @@ open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, in
  * Returns:   <eslOK> on success.
  *            <eslENOTFOUND> if a 1/e pressed database lacks the files,
  *            errbuf filled.
+ *            <eslEINVAL> if <which> is not a valid code.
  */
 int
-cm_file_UseHMMOnlyFilters(CM_FILE *cmfp, char *errbuf)
+cm_file_UseHMMOnlyFilters(CM_FILE *cmfp, int which, char *errbuf)
 {
-  int   status;
-  char *base   = NULL;
-  char *hffile = NULL;
-  char *hpfile = NULL;
-  FILE *fp1    = NULL;
-  FILE *fp2    = NULL;
-  FILE *fp3    = NULL;
-  int   n;
+  int      status;
+  char    *base   = NULL;
+  char    *hffile = NULL;
+  char    *hpfile = NULL;
+  FILE    *fp1    = NULL;
+  FILE    *fp2    = NULL;
+  FILE    *fp3    = NULL;
+  CM_FILE *zcmfp  = NULL;
+  int      n;
 
-  if (! cmfp->is_pressed) return eslOK;
+  if (which != CM_HMMONLY_FILTERS_NONE && which != CM_HMMONLY_FILTERS_ALL && which != CM_HMMONLY_FILTERS_ZEROBP) ESL_XFAIL(eslEINVAL, errbuf, "cm_file_UseHMMOnlyFilters(): bad <which> code %d", which);
+  if (which == CM_HMMONLY_FILTERS_NONE) return eslOK;
+  if (! cmfp->is_pressed)               return eslOK;
+  if (cmfp->zcmfp != NULL) ESL_XFAIL(eslEINVAL, errbuf, "cm_file_UseHMMOnlyFilters() called twice on %s", cmfp->fname);
   /* cmfp->fname is the .i1m file; the others share its base name */
   n = strlen(cmfp->fname);
   if (n < 4 || strcmp(cmfp->fname + n - 4, ".i1m") != 0) ESL_XFAIL(eslEINVAL, errbuf, "pressed CM file name %s does not end in .i1m", cmfp->fname);
@@ -552,10 +576,21 @@ cm_file_UseHMMOnlyFilters(CM_FILE *cmfp, char *errbuf)
   if ((status = esl_sprintf(&hpfile, "%s.i1hp", base))  != eslOK) goto ERROR;
 
   if (! esl_FileExists(hffile) || ! esl_FileExists(hpfile)) { 
-    if (cmfp->format >= CM_FILE_1e) ESL_XFAIL(eslENOTFOUND, errbuf, "Opened %s, a pressed CM file; but no .i1hf and .i1hp files found (needed with --hmmonly); rerun cmpress", cmfp->fname);
+    if (cmfp->format >= CM_FILE_1e) ESL_XFAIL(eslENOTFOUND, errbuf, "Opened %s, a pressed CM file; but no .i1hf and .i1hp files found; rerun cmpress", cmfp->fname);
     free(base); free(hffile); free(hpfile);
     return eslOK;
   }
+
+  if (which == CM_HMMONLY_FILTERS_ZEROBP) { 
+    /* open a second handle on the same database and switch all of it */
+    if ((status = cm_file_Open(base, NULL, FALSE, &zcmfp, errbuf))                    != eslOK) goto ERROR;
+    if ((status = cm_file_UseHMMOnlyFilters(zcmfp, CM_HMMONLY_FILTERS_ALL, errbuf)) != eslOK) goto ERROR;
+    cmfp->zcmfp = zcmfp;
+    free(base); free(hffile); free(hpfile);
+    return eslOK;
+  }
+
+  /* CM_HMMONLY_FILTERS_ALL */
   if ((fp1 = fopen(hffile, "rb")) == NULL) ESL_XFAIL(eslENOTFOUND, errbuf, "Failed to open %s", hffile);
   if ((fp2 = fopen(hffile, "rb")) == NULL) ESL_XFAIL(eslENOTFOUND, errbuf, "Failed to open %s", hffile);
   if ((fp3 = fopen(hpfile, "rb")) == NULL) ESL_XFAIL(eslENOTFOUND, errbuf, "Failed to open %s", hpfile);
@@ -573,6 +608,7 @@ cm_file_UseHMMOnlyFilters(CM_FILE *cmfp, char *errbuf)
   if (fp1    != NULL) fclose(fp1);
   if (fp2    != NULL) fclose(fp2);
   if (fp3    != NULL) fclose(fp3);
+  if (zcmfp  != NULL) cm_file_Close(zcmfp);
   if (base   != NULL) free(base);
   if (hffile != NULL) free(hffile);
   if (hpfile != NULL) free(hpfile);
@@ -617,6 +653,7 @@ cm_file_Close(CM_FILE *cmfp)
 #endif
 
   if(cmfp->hfp != NULL) p7_hmmfile_Close(cmfp->hfp);
+  if(cmfp->zcmfp != NULL) cm_file_Close(cmfp->zcmfp);
 
   free(cmfp);
 }
@@ -1601,73 +1638,11 @@ cm_p7_oprofile_Position(CM_FILE *cmfp, off_t offset)
 }
 
 
-/* Function:  cm_p7_oprofile_ReadMSV()
- * Synopsis:  Read MSV filter part of an optimized profile.
- * Incept:    EPN, Fri Jul  8 08:19:58 2011
- *
- * Purpose:   Read the MSV filter part of a p7 filter profile from the
- *            <.i1f> file associated with an open CM file <cmfp>.
- *            Allocate a new model, populate it with this minimal
- *            MSV filter information, and return a pointer to them
- *            in <*ret_om>. Return pointers to additional information
- *            on the model in <*ret_cm_offset>, <*ret_cm_clen> and
- *            <*ret_cm_W>.
- *            
- *            Our alphabet may get set by the first HMM we read.  If
- *            <*byp_abc> is <NULL> at start, create a new alphabet and
- *            return a pointer to it in <*byp_abc>. If <*byp_abc> is
- *            non-<NULL>, it is assumed to be a pointer to an existing
- *            alphabet; we verify that the HMM's alphabet matches it
- *            and <*ret_abc> isn't changed.  This is the same
- *            convention used by <cm_file_Read()>.
- *            
- *            The <.i1f> file was opened automatically, if it existed,
- *            when the CM file was opened with <cm_file_Open()>.
- *            
- *            When no more HMMs remain in the file, return <eslEOF>.
- *
- *            Most of the work is done by p7_oprofile_ReadMSV(). This
- *            function is only necessary to read five pieces of data
- *            that are specific to CMs. See cm_p7_oprofile_Write()
- *            for more explanation. 
- *
- *            If <read_scores> is TRUE: read all the MSV data 
- *            (including scores) using p7_oprofile_ReadMSV().
- *            If <read_scores> is FALSE: read only the MSV info
- *            (no scores) using p7_oprofile_ReadInfoMSV().
- *
- *
- * Args:      cmfp    - open CM file, with associated .i1p file
- *            byp_abc - BYPASS: <*byp_abc == ESL_ALPHABET *> if known; 
- *                              <*byp_abc == NULL> if desired; 
- *                              <NULL> if unwanted.
- *            ret_cm_offset   - RETURN: offset of CM  each om corresponds to
- *            ret_cm_clen     - RETURN: clen of CM each om corresponds to
- *            ret_cm_W        - RETURN: W of CM each om corresponds to
- *            ret_cm_nbp      - RETURN: number of bps in CM each om corresponds to
- *            ret_gfmu        - RETURN: glocal fwd mu the om
- *            ret_gflambda    - RETURN: glocal forward lambda the om
- *            ret_om          - RETURN: the read <om> with MSV filter
- *                              data filled in.
- *            
- * Returns:   <eslOK> on success. <*ret_om> is allocated here;
- *            caller free's with <p7_oprofile_Destroy()>.
- *            <*byp_abc> is allocated here if it was requested;
- *            caller free's with <esl_alphabet_Destroy()>.
- *            
- *            Returns <eslEFORMAT> if <cmfp> has no <.i1f> file open,
- *            or on any parsing error.
- *            
- *            Returns <eslEINCOMPAT> if the HMM we read is incompatible
- *            with the existing alphabet <*byp_abc> led us to expect.
- *            
- *            On any returned error, <cmfp->msv_errbuf> contains an
- *            informative error message.
- *
- * Throws:    <eslEMEM> on allocation error.
+/* read_msv_entry(): read one entry of <cmfp>'s .i1f file; see
+ * cm_p7_oprofile_ReadMSV(), which wraps it.
  */
-int
-cm_p7_oprofile_ReadMSV(CM_FILE *cmfp, int read_scores, ESL_ALPHABET **byp_abc, off_t *ret_cm_offset, int *ret_cm_clen, int *ret_cm_W, int *ret_cm_nbp, float *ret_gfmu, float *ret_gflambda, P7_OPROFILE **ret_om)
+static int
+read_msv_entry(CM_FILE *cmfp, int read_scores, ESL_ALPHABET **byp_abc, off_t *ret_cm_offset, int *ret_cm_clen, int *ret_cm_W, int *ret_cm_nbp, float *ret_gfmu, float *ret_gflambda, P7_OPROFILE **ret_om)
 {
   int status         = eslOK;      /* return status */
   uint32_t magic;                  /* magic number used to verify format */
@@ -1721,6 +1696,153 @@ cm_p7_oprofile_ReadMSV(CM_FILE *cmfp, int read_scores, ESL_ALPHABET **byp_abc, o
   if (om != NULL) p7_oprofile_Destroy(om); 
   if (ret_om != NULL) *ret_om = NULL;
   return status;
+}
+
+/* Function:  cm_p7_oprofile_ReadMSV()
+ * Synopsis:  Read MSV filter part of an optimized profile.
+ * Incept:    EPN, Fri Jul  8 08:19:58 2011
+ *
+ * Purpose:   Read the MSV filter part of a p7 filter profile from the
+ *            <.i1f> file associated with an open CM file <cmfp>.
+ *            Allocate a new model, populate it with this minimal
+ *            MSV filter information, and return a pointer to them
+ *            in <*ret_om>. Return pointers to additional information
+ *            on the model in <*ret_cm_offset>, <*ret_cm_clen> and
+ *            <*ret_cm_W>.
+ *            
+ *            Our alphabet may get set by the first HMM we read.  If
+ *            <*byp_abc> is <NULL> at start, create a new alphabet and
+ *            return a pointer to it in <*byp_abc>. If <*byp_abc> is
+ *            non-<NULL>, it is assumed to be a pointer to an existing
+ *            alphabet; we verify that the HMM's alphabet matches it
+ *            and <*ret_abc> isn't changed.  This is the same
+ *            convention used by <cm_file_Read()>.
+ *            
+ *            The <.i1f> file was opened automatically, if it existed,
+ *            when the CM file was opened with <cm_file_Open()>.
+ *            
+ *            When no more HMMs remain in the file, return <eslEOF>.
+ *
+ *            Most of the work is done by p7_oprofile_ReadMSV(). This
+ *            function is only necessary to read five pieces of data
+ *            that are specific to CMs. See cm_p7_oprofile_Write()
+ *            for more explanation. 
+ *
+ *            If <read_scores> is TRUE: read all the MSV data 
+ *            (including scores) using p7_oprofile_ReadMSV().
+ *            If <read_scores> is FALSE: read only the MSV info
+ *            (no scores) using p7_oprofile_ReadInfoMSV().
+ *
+ *            If <cmfp->zcmfp> is non-NULL (see
+ *            cm_file_UseHMMOnlyFilters()), it is read in step with
+ *            <cmfp>. For a model with 0 basepairs, when <read_scores>
+ *            is TRUE, the profile returned is the one from
+ *            <cmfp->zcmfp> (the model's HMM-only HMM) with its glocal
+ *            Forward parameters, and it is read in full, because
+ *            the pipeline reads the rest of a profile through
+ *            <cmfp->hfp> (brief 26_0821-177).
+ *
+ *
+ * Args:      cmfp    - open CM file, with associated .i1p file
+ *            byp_abc - BYPASS: <*byp_abc == ESL_ALPHABET *> if known; 
+ *                              <*byp_abc == NULL> if desired; 
+ *                              <NULL> if unwanted.
+ *            ret_cm_offset   - RETURN: offset of CM  each om corresponds to
+ *            ret_cm_clen     - RETURN: clen of CM each om corresponds to
+ *            ret_cm_W        - RETURN: W of CM each om corresponds to
+ *            ret_cm_nbp      - RETURN: number of bps in CM each om corresponds to
+ *            ret_gfmu        - RETURN: glocal fwd mu the om
+ *            ret_gflambda    - RETURN: glocal forward lambda the om
+ *            ret_om          - RETURN: the read <om> with MSV filter
+ *                              data filled in.
+ *            
+ * Returns:   <eslOK> on success. <*ret_om> is allocated here;
+ *            caller free's with <p7_oprofile_Destroy()>.
+ *            <*byp_abc> is allocated here if it was requested;
+ *            caller free's with <esl_alphabet_Destroy()>.
+ *            
+ *            Returns <eslEFORMAT> if <cmfp> has no <.i1f> file open,
+ *            or on any parsing error.
+ *            
+ *            Returns <eslEINCOMPAT> if the HMM we read is incompatible
+ *            with the existing alphabet <*byp_abc> led us to expect.
+ *            
+ *            On any returned error, <cmfp->msv_errbuf> contains an
+ *            informative error message.
+ *
+ * Throws:    <eslEMEM> on allocation error.
+ */
+int
+cm_p7_oprofile_ReadMSV(CM_FILE *cmfp, int read_scores, ESL_ALPHABET **byp_abc, off_t *ret_cm_offset, int *ret_cm_clen, int *ret_cm_W, int *ret_cm_nbp, float *ret_gfmu, float *ret_gflambda, P7_OPROFILE **ret_om)
+{
+  int          status;
+  off_t        cm_offset, z_cm_offset;
+  int          cm_clen, cm_W, cm_nbp;
+  float        gfmu, gflambda;
+  float        z_gfmu, z_gflambda;
+  int          use_z;
+  P7_OPROFILE *om   = NULL;
+  P7_OPROFILE *zom  = NULL;
+
+  if (cmfp->zcmfp == NULL) 
+    return read_msv_entry(cmfp, read_scores, byp_abc, ret_cm_offset, ret_cm_clen, ret_cm_W, ret_cm_nbp, ret_gfmu, ret_gflambda, ret_om);
+
+  if ((status = read_msv_entry(cmfp, read_scores, byp_abc, &cm_offset, &cm_clen, &cm_W, &cm_nbp, &gfmu, &gflambda, &om)) != eslOK) goto ERROR;
+
+  /* read (or skip) the same model's entry in the .i1hf file */
+  use_z = (read_scores && cm_nbp == 0) ? TRUE : FALSE;
+  status = read_msv_entry(cmfp->zcmfp, use_z, byp_abc, &z_cm_offset, NULL, NULL, NULL, &z_gfmu, &z_gflambda, &zom);
+  if      (status == eslEOF) ESL_XFAIL(eslEFORMAT, cmfp->msv_errbuf, "the .i1hf file has fewer models than the .i1f file; rerun cmpress");
+  else if (status != eslOK)  ESL_XFAIL(status,     cmfp->msv_errbuf, "%s", cmfp->zcmfp->msv_errbuf);
+  if (z_cm_offset != cm_offset) ESL_XFAIL(eslEFORMAT, cmfp->msv_errbuf, "the .i1f and .i1hf files are out of step for model %s; rerun cmpress", om->name);
+
+  if (use_z) { 
+    if ((status = p7_oprofile_ReadRest(cmfp->zcmfp->hfp, zom)) != eslOK) ESL_XFAIL(status, cmfp->msv_errbuf, "failed to read HMM-only profile of model %s: %s", om->name, cmfp->zcmfp->hfp->rr_errbuf);
+    p7_oprofile_Destroy(om);
+    om       = zom;
+    zom      = NULL;
+    gfmu     = z_gfmu;
+    gflambda = z_gflambda;
+  }
+  else { 
+    p7_oprofile_Destroy(zom);
+    zom = NULL;
+  }
+
+  if(ret_cm_offset != NULL) *ret_cm_offset  = cm_offset; 
+  if(ret_cm_clen   != NULL) *ret_cm_clen    = cm_clen; 
+  if(ret_cm_W      != NULL) *ret_cm_W       = cm_W; 
+  if(ret_cm_nbp    != NULL) *ret_cm_nbp     = cm_nbp;
+  if(ret_gfmu      != NULL) *ret_gfmu       = gfmu;
+  if(ret_gflambda  != NULL) *ret_gflambda   = gflambda;
+  if(ret_om        != NULL) *ret_om         = om;         
+  else                      p7_oprofile_Destroy(om);
+  return eslOK;
+
+ ERROR:
+  if (om  != NULL) p7_oprofile_Destroy(om); 
+  if (zom != NULL) p7_oprofile_Destroy(zom); 
+  if (ret_om != NULL) *ret_om = NULL;
+  return status;
+}
+
+/* Function:  cm_p7_oprofile_PositionZeroBP()
+ * Incept:    EPN, Tue Nov  3 2026 (w/Claude)
+ *
+ * Purpose:   If <cmfp> has a second handle on its .i1hf/.i1hp files
+ *            (<cmfp->zcmfp>; see cm_file_UseHMMOnlyFilters()),
+ *            reposition its .i1hf file to <offset>. Use with
+ *            cm_p7_oprofile_Position(), which repositions the .i1f
+ *            file, so the two stay in step (brief 26_0821-177). Does
+ *            nothing if <cmfp->zcmfp> is NULL.
+ *
+ * Returns:   <eslOK> on success; see cm_p7_oprofile_Position().
+ */
+int
+cm_p7_oprofile_PositionZeroBP(CM_FILE *cmfp, off_t offset)
+{
+  if (cmfp->zcmfp == NULL) return eslOK;
+  return cm_p7_oprofile_Position(cmfp->zcmfp, offset);
 }
 
 /* Function:  cm_p7_oprofile_ReadBlockMSV()
