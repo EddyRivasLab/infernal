@@ -949,7 +949,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *alifile)
       * model. Infernal 1.1 used an HMMER3-like prior for them, and
       * parameterized them as HMMs; 1.2 doesn't (brief 26_0821-182).
       * --noh3pri, which turned that off, is accepted as a no-op. */
-     cfg->pri = Prior_Default(FALSE);
+     cfg->pri = Prior_Default();
    }
 
    /* Set up the null/random seq model */

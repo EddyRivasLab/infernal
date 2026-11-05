@@ -3950,7 +3950,7 @@ extern Prior_t *Prior_Create(void);
 extern void     Prior_Destroy(Prior_t *pri);
 extern Prior_t *Prior_Read(FILE *fp);
 extern void     PriorifyCM(CM_t *cm, const Prior_t *pri);
-extern Prior_t *Prior_Default(int mimic_h3);
+extern Prior_t *Prior_Default(void);
 extern int      Prior_HMMOnlyAlpha(const Prior_t *pri, double *alpha);
 extern Prior_t *Prior_Default_v0p56_through_v1p02(void);
 

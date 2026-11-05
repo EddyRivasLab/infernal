@@ -1990,7 +1990,7 @@ utest_HMMOnlyTransform(ESL_RANDOMNESS *r, ESL_ALPHABET *abc, int M)
   int      status;
 
   /* 1. */
-  pri = Prior_Default(FALSE);
+  pri = Prior_Default();
   cm_p7_DefaultHMMOnlyAlpha(dflt);
   if (! Prior_HMMOnlyAlpha(pri, palpha)) esl_fatal("%s: default prior's MATL transitions not single Dirichlets", msg);
   for (x = 0; x < CM_HP7_NALPHA; x++)

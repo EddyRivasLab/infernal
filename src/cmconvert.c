@@ -438,7 +438,7 @@ upgrade_model(const ESL_GETOPTS *go, CM_t *cm, int format, const Prior_t *user_p
   if      (user_pri != NULL) pri2use = user_pri;
   else if (com_prior)        pri2use = NULL;  /* unknown prior file */
   else if (is_v1p0)          pri2use = pri = Prior_Default_v0p56_through_v1p02();
-  else                       pri2use = pri = Prior_Default(FALSE);
+  else                       pri2use = pri = Prior_Default();
 
   if      (pretend_cm_is_hmm)                                      cm->hp7_xform = CM_HP7_ML;
   else if (pri2use != NULL && Prior_HMMOnlyAlpha(pri2use, cm->hp7_alpha)) cm->hp7_xform = CM_HP7_H3PRI;
