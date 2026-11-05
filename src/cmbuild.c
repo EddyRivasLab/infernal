@@ -83,7 +83,7 @@ static ESL_OPTIONS options[] = {
   { "--informat",  eslARG_STRING,  NULL,    NULL, NULL,         NULL,      NULL,         NULL, "specify input alignment is in format <s> (Stockholm or Pfam)", 103 },
   { "--v1p0",      eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         "--ere",  "parameterize CM using methods from Infernal v1.0.2",          103 },
   { "--p56",       eslARG_NONE,    NULL,    NULL, NULL,         NULL,      NULL,    "--prior", "use the default prior from Infernal v0.56 through v1.0.2",     103 },
-  { "--noh3pri",   eslARG_NONE,    NULL,    NULL, NULL,         NULL,      NULL,"--v1p0,--p56","do not use the hmmer3 DNA prior for zero basepair models",     103 },
+  { "--noh3pri",   eslARG_NONE,    NULL,    NULL, NULL,         NULL,      NULL,         NULL, "no effect: 0 basepair models always use the default prior",    103 },
   { "--iins",      eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL, "allow informative insert emissions, do not zero them",         103 },
   { "--iflank",    eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL, "learn ROOT_IL/ROOT_IR transitions for 5'/3' flanking residues",103 },
   { "--nobalance", eslARG_NONE,    FALSE,   NULL, NULL,         NULL,      NULL,         NULL, "don't rebalance the CM; number in strict preorder",            103 },
@@ -240,7 +240,6 @@ struct cfg_s {
 
   float        *null;		/* null model                              */
   Prior_t      *pri;		/* mixture Dirichlet prior for the CM     */
-  Prior_t      *pri_zerobp;	/* mixture Dirichlet prior for any CMs with 0 basepairs */
 
   fullmat_t    *fullmat;        /* if --rsearch, the full RIBOSUM matrix */
 
@@ -310,10 +309,10 @@ static int    parameterize(const ESL_GETOPTS *go, const struct cfg_s *cfg, char 
 static int    configure_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int iter);
 static int    set_consensus(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int    build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int hp7_xform);
-static int    determine_hp7_xform(const struct cfg_s *cfg, int pretend_cm_is_hmm, double *alpha);
+static int    determine_hp7_xform(const struct cfg_s *cfg, double *alpha);
 static char  *esim_forced_by(const ESL_GETOPTS *go, int filter_is_mlp7);
 static int    set_msa_name(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
-static double set_target_relent(const ESL_GETOPTS *go, const ESL_ALPHABET *abc, int clen, int nbps);
+static double set_target_relent(const ESL_GETOPTS *go, const ESL_ALPHABET *abc, int clen);
 static double version_1p0_default_target_relent(const ESL_ALPHABET *abc, int M, double eX);
 static int    refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *orig_cm, ESL_MSA *input_msa, Parsetree_t **input_msa_tr, CM_t **ret_cm, ESL_MSA **ret_msa, Parsetree_t **ret_mtr, Parsetree_t ***ret_trA, int *ret_niter);
 static int    convert_parsetrees_to_unaln_coords(Parsetree_t **tr, ESL_MSA *msa);
@@ -331,7 +330,6 @@ static P7_PRIOR * cm_p7_prior_Read(FILE *fp);
 static void  dump_cm_occupancy_values(FILE *fp, CM_t *cm);
 static void  dump_cp9_occupancy_values(FILE *fp, char *name, CP9_t *cp9);
 static void  dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7);
-static int   determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm);
 
 int
 main(int argc, char **argv)
@@ -491,7 +489,6 @@ main(int argc, char **argv)
   if (cfg.abc        != NULL) esl_alphabet_Destroy(cfg.abc);
   if (cfg.cmoutfp    != NULL) fclose(cfg.cmoutfp);
   if (cfg.pri        != NULL) Prior_Destroy(cfg.pri);
-  if (cfg.pri_zerobp != NULL) Prior_Destroy(cfg.pri_zerobp);
   if (cfg.null       != NULL) free(cfg.null);
   if (cfg.r          != NULL) esl_randomness_Destroy(cfg.r);
 
@@ -652,7 +649,7 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
             /* with -l, the CM was local during refinement, so its filter and
              * HMM-only HMMs weren't derived yet; now it is global again */
             if (! (cm->flags & CMH_FP7)) {
-              if ((status = build_and_calibrate_p7_filter(go, cfg, errbuf, cm, determine_hp7_xform(cfg, determine_pretend_cm_is_hmm(go, cm), cm->hp7_alpha))) != eslOK) cm_Fail(errbuf);
+              if ((status = build_and_calibrate_p7_filter(go, cfg, errbuf, cm, determine_hp7_xform(cfg, cm->hp7_alpha))) != eslOK) cm_Fail(errbuf);
             }
             if (niter > 1) { /* if niter == 1, we didn't make a new mtr, or tr, so we don't free them */
               for(i = 0; i < msa->nseq; i++) FreeParsetree(tr[i]);
@@ -943,19 +940,16 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *alifile)
      if ((pfp = fopen(esl_opt_GetString(go, "--prior"), "r")) == NULL) cm_Fail("Failed to open prior file %s\n", esl_opt_GetString(go, "--prior"));
      if ((cfg->pri = Prior_Read(pfp)) == NULL)     	               cm_Fail("Failed to parse prior file %s\n", esl_opt_GetString(go, "--prior"));
      fclose(pfp);
-     cfg->pri_zerobp = NULL;
    }
    else if(esl_opt_GetBoolean(go, "--p56") || esl_opt_GetBoolean(go, "--v1p0")) { 
-     cfg->pri        = Prior_Default_v0p56_through_v1p02();
-     cfg->pri_zerobp = NULL;
-   }
-   else if(esl_opt_GetBoolean(go, "--noh3pri")) { 
-     cfg->pri        = Prior_Default(FALSE);
-     cfg->pri_zerobp = NULL;
+     cfg->pri = Prior_Default_v0p56_through_v1p02();
    }
    else { 
-     cfg->pri        = Prior_Default(FALSE);
-     cfg->pri_zerobp = Prior_Default(TRUE);
+     /* models with 0 basepairs use the same prior as any other
+      * model. Infernal 1.1 used an HMMER3-like prior for them, and
+      * parameterized them as HMMs; 1.2 doesn't (brief 26_0821-182).
+      * --noh3pri, which turned that off, is accepted as a no-op. */
+     cfg->pri = Prior_Default(FALSE);
    }
 
    /* Set up the null/random seq model */
@@ -1085,8 +1079,6 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *alifile)
    int           status;
    uint32_t      checksum = 0;      /* checksum calculated for the input MSA. cmalign --mapali verifies against this. */
    CM_t         *cm = NULL;         /* the CM */
-   int           pretend_cm_is_hmm; /* TRUE if we will use special HMM-like parameterization because this CM has 0 basepairs */
-   Prior_t      *pri2use = NULL;    /* cfg->pri or cfg->pri_zerobp (the latter if CM has no basepairs) */
    char         *pknot_ss = NULL;   /* Feature B: captured pseudoknotted full-WUSS structure (alignment resolution), or NULL */
 
    if ((status =  check_and_clean_msa  (go, cfg, errbuf, msa, &pknot_ss))                       != eslOK) goto ERROR;
@@ -1103,13 +1095,10 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *alifile)
    cm->checksum = checksum;
    cm->flags   |= CMH_CHKSUM;
 
-   pretend_cm_is_hmm = determine_pretend_cm_is_hmm(go, cm);
-   pri2use = (pretend_cm_is_hmm) ? cfg->pri_zerobp : cfg->pri;
-
    if ((status =  annotate                     (go, cfg, errbuf, msa, cm, pknot_ss))                   != eslOK) goto ERROR;
    if ((status =  set_model_cutoffs            (go, cfg, errbuf, msa, cm))                             != eslOK) goto ERROR;
-   if ((status =  set_effective_seqnumber      (go, cfg, errbuf, msa, cm, pri2use))                    != eslOK) goto ERROR;
-   if ((status =  parameterize                 (go, cfg, errbuf, TRUE, cm, pri2use, msa->nseq))        != eslOK) goto ERROR;
+   if ((status =  set_effective_seqnumber      (go, cfg, errbuf, msa, cm, cfg->pri))                   != eslOK) goto ERROR;
+   if ((status =  parameterize                 (go, cfg, errbuf, TRUE, cm, cfg->pri, msa->nseq))       != eslOK) goto ERROR;
    if ((status =  configure_model              (go, cfg, errbuf, cm, 1))                               != eslOK) goto ERROR;
    if ((status =  set_consensus                (go, cfg, errbuf, cm))                                  != eslOK) goto ERROR;
    /* derive and calibrate the filter HMM and the HMM-only HMM (brief 26_0821-162).
@@ -1117,7 +1106,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *alifile)
     * mode; a CM configured locally for --refine -l is globalized only
     * after refinement, and master() derives them then. */
    if (! (cm->flags & (CMH_LOCAL_BEGIN | CMH_LOCAL_END))) {
-     if ((status =  build_and_calibrate_p7_filter(go, cfg, errbuf, cm, determine_hp7_xform(cfg, pretend_cm_is_hmm, cm->hp7_alpha))) != eslOK) goto ERROR;
+     if ((status =  build_and_calibrate_p7_filter(go, cfg, errbuf, cm, determine_hp7_xform(cfg, cm->hp7_alpha))) != eslOK) goto ERROR;
    }
 
    *ret_cm = cm;
@@ -1570,9 +1559,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *alifile)
    }
 
    /* Finally, output processed MSA, if nec (-O used). This will have
-    * WT and RF annotation. Additionally, if model has 0 basepairs,
-    * the MSA may have been modified with cm_parsetree_Doctor() by
-    * removing D->I and I->D transitions.
+    * WT and RF annotation.
     */
    if (cfg->postmsafp != NULL && msa != NULL) {
      ESL_SQ **sq       = NULL;
@@ -1975,9 +1962,7 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int do
   int use_rf;
   int use_wts;
   int* used_el = NULL;
-  int pretend_cm_is_hmm;   /* TRUE if we will use special HMM-like parameterization because this CM has 0 basepairs */
   double **dbl_e = NULL;   /* copy of cm->e in doubles */
-  Prior_t *pri2use = NULL; /* cfg->pri or cfg->pri_zerobp (the latter if CM has no basepairs) */
   int v;                   /* counter over states */
   int a;                   /* counter over symbols */
 
@@ -2028,14 +2013,8 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int do
   ESL_ALLOC(used_el, sizeof(int) * (msa->alen+1));
   esl_vec_ISet(used_el, msa->alen+1, FALSE);
 
-  pretend_cm_is_hmm = determine_pretend_cm_is_hmm(go, cm);
-  pri2use = (pretend_cm_is_hmm) ? cfg->pri_zerobp : cfg->pri;
-
   for (idx = 0; idx < msa->nseq; idx++) {
     if((status = Transmogrify(cm, errbuf, mtr, msa->ax[idx], used_el, msa->alen, &(tr[idx]))) != eslOK) return status;
-    if(pretend_cm_is_hmm) { 
-      if((status = cm_parsetree_Doctor(cm, errbuf, tr[idx], NULL, NULL)) != eslOK) return status;
-    }
     ParsetreeCountExceptTruncatedMPs(cm, tr[idx], msa->ax[idx], msa->wgt[idx]);
     /*ParsetreeDump(cfg->ofp, tr[idx], cm, msa->ax[idx]);*/
   }
@@ -2062,7 +2041,7 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int do
     }
   }
   for (idx = 0; idx < msa->nseq; idx++) {
-    ParsetreeCountOnlyTruncatedMPs(cm, tr[idx], msa->ax[idx], msa->wgt[idx], dbl_e, pri2use);
+    ParsetreeCountOnlyTruncatedMPs(cm, tr[idx], msa->ax[idx], msa->wgt[idx], dbl_e, cfg->pri);
   }
 
   free(used_el);
@@ -2405,7 +2384,7 @@ set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg,
         etarget = version_1p0_default_target_relent(cm->abc, clen, 6.0);
       }
       else { 
-        etarget = set_target_relent(go, cm->abc, clen, CMCountNodetype(cm, MATP_nd));
+        etarget = set_target_relent(go, cm->abc, clen);
       }
 
       max_neff = (esl_opt_IsUsed(go, "--emaxseq") ? esl_opt_GetReal(go, "--emaxseq") : (double) cm->nseq);
@@ -2780,11 +2759,9 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
  * Incept:    EPN, Fri Oct 30 2026 (w/Claude)
  *
  * Purpose:   Choose the transform of the CM's ML p7 HMM that gives
- *            the HMM-only search HMM (brief 26_0821-162):
- *            CM_HP7_ML for a zero-basepair model parameterized as an
- *            HMM (<pretend_cm_is_hmm>; its ML HMM is already the HMM
- *            it searches with, as before). Otherwise CM_HP7_H3PRI,
- *            backing out the alphas of the transition prior the CM was
+ *            the HMM-only search HMM (brief 26_0821-162): for any CM,
+ *            with or without basepairs (brief 26_0821-182),
+ *            CM_HP7_H3PRI, backing out the alphas of the transition prior the CM was
  *            built with (cfg->pri), which are returned in <alpha>
  *            and stored in the CM file (brief 26_0821-165); or
  *            CM_HP7_ML if that prior's MATL->MATL transition priors
@@ -2794,9 +2771,8 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
  *            single Dirichlets there.
  */
 static int
-determine_hp7_xform(const struct cfg_s *cfg, int pretend_cm_is_hmm, double *alpha)
+determine_hp7_xform(const struct cfg_s *cfg, double *alpha)
 {
-  if (pretend_cm_is_hmm) return CM_HP7_ML;
   return Prior_HMMOnlyAlpha(cfg->pri, alpha) ? CM_HP7_H3PRI : CM_HP7_ML;
 }
 
@@ -2901,7 +2877,7 @@ esim_forced_by(const ESL_GETOPTS *go, int filter_is_mlp7)
  *
  */
 static double
-set_target_relent(const ESL_GETOPTS *go, const ESL_ALPHABET *abc, int clen, int nbps)
+set_target_relent(const ESL_GETOPTS *go, const ESL_ALPHABET *abc, int clen)
 {
   double etarget;
   double re_target;
@@ -2912,8 +2888,10 @@ set_target_relent(const ESL_GETOPTS *go, const ESL_ALPHABET *abc, int clen, int 
   }
   else {
     if(abc->type != eslRNA) cm_Fail("ERROR, alphabet not RNA, user needs to specify target entropy with --ere");
-    /* set target differently if we have 0 basepairs or not */
-    re_target = (nbps > 0) ? DEFAULT_ETARGET : DEFAULT_ETARGET_HMMFILTER;
+    /* the same target with or without basepairs; Infernal 1.1 used
+     * 0.38 bits for models with 0 basepairs
+     * (brief 26_0821-182) */
+    re_target = DEFAULT_ETARGET;
   }
   /* the defn of etarget below is identical to how hmmer3 does it in hmmer/src/p7_builder.c as of svn rev 3986 (04.16.12) */
   etarget = (esigma - eslCONST_LOG2R * log( 2.0 / ((double) clen * (double) (clen+1)))) / (double) clen; /* HMMER3.0 default, xref J5/36. */
@@ -3890,31 +3868,4 @@ dump_fp7_occupancy_values(FILE *fp, char *name, P7_HMM *p7)
  ERROR:
   cm_Fail("memory allocation error.");
   return; /* NEVERREACHED */
-}
-
-/* Function: determine_pretend_cm_is_hmm()
- * Date:     EPN, Thu Nov  3 15:23:27 2022
- *
- * Purpose: Determine if we are going to pretend the CM 
- *          is an HMM for parameterization purposes.
- *
- * Returns: TRUE or FALSE
- */
-static int
-determine_pretend_cm_is_hmm(const ESL_GETOPTS *go, CM_t *cm)
-{
-  int pretend_cm_is_hmm;
-
-  if((CMCountNodetype(cm, MATP_nd) == 0)     && 
-     (! esl_opt_GetBoolean(go, "--v1p0"))    && 
-     (! esl_opt_GetBoolean(go, "--p56"))     && 
-     (! esl_opt_GetBoolean(go, "--noh3pri")) && 
-     (! esl_opt_IsUsed    (go, "--prior"))) { 
-    pretend_cm_is_hmm = TRUE;
-  }
-  else { 
-    pretend_cm_is_hmm = FALSE;
-  }
-
-  return pretend_cm_is_hmm;
 }

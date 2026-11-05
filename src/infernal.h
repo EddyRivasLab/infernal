@@ -85,7 +85,6 @@
 #define DEFAULT_PBEGIN              0.05           /* EPN 06.29.07 (formerly 0.5) */
 #define DEFAULT_PEND                0.05           /* EPN 06.29.07 (formerly 0.5) */
 #define DEFAULT_ETARGET             0.59           /* EPN 07.10.07 (formerly (v0.7->v0.8)= 2.-0.54 = 1.46 */
-#define DEFAULT_ETARGET_HMMFILTER   0.38           /* EPN 04.16.12 */
 #define DEFAULT_NULL2_OMEGA         0.000015258791 /* 1/(2^16), the hard-coded prior probability of the null2 model */
 #define DEFAULT_NULL3_OMEGA         0.000015258791 /* 1/(2^16), the hard-coded prior probability of the null3 model */
 #define V1P0_NULL2_OMEGA            0.03125        /* 1/(2^5),  the prior probability of the null2 model for v0.56->v1.0.2 */
