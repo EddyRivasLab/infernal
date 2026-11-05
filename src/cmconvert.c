@@ -383,9 +383,11 @@ configure_model(CM_t *cm, char *errbuf, int set_filter)
  *            calibration settings.
  *
  *            The HMM-only HMM depends on how the CM was built, which a
- *            CM file doesn't record except in its COM lines. Like
- *            cmbuild (its determine_hp7_xform() and
- *            determine_pretend_cm_is_hmm()):
+ *            CM file doesn't record except in its COM lines. An old-
+ *            format file was written by a cmbuild older than this
+ *            one, so these rules describe how those cmbuilds built a
+ *            CM, not how cmbuild builds one now; they are kept here,
+ *            not shared with cmbuild:
  *            - The CM's transition prior: <user_pri> (cmconvert
  *              --prior) if given; else the v0.56-v1.0.2 prior for a
  *              v1.0 format file, or if the cmbuild COM line has --p56
@@ -399,6 +401,15 @@ configure_model(CM_t *cm, char *errbuf, int set_filter)
  *              basepair (HMMER-like) prior, i.e. not from a v1.0 file
  *              and without --p56/--v1p0/--noh3pri/--prior on its
  *              cmbuild COM line, nor cmconvert --prior: HP7 ml.
+ *              cmbuild before 1.2 (and 1.2 development versions
+ *              before brief 26_0821-182) built such a CM as if it
+ *              were an HMM, with an HMMER3-like prior, and searched it
+ *              with its ML HMM. cmbuild now builds it like any other
+ *              CM, and writes INFERNAL1/e, with an HP7 line, so its
+ *              files never reach this function. (A
+ *              1.2 0-bp CM written in an old format with cmconvert
+ *              --outfmt and then upgraded gets HP7 ml, because the
+ *              old format can't say which cmbuild built it.)
  *            - The filter HMMs' glocal Forward E-value parameters are
  *              simulated, not predicted, where cmbuild would simulate
  *              them: --Esim, a --prior build, --eset 0, or an EFFN at
@@ -426,21 +437,21 @@ upgrade_model(const ESL_GETOPTS *go, CM_t *cm, int format, const Prior_t *user_p
   char          *eset_arg  = NULL;
   int            com_prior = comlog_cmbuild_option(cm->comlog, "--prior", NULL);
   int            is_v1p0   = (format == CM_FILE_1 || comlog_cmbuild_option(cm->comlog, "--p56", NULL) || comlog_cmbuild_option(cm->comlog, "--v1p0", NULL)) ? TRUE : FALSE;
-  int            pretend_cm_is_hmm;
+  int            built_as_hmm;      /* TRUE if a pre-1.2 cmbuild built this 0-bp CM as an HMM */
   int            do_sim;
   int            ncpus     = 0;
   double         x;
   CM_P7_CALOPTS  co;
 
-  pretend_cm_is_hmm = (CMCountNodetype(cm, MATP_nd) == 0 && user_pri == NULL && ! com_prior && ! is_v1p0 &&
-                       ! comlog_cmbuild_option(cm->comlog, "--noh3pri", NULL)) ? TRUE : FALSE;
+  built_as_hmm = (CMCountNodetype(cm, MATP_nd) == 0 && user_pri == NULL && ! com_prior && ! is_v1p0 &&
+                  ! comlog_cmbuild_option(cm->comlog, "--noh3pri", NULL)) ? TRUE : FALSE;
 
   if      (user_pri != NULL) pri2use = user_pri;
   else if (com_prior)        pri2use = NULL;  /* unknown prior file */
   else if (is_v1p0)          pri2use = pri = Prior_Default_v0p56_through_v1p02();
   else                       pri2use = pri = Prior_Default();
 
-  if      (pretend_cm_is_hmm)                                      cm->hp7_xform = CM_HP7_ML;
+  if      (built_as_hmm)                                           cm->hp7_xform = CM_HP7_ML;
   else if (pri2use != NULL && Prior_HMMOnlyAlpha(pri2use, cm->hp7_alpha)) cm->hp7_xform = CM_HP7_H3PRI;
   else                                                             cm->hp7_xform = CM_HP7_ML;
   if (cm->hp7_xform == CM_HP7_ML) cm_p7_DefaultHMMOnlyAlpha(cm->hp7_alpha); /* unused; keep the in-memory default */
