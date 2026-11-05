@@ -10,8 +10,10 @@
 # Checks that the CM weighting options build on their own, that the
 # removed options are rejected (writing no CM file), and the HP7
 # transform each build records: h3pri with the default prior, with
-# --rsearch (whose transitions use the default prior) and with --p56,
-# each with an HP7A line (brief 26_0821-165); ml with --noss.
+# --rsearch (whose transitions use the default prior), with --p56, and
+# for a model with no basepairs (--noss), each with an HP7A line (brief
+# 26_0821-165). (A 0-bp model got ml before brief 26_0821-182, when
+# cmbuild built it as an HMM.)
 #
 $usage = "perl i-entropy-filter-choice.pl <cmbuild> <RIBOSUM matrix file>\n";
 if ($#ARGV != 1) { die "Wrong argument number.\n$usage"; }
@@ -54,7 +56,8 @@ close OUT;
     [ "",                         "efc.1", 1, "h3pri" ],
     [ "--p7ml",                   "efc.1", 1, "h3pri" ],
     [ "--eset 1 --p7ml",          "efc.1", 1, "h3pri" ],
-    [ "--noss --eset 0",          "efc.1", 1, "ml" ],
+    [ "--noss --eset 0",          "efc.1", 1, "h3pri" ],
+    [ "--noss --noh3pri",         "efc.1", 1, "h3pri" ],
     [ "--p7eent",                 "efc.1", 0, "" ],
     [ "--ere 0.8 --p7ere 0.45",   "efc.1", 0, "" ],
     [ "--p7hemit",                "efc.1", 0, "" ],

@@ -2,8 +2,11 @@
 
 # bug i66 - cmbuild -O corrupts truncated fragment rows of zero-basepair models
 #
-# For models with zero basepairs, cmbuild runs cm_parsetree_Doctor()
-# on each training parsetree. For a 5'-truncated fragment row whose
+# For models with zero basepairs, cmbuild ran cm_parsetree_Doctor()
+# on each training parsetree. (It no longer does: since brief
+# 26_0821-182 a 0-bp model is built like any other, and Doctor is
+# gone. The test stays, as a check that -O keeps fragment rows of a
+# 0-bp model intact.) For a 5'-truncated fragment row whose
 # parsetree starts with a run of marginal (non-left-emitting) nodes,
 # e.g. because the row has residues in the 3' flanking insert, Doctor
 # forced those nodes to emit, on missing-data ('~') columns. The CM

@@ -7,9 +7,12 @@
 #
 # 1. cmbuild -> cmconvert --outfmt 1/b -> cmconvert --upgrade gives the
 #    file cmbuild wrote (apart from DATE and COM lines), for a default
-#    build, --p56, --noss (zero basepairs, HP7 ml), and non-default
-#    filter HMM calibration options, which --upgrade reads from the
-#    cmbuild COM line.
+#    build, --p56, and non-default filter HMM calibration options,
+#    which --upgrade reads from the cmbuild COM line. For --noss (zero
+#    basepairs), cmbuild writes HP7 h3pri, but --upgrade gives HP7 ml,
+#    as for an old-format 0-bp file, which an older cmbuild built as an
+#    HMM; the CM's parameters are unchanged (brief 26_0821-182).
+#    A 0-bp INFERNAL1/a file built by Infernal 1.1 upgrades to HP7 ml.
 # 2. Without --upgrade, an old-format CM stays in an old format.
 # 3. A calibrated INFERNAL1/a file upgrades to INFERNAL1/e, keeping its
 #    CM parameters and cmcalibrate E-value parameters; cmsearch runs on
@@ -46,12 +49,14 @@ for my $prog ("cmbuild", "cmconvert", "cmsearch") {
     if (! -x "$builddir/src/$prog") { die "FAIL: didn't find $prog binary in $builddir/src\n"; }
 }
 my $ali   = "$srcdir/testsuite/tRNA.sto";
+my $old0bp = "$srcdir/testsuite/snR75.c.cm";
 my $oldcm = "$srcdir/testsuite/4.c.cm";
 my $v1p0cm = "$srcdir/testsuite/4.1p0.cm";
 my $seqs  = "$srcdir/testsuite/1k-4.fa";
 my $prifile = "$srcdir/testsuite/plus1.prior";
 if (! -e $ali)   { die "FAIL: didn't find $ali\n"; }
 if (! -e $oldcm) { die "FAIL: didn't find $oldcm\n"; }
+if (! -e $old0bp) { die "FAIL: didn't find $old0bp\n"; }
 if (! -e $v1p0cm) { die "FAIL: didn't find $v1p0cm\n"; }
 if (! -e $seqs)  { die "FAIL: didn't find $seqs\n"; }
 if (! -e $prifile) { die "FAIL: didn't find $prifile\n"; }
@@ -60,12 +65,13 @@ my @tmpfiles = ();
 sub tmp { my $f = "$tmppfx.$_[0]"; push @tmpfiles, $f; unlink $f if -e $f; return $f; }
 
 # 1.
-my @builds = ( [ "default", "",                                      "h3pri" ],
-               [ "p56",     "--p56",                                 "h3pri" ],
-               [ "noss",    "--noss",                                "ml"    ],
-               [ "calopts", "--EmN 20 --EvN 20 --ElfN 20 --Egcmult 1.5 --Eseed 7", "h3pri" ] );
+# [ tag, cmbuild options, HP7 cmbuild writes, HP7 after the round trip ]
+my @builds = ( [ "default", "",                                      "h3pri", "h3pri" ],
+               [ "p56",     "--p56",                                 "h3pri", "h3pri" ],
+               [ "noss",    "--noss",                                "h3pri", "ml"    ],
+               [ "calopts", "--EmN 20 --EvN 20 --ElfN 20 --Egcmult 1.5 --Eseed 7", "h3pri", "h3pri" ] );
 foreach my $b (@builds) {
-    my ($tag, $opts, $hp7) = @{$b};
+    my ($tag, $opts, $direct_hp7, $hp7) = @{$b};
     my $direct = tmp("$tag.cm");
     my $old    = tmp("$tag.1b.cm");
     my $up     = tmp("$tag.up.cm");
@@ -77,11 +83,22 @@ foreach my $b (@builds) {
     `$builddir/src/cmconvert --cpu 1 --upgrade $old > $up 2> /dev/null`;
     if ($? != 0) { die "FAIL: subtest 1: cmconvert --upgrade ($tag) failed\n"; }
     if (first_line($up) !~ /^INFERNAL1\/e/) { die "FAIL: subtest 1: --upgrade ($tag) didn't write INFERNAL1/e\n"; }
-    if (stripped($direct) ne stripped($up)) { die "FAIL: subtest 1: upgraded CM ($tag) differs from cmbuild's\n"; }
+    if ((header_value($direct, "HP7") // "") ne $direct_hp7) { die "FAIL: subtest 1: ($tag) cmbuild's HP7 is not $direct_hp7\n"; }
+    if ($hp7 eq $direct_hp7) {
+        if (stripped($direct) ne stripped($up)) { die "FAIL: subtest 1: upgraded CM ($tag) differs from cmbuild's\n"; }
+    }
+    elsif (join("", state_lines($direct)) ne join("", state_lines($up))) { die "FAIL: subtest 1: upgraded CM ($tag) parameters differ from cmbuild's\n"; }
     my $hp7line = header_value($up, "HP7");
     if (! defined $hp7line || $hp7line ne $hp7) { die "FAIL: subtest 1: ($tag) HP7 is not $hp7\n"; }
     if (defined header_value($up, "HP7A") != ($hp7 eq "h3pri")) { die "FAIL: subtest 1: ($tag) HP7A line should be present iff HP7 is h3pri\n"; }
 }
+
+# a 0-bp file built by Infernal 1.1
+my $up0bp = tmp("snR75.up.cm");
+`$builddir/src/cmconvert --cpu 1 --upgrade $old0bp > $up0bp 2> /dev/null`;
+if ($? != 0) { die "FAIL: subtest 1: cmconvert --upgrade of a 1.1 0-bp CM failed\n"; }
+if ((header_value($up0bp, "HP7") // "") ne "ml") { die "FAIL: subtest 1: 1.1 0-bp CM upgraded to HP7 other than ml\n"; }
+if (join("", state_lines($old0bp)) ne join("", state_lines($up0bp))) { die "FAIL: subtest 1: 1.1 0-bp CM parameters changed\n"; }
 
 # 2.
 my $plain = tmp("4.plain.cm");

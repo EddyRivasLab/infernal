@@ -11,8 +11,12 @@
 # hits (brief 26_0821-177).
 #
 # We press a mixed database of three models built from tRNA.sto:
-#   trnaP: 0 basepairs (--noss), default build (no separate hp7)
-#   trnaN: 0 basepairs (--noss --noh3pri), which has an hp7
+#   trnaP: 0 basepairs, with no separate hp7 (HP7 ml), as cmconvert
+#          --upgrade gives an old-format 0-bp CM: built with --noss,
+#          written as INFERNAL1/b with cmconvert --outfmt 1/b, and
+#          upgraded with cmconvert --upgrade. (cmbuild no longer
+#          builds such a model itself, brief 26_0821-182.)
+#   trnaN: 0 basepairs (--noss), which has an hp7 (HP7 h3pri)
 #   trnaS: with its structure
 # and check that for each model, in default, --hmmonly, -g and
 # --hmmonly -g mode, cmscan (serial and threaded) reports the same
@@ -35,10 +39,11 @@ $srcdir   = shift;
 $tmp      = shift;
 $ok       = 1;
 
-foreach $prog ("cmbuild", "cmpress", "cmsearch", "cmscan") { 
+foreach $prog ("cmbuild", "cmconvert", "cmpress", "cmsearch", "cmscan") { 
   if (! -x "$builddir/src/$prog") { die "FAIL: didn't find $prog binary in $builddir/src\n"; }
 }
 $cmbuild  = "$builddir/src/cmbuild";
+$cmconvert = "$builddir/src/cmconvert";
 $cmpress  = "$builddir/src/cmpress";
 $cmsearch = "$builddir/src/cmsearch";
 $cmscan   = "$builddir/src/cmscan";
@@ -48,7 +53,8 @@ if (! -e $alifile) { die "FAIL: didn't find $alifile\n"; }
 if (! -e $seqfile) { die "FAIL: didn't find $seqfile\n"; }
 
 @models = ("trnaP", "trnaN", "trnaS");
-%bopts  = ("trnaP" => "--noss", "trnaN" => "--noss --noh3pri", "trnaS" => "");
+%bopts  = ("trnaP" => "--noss", "trnaN" => "--noss", "trnaS" => "");
+%hp7    = ("trnaP" => "ml",     "trnaN" => "h3pri",  "trnaS" => "h3pri");
 @modes  = ("", "--hmmonly", "-g", "--hmmonly -g");
 
 # build the models and the pressed database
@@ -57,6 +63,13 @@ if ($ok) {
   foreach $m (@models) {
     `$cmbuild -F -n $m $bopts{$m} $tmp.$m.raw.cm $alifile`;
     if ($? != 0) { $ok = 0; last; }
+    if ($m eq "trnaP") {
+      `$cmconvert --outfmt 1/b $tmp.$m.raw.cm > $tmp.$m.1b.cm`;
+      if ($? != 0) { $ok = 0; last; }
+      `$cmconvert --upgrade $tmp.$m.1b.cm > $tmp.$m.raw.cm`;
+      if ($? != 0) { $ok = 0; last; }
+    }
+    if (`grep '^HP7 ' $tmp.$m.raw.cm` !~ /^HP7\s+$hp7{$m}\s*$/) { printf("model $m: HP7 is not $hp7{$m}\n"); $ok = 0; last; }
     # drop the accession (the same for all three models), so cmpress can index them
     `grep -v '^ACC ' $tmp.$m.raw.cm > $tmp.$m.cm`;
     `cat $tmp.$m.cm >> $tmp.db.cm`;
@@ -96,7 +109,7 @@ foreach $mode (@modes) {
   }
 }
 
-foreach $sfx ("db.cm", "db.cm.i1m", "db.cm.i1i", "db.cm.i1f", "db.cm.i1p", "db.cm.i1hf", "db.cm.i1hp", "scan.tbl", "search.tbl", "trnaP.cm", "trnaN.cm", "trnaS.cm", "trnaP.raw.cm", "trnaN.raw.cm", "trnaS.raw.cm") {
+foreach $sfx ("db.cm", "db.cm.i1m", "db.cm.i1i", "db.cm.i1f", "db.cm.i1p", "db.cm.i1hf", "db.cm.i1hp", "scan.tbl", "search.tbl", "trnaP.cm", "trnaN.cm", "trnaS.cm", "trnaP.raw.cm", "trnaN.raw.cm", "trnaS.raw.cm", "trnaP.1b.cm") {
   unlink "$tmp.$sfx";
 }
 
