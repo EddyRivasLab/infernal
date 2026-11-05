@@ -574,10 +574,17 @@ as a profile HMM can be (while ignoring the secondary structure). The
 HMM with its transition probabilities re-estimated under HMMER's DNA
 transition prior, after the CM's own transition prior is backed out
 of them; the CM file records that prior's relevant parameters, so this
-is exact for any prior. (A model with zero basepairs uses its filter
-HMM for HMM-only search too, as does a model built with a
-\prog{--prior} file whose transition priors between \prog{MATL}
-nodes are mixture Dirichlets, which can't be backed out.)
+is exact for any prior. (A model built with a \prog{--prior} file
+whose transition priors between \prog{MATL} nodes are mixture
+Dirichlets, which can't be backed out, uses its filter HMM for
+HMM-only search too.) A model with zero basepairs, which is searched
+in HMM-only mode by default, is built the same way as a model with
+basepairs, and uses its HMM-only search HMM like any other. Before
+version 1.2, \prog{cmbuild} built a model with zero basepairs as if
+it were a profile HMM, with a prior that mimicked HMMER's and a lower
+entropy weighting target (0.38 bits per position), and searched it
+with its filter HMM; adding a single basepair to its alignment changed
+all its parameters.
 \prog{cmbuild} calibrates both. Before version 1.2, \prog{cmbuild}
 built a separate filter HMM from the alignment and stored it in the
 CM file, which made the file about 50\% larger. CM files in those

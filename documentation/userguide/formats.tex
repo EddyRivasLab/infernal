@@ -372,8 +372,10 @@ found by searches during preparation of the Rfam database.
   out of its transition probabilities (see \prog{HP7A}), which are
   then re-estimated under HMMER3's DNA transition prior. \prog{<s>} is
   \prog{ml} if the HMM-only search HMM is the filter HMM itself: for
-  CMs with zero basepairs built with \prog{cmbuild}'s default prior
-  for them, and for CMs built with a \prog{--prior} file whose
+  CMs with zero basepairs built by a \prog{cmbuild} older than version
+  1.2 with its default prior for them (which mimicked HMMER's), and
+  upgraded with \prog{cmconvert --upgrade}; and for CMs built with a
+  \prog{--prior} file whose
   transition priors out of \prog{MATL} states into \prog{MATL} nodes
   are mixtures, which can't be backed out. \textbf{Mandatory} in
   \prog{INFERNAL1/e}.

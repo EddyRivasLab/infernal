@@ -208,8 +208,16 @@ command on the CM's COM line: the transition prior
 and
 .B --v1p0
 use the version 1.0 prior, as do Infernal v1.0 files; otherwise the
-default prior), whether a CM with no basepairs is parameterized like
-a profile HMM, and
+default prior), whether a CM with no basepairs was built like
+a profile HMM (as
+.B cmbuild
+did before version 1.2, unless it was given
+.BR --noh3pri ,
+.BR --p56 ,
+.B --v1p0
+or
+.BR --prior ),
+and
 .B cmbuild's
 filter HMM calibration options. If the CM was built with
 .B cmbuild --prior <f>,

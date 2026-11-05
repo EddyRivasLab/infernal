@@ -121,6 +121,17 @@
    accuracy alignment. HMM alignment scores are HMM bit scores, and
    are not comparable to CM bit scores.
 
+ * **Models with no basepairs are now built the same way as models
+   with basepairs**, with the same prior and entropy weighting target,
+   instead of as if they were profile HMMs, so adding or removing a
+   basepair no longer changes the rest of the model. Rebuilding a
+   model that has no basepairs with 1.2 therefore changes its
+   parameters and bit scores, and score thresholds set with an
+   earlier version for such a model (such as Rfam-style gathering
+   thresholds) may need to be re-checked. CM files built with earlier
+   versions keep their parameters. `cmbuild --noh3pri`, which used to
+   give this behavior, is still accepted and has no effect.
+
  * **New `cmalign` band options.** `--p7band` derives the bands for CM
    alignment from the model's profile HMM instead of its plan 9 HMM;
    `--p7ibv` (bands from Forward/Backward, with `--p7ibv-mem` for a

@@ -243,7 +243,9 @@ symbols are not allowed anywhere else in the alignment.
 .BI --noss
 Ignore the secondary structure annotation, if any, in 
 .I <msafile>
-and build a CM with zero basepairs. This model will be similar
+and build a CM with zero basepairs. It is built the same way as a CM
+with basepairs (with the same prior and entropy weighting target).
+This model will be similar
 to a profile HMM and the 
 .B cmsearch
 and
@@ -409,12 +411,11 @@ Use the entropy weighting strategy to determine the effective sequence
 number that gives a target mean match state relative entropy. This option 
 is the default, and can be turned off with 
 .B --enone.
-The default target mean match state relative entropy is 0.59 bits for
-models with at least 1 basepair and 0.38 bits for models with zero
-basepairs, but can be
+The default target mean match state relative entropy is 0.59 bits,
+for models with or without basepairs, but can be
 changed with
 .B --ere.
-The default of 0.59 or 0.38 bits is automatically changed if the total
+The default of 0.59 bits is automatically changed if the total
 relative entropy of the model (summed match state relative entropy)
 is less than a cutoff, which is controlled by the 
 .B --esigma
@@ -435,9 +436,9 @@ is just the number of sequences in the alignment.
 .BI --ere " <x>"
 Set the target mean match state relative entropy as 
 .I <x>.
-By default the target relative entropy per match position is 0.59 bits
-for models with at least 1 basepair and 0.38 for models with zero
-basepairs.
+By default the target relative entropy per match position is 0.59 bits,
+for models with or without basepairs.
+(Before Infernal 1.2, it was 0.38 bits for models with zero basepairs.)
 
 .TP 
 .BI --eminseq " <x>"
@@ -528,12 +529,19 @@ backed out of them. For a model built with a non-default prior
 or
 .BR --rsearch )
 the CM's prior is not backed out, because that step assumes the
-default prior. A model with zero basepairs searches in HMM-only mode
-with its filter HMM itself. (Before Infernal 1.2, a separate filter HMM
+default prior. A model with zero basepairs is searched in HMM-only
+mode by default, with its HMM-only search HMM, like any model with
+.BR --hmmonly .
+(Before Infernal 1.2, a separate filter HMM
 was built from the alignment and stored in the CM file. The
 .B --p7ml
 option, which made the filter HMM the maximum likelihood HMM, is still
-accepted and has no effect.)
+accepted and has no effect. Before 1.2, a model with zero basepairs was
+also built differently from one with basepairs, as if it were a profile
+HMM, with a prior that mimicked HMMER's, and was searched with its filter
+HMM. The
+.B --noh3pri
+option, which turned that off, is still accepted and has no effect.)
 
 .SH OPTIONS CONTROLLING FILTER P7 HMM CALIBRATION 
 
