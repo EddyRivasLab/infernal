@@ -140,7 +140,7 @@ static ESL_OPTIONS options[] = {
   { "--hmmonly",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see ** above */ "use HMM only, don't use a CM at all",                            6 },
   { "--hmmwindows", eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--noali,--hmmonly", "-g", "w/--hmmonly, output windows surviving Stage 3 (Fwd), not hits",  6 },
   { "--FZ",         eslARG_REAL,    NULL, NULL, NULL,    NULL,  NULL,  NULL, /* see ** above */ "set filters to defaults used for a search space of size <x> Mb", 6 },
-  { "--Fmid",       eslARG_REAL,  "0.10", NULL, NULL,    NULL,"--mid", NULL,                    "with --mid, set P-value threshold for HMM stages to <x>",        6 },
+  { "--Fmid",       eslARG_REAL,  "0.02", NULL, NULL,    NULL,"--mid", NULL,                    "with --mid, set P-value threshold for HMM stages to <x>",        6 },
   /* Other options */
   /* name           type         default   env  range toggles   reqs   incomp                          help                                                              docgroup*/
   { "--notrunc",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */       "do not allow truncated hits at sequence termini",                7 },
