@@ -259,6 +259,28 @@ option must be used if there is no secondary structure annotation in
 .B <msafile>.
 
 .TP
+.BI --sscons " <s>"
+Build the consensus structure from the
+.BI "#=GC " <s>
+annotation line of each alignment in
+.I <msafile>
+instead of from
+.BR "#=GC SS_cons" .
+This lets one alignment carry several candidate structures (for
+example, alternative conformations) and build a CM from any of them
+without editing the file. The line is used exactly as
+.B SS_cons
+would be, including the usual structure checks; pseudoknotted base
+pairs are removed as for
+.BR SS_cons .
+The build fails if any alignment lacks a
+.BI "#=GC " <s>
+line or if that line's length differs from the alignment length.
+.B --sscons SS_cons
+is the same as the default. Incompatible with
+.BR --noss .
+
+.TP
 .BI --rsearch " <f>"
 Parameterize emission scores a la RSEARCH, using the RIBOSUM
 matrix in file 

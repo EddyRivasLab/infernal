@@ -2982,7 +2982,7 @@ extern int            cm_alidisplay_Backconvert(CM_t *cm, const CM_ALIDISPLAY *a
 extern int            cm_alidisplay_Dump(FILE *fp, const CM_ALIDISPLAY *ad);
 extern int            cm_alidisplay_Compare(const CM_ALIDISPLAY *ad1, const CM_ALIDISPLAY *ad2);
 /* MM line (match/substitution) glyphs, shared by cmsearch alidisplay and the
- * cmalign #=GR <seq> MM line. */
+ * cmalign per-seq #=GR PS line. */
 #define MM_SUBPAIR    ':'      /* consistent (score>=0) base-pair substitution */
 #define MM_SUBSINGLET '+'      /* positive-scoring singlet substitution        */
 /* shared base-pair / singlet classification helpers (cm_alidisplay.c); used by

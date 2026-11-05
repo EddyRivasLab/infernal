@@ -1175,9 +1175,11 @@ bp_is_canonical(char lseq, char rseq)
 }
 
 /* Function: cm_bp_match_marks()
+ * Date:     EPN, Sun Jun 28 2026 (w/Claude)
  *
  * Purpose:  Shared classification of a both-residues-present (Joint-mode MP)
- *           consensus base pair for the "match" (mline / #=GR MM) line.
+ *           consensus base pair for the "match" line (mline; also the
+ *           cmalign --bpstatus #=GR PS line).
  *           Given the two observed residues <lseq>,<rseq> (uppercase), the two
  *           consensus residues <lcons>,<rcons>, and the model pair-emission
  *           score <pairsc> = DegeneratePairScore() for the observed pair:
@@ -1185,8 +1187,8 @@ bp_is_canonical(char lseq, char rseq)
  *             - else pairsc >= 0            -> ':' at both ends (consistent sub)
  *             - else                        -> ' ' at both ends
  *           Mirrors the inline logic that used to live in cm_alidisplay_Create().
- *           cmsearch prints the identity letters; cmalign's sparse MM keeps only
- *           the ':' marks (it blanks identity letters).
+ *           cmsearch prints the identity letters; cmalign's #=GR PS line keeps
+ *           only the ':' marks (it blanks identity letters).
  */
 void
 cm_bp_match_marks(char lseq, char rseq, char lcons, char rcons, float pairsc, char *ret_lmid, char *ret_rmid)
@@ -1201,6 +1203,7 @@ cm_bp_match_marks(char lseq, char rseq, char lcons, char rcons, float pairsc, ch
 }
 
 /* Function: cm_bp_nc_mark()
+ * Date:     EPN, Sun Jun 28 2026 (w/Claude)
  *
  * Purpose:  Shared classification of a both-residues-present (Joint-mode MP)
  *           consensus base pair for the negative-non-canonical "PS" (ncline)
@@ -1217,16 +1220,17 @@ cm_bp_nc_mark(char lseq, char rseq, float pairsc)
 }
 
 /* Function: cm_singlet_mark()
+ * Date:     EPN, Sun Jun 28 2026 (w/Claude)
  *
  * Purpose:  Shared classification of an emitted singlet residue for the mline /
- *           #=GR MM line, given the observed residue <seq> (uppercase), the
+ *           cmalign #=GR PS line, given the observed residue <seq> (uppercase), the
  *           consensus residue <cons>, and the model average singlet-emission
  *           score <avgsc> = esl_abc_FAvgScore():
  *             - seq == consensus -> identity letter (seq)
  *             - else avgsc > 0   -> '+'  (positive substitution)
  *             - else             -> ' '
- *           cmsearch prints the identity letter; cmalign's sparse MM keeps only
- *           the '+' marks.
+ *           cmsearch prints the identity letter; cmalign's #=GR PS line keeps
+ *           only the '+' marks.
  */
 char
 cm_singlet_mark(char seq, char cons, float avgsc)

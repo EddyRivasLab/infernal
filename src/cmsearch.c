@@ -1830,7 +1830,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
       if (do_dev) {
         esl_printf("\nOther expert options:\n");                 esl_opt_DisplayHelp(stdout, go, 108, 2, 100);
       } else
-        esl_printf("\n(*) Use --devhelp to show additional expert options.");
+        esl_printf("\n(*) Use --devhelp to show additional expert options.\n");
       exit(0);
     }
 

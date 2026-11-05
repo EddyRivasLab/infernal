@@ -735,7 +735,7 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
         esl_printf("\nOptions for building multiple CMs after clustering input MSA:\n"); esl_opt_DisplayHelp(stdout, go, 110, 2, 100);
         esl_printf("\nOptions for experimental local begin/end modes:\n");               esl_opt_DisplayHelp(stdout, go, 111, 2, 100);
       } else
-        esl_printf("\n(*) Use --devhelp to show additional expert options.");
+        esl_printf("\n(*) Use --devhelp to show additional expert options.\n");
       exit(0);
     }
 

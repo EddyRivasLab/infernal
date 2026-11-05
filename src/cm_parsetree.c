@@ -1721,7 +1721,7 @@ bpcov_pknot(ESL_MSA *msa, char *bcv, int alen)
 }
 
 /* Function: cm_alignment_annotate_status()
- * Date:     EPN/Claude, Jun 2026
+ * Date:     EPN, Jun 2026 (w/Claude)
  *
  * Purpose:  Post-hoc structure-status annotation for a cmalign alignment, added
  *           as opt-in #=GR / #=GC lines. Computes everything over the FINISHED

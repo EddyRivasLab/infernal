@@ -791,10 +791,14 @@ both nested and pseudoknot pairs), and
 .B x
 (broken) for pseudoknot pairs. It additionally marks substitutions:
 .B :
-for a consistent base-pair substitution and
+for a consistent (non-negative scoring) base-pair substitution and
 .B +
-for a positive-scoring single-residue substitution. The only column where two
-marks compete is a pseudoknot column (a single-residue state that can be both a
+for a positive-scoring single-residue substitution. A half-present pair is
+marked
+.B v
+at its present half, not
+.BR + .
+Two marks also compete at a pseudoknot column (a single-residue state that can be both a
 .B +
 substitution and a
 .B = $

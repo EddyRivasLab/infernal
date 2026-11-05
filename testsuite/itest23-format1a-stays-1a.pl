@@ -13,8 +13,8 @@
 # 3. cmconvert -b, then cmconvert -a, round-trips to the same 1/a file.
 # 4. A 1/b file stays 1/b under cmfetch and cmconvert.
 #
-# Usage:    ./itest21-format1a-stays-1a.pl <builddir> <srcdir> <tmpfile prefix>
-# Example:  ./itest21-format1a-stays-1a.pl ..         ..       tmpfoo
+# Usage:    ./itest23-format1a-stays-1a.pl <builddir> <srcdir> <tmpfile prefix>
+# Example:  ./itest23-format1a-stays-1a.pl ..         ..       tmpfoo
 #
 # brief 26_0821-171
 

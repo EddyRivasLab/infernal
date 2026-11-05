@@ -185,7 +185,7 @@ static ESL_OPTIONS options[] = {
   { "--noprob",      eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "do not include posterior probabilities in the alignment",    5 },
   { "--matchonly",   eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "include only match columns in output alignment",             5 },
   { "--miss",        eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "mark seqs w/terminal gaps as fragments w/missing (~) chars", 5 },
-  { "--bpstatus",    eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "add per-seq #=GR PS (pair status) and MM (match) annotation", 5 },
+  { "--bpstatus",    eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "add per-seq #=GR PS (pair status) annotation",               5 },
   { "--bpcons",      eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "add #=GC bp_cons family base-pair conservation annotation",   5 },
   { "--bpcov",       eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "add #=GC bp_cov family base-pair covariation (MI) annotation", 5 },
   { "--ileaved",     eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL, "--outformat","force output in interleaved Stockholm format",                5 },
@@ -234,10 +234,10 @@ struct cfg_s {
   FILE            *sfp;         /* optional output for alignment scores */
   FILE            *rfp;         /* optional output for --regress alignment */
 
-  CM_BPCONS_ACC   *bpcons_acc;  /* cross-block #=GC bp_cons accumulator, non-NULL only
-				 * while building a multi-block (merge) alignment under
-				 * --bpcons; NULL otherwise. Created on the first merge
-				 * block, consumed/destroyed in create_and_output_final_msa(). */
+  CM_BPCONS_ACC   *bpcons_acc;  /* cross-block #=GC bp_cons/bp_cov accumulator, non-NULL
+				 * only while building a multi-block (merge) alignment under
+				 * --bpcons or --bpcov; NULL otherwise. Created on the first
+				 * merge block, consumed/destroyed in create_and_output_final_msa(). */
 };
 
 static char usage[]  = "[-options] <cmfile> <seqfile>";
@@ -483,7 +483,7 @@ main(int argc, char **argv)
   cfg.efp         = NULL;	         /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.sfp         = NULL;	         /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.rfp         = NULL;	         /* opened in init_master_cfg() in masters, stays NULL for workers */
-  cfg.bpcons_acc  = NULL;                /* created on first merge block under --bpcons, NULL otherwise */
+  cfg.bpcons_acc  = NULL;                /* created on first merge block under --bpcons/--bpcov, NULL otherwise */
 
 
   cfg.infmt       = eslSQFILE_UNKNOWN;    /* reset below in process_commandline() */
