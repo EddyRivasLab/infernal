@@ -2844,10 +2844,11 @@ output_ere_outcome(const ESL_GETOPTS *go, const struct cfg_s *cfg, ESL_MSA *msa,
  *
  *            --prior <f>: any custom prior (brief 26_0824-080 measured
  *               the predictor up to 25,382x off with one).
- *            --eset 0, when the filter HMM is the CM's ML HMM (a
- *               zero-basepair model, or --p7ml) (brief 26_0824-078).
- *               With the default filter HMM, --eset never reaches the
- *               filter, so the predictor is still fine there.
+ *            --eset 0, when the filter HMM is the CM's ML HMM
+ *               (brief 26_0824-078), as it is for every CM, with or
+ *               without basepairs, since brief 26_0821-162. (With the
+ *               separately built filter HMM of older versions, --eset
+ *               never reached the filter.)
  *
  *            There is deliberately no option to turn this off.
  *
