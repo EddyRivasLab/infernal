@@ -1835,9 +1835,8 @@ static int
 check_nonull3_format(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 {
   if (esl_opt_GetBoolean(go, "--nonull3") && cfg->cmfp->format < CM_FILE_1e)
-    ESL_FAIL(eslEINCOMPAT, errbuf,
-             "CM file %s is in the INFERNAL1/a format, which can't store E-value parameters for searches with null3 off (--nonull3).\n"
-             "Convert the models to the current format first, with cmconvert --upgrade, and rerun.", cfg->cmfile);
+    ESL_FAIL(eslEINCOMPAT, errbuf, /* errbuf is short: eslERRBUFSIZE */
+             "--nonull3: the INFERNAL1/a format can't store its E-values.\nConvert the CMs with cmconvert --upgrade first.");
   return eslOK;
 }
 

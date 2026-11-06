@@ -197,7 +197,8 @@ main(int argc, char **argv)
           cm_Fail("CM %s is in an older format. Use --upgrade, not --outfmt 1/e, to convert it to the current format.", cm->name);
         if (fmtcode == -1 &&
             cm_file_Check1aStorable(cm, esl_opt_GetBoolean(go, "--p7pad") ? CMH_P7NODEPAD : 0, errbuf) != eslOK)
-          cm_Fail(errbuf);
+          cm_Fail("CM %s is in the INFERNAL1/a format, which can't store %s.\n"
+                  "Convert it to the current format first, with cmconvert --upgrade, and rerun.", cm->name, errbuf);
       }
 
       /* Upgrading a CM built with cmbuild --prior <f> needs that prior

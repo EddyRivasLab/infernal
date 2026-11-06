@@ -53,7 +53,7 @@ static uint32_t  v1e_magic  = 0xe3edb0b7; /* 1/e binary: "cm07" + 0x80808080 (de
 static uint32_t  v1b_magic  = 0xe3edb0b3;
 static uint32_t  v1c_magic  = 0xe3edb0b4;
 static uint32_t  v1d_magic  = 0xe3edb0b5;
-#define CM_FILE_DEVFMT_MSG "a development format that was never in an Infernal release, and can't be read.\nConvert it to the current format (INFERNAL1/e) with 'cmconvert --upgrade' from an earlier Infernal 1.2 development build that reads it, or rebuild it with cmbuild."
+#define CM_FILE_DEVFMT_MSG(x) "INFERNAL1/" x ": a development format, never released.\nConvert it with an earlier 1.2 development version's cmconvert --upgrade."
 static uint32_t  v1a_fmagic = 0xb1e1e6f3; /* 1/a binary MSV/SSV file: "1afs" = 0x 31 61 66 73  + 0x80808080 */
 /* Note: 's' at end of 1afs is arbitrary. It is consistent with H3's
  * trailing 's' iforSSE binary files, but in Infernal this is used
@@ -474,9 +474,9 @@ open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, in
   if (! fread((char *) &(magic.n), sizeof(uint32_t), 1, cmfp->f))  ESL_XFAIL(eslEFORMAT, errbuf, "File exists, but appears to be empty?");
   if      (magic.n == v1a_magic) { cmfp->format = CM_FILE_1a; cmfp->parser = read_bin_1p1_cm; cmfp->is_binary = TRUE; }
   else if (magic.n == v1e_magic) { cmfp->format = CM_FILE_1e; cmfp->parser = read_bin_1p1_cm; cmfp->is_binary = TRUE; }
-  else if (magic.n == v1b_magic) ESL_XFAIL(eslEFORMAT, errbuf, "Binary format tag in %s is INFERNAL1/b: " CM_FILE_DEVFMT_MSG, cmfp->fname);
-  else if (magic.n == v1c_magic) ESL_XFAIL(eslEFORMAT, errbuf, "Binary format tag in %s is INFERNAL1/c: " CM_FILE_DEVFMT_MSG, cmfp->fname);
-  else if (magic.n == v1d_magic) ESL_XFAIL(eslEFORMAT, errbuf, "Binary format tag in %s is INFERNAL1/d: " CM_FILE_DEVFMT_MSG, cmfp->fname);
+  else if (magic.n == v1b_magic) ESL_XFAIL(eslEFORMAT, errbuf, CM_FILE_DEVFMT_MSG("b"));
+  else if (magic.n == v1c_magic) ESL_XFAIL(eslEFORMAT, errbuf, CM_FILE_DEVFMT_MSG("c"));
+  else if (magic.n == v1d_magic) ESL_XFAIL(eslEFORMAT, errbuf, CM_FILE_DEVFMT_MSG("d"));
   else if (cmfp->is_pressed) ESL_XFAIL(eslEFORMAT, errbuf, "Binary format tag in %s unrecognized\nCurrent Infernal format is INFERNAL1/e. Previous binary formats are not supported.", cmfp->fname);
 
   /* 8. Checks for ASCII file format */
@@ -492,9 +492,9 @@ open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, in
 
       if      (                 strcmp("INFERNAL1/a", tok) == 0) { cmfp->format = CM_FILE_1a; cmfp->parser = read_asc_1p1_cm; }
       else if (                 strcmp("INFERNAL1/e", tok) == 0) { cmfp->format = CM_FILE_1e; cmfp->parser = read_asc_1p1_cm; }
-      else if (                 strcmp("INFERNAL1/b", tok) == 0 ||
-                                strcmp("INFERNAL1/c", tok) == 0 ||
-                                strcmp("INFERNAL1/d", tok) == 0) { ESL_XFAIL(eslEFORMAT, errbuf, "Format tag is '%s': " CM_FILE_DEVFMT_MSG, tok); }
+      else if (                 strcmp("INFERNAL1/b", tok) == 0) { ESL_XFAIL(eslEFORMAT, errbuf, CM_FILE_DEVFMT_MSG("b")); }
+      else if (                 strcmp("INFERNAL1/c", tok) == 0) { ESL_XFAIL(eslEFORMAT, errbuf, CM_FILE_DEVFMT_MSG("c")); }
+      else if (                 strcmp("INFERNAL1/d", tok) == 0) { ESL_XFAIL(eslEFORMAT, errbuf, CM_FILE_DEVFMT_MSG("d")); }
       else if ((  allow_1p0) && strcmp("INFERNAL-1",  tok) == 0) { cmfp->format = CM_FILE_1;  cmfp->parser = read_asc_1p0_cm; }
       else if ((! allow_1p0) && strcmp("INFERNAL-1",  tok) == 0) { ESL_XFAIL(eslEFORMAT, errbuf, "Format tag is '%s': use cmconvert to reformat Infernal v1.0 to v1.0.2 CM files to current format", tok); }
       else                                                       { ESL_XFAIL(eslEFORMAT, errbuf, "Format tag is '%s': unrecognized or not supported.", tok); }
@@ -1231,8 +1231,9 @@ cm_file_DefaultFormat(CM_t *cm)
  *            (CMH_FILTER_PVAL_CUTOFFS). (brief 26_0821-185)
  *
  * Returns:   <eslOK> if <cm> can be written in its default format.
- *            <eslEINCOMPAT> if not, with a message for the user in
- *            <errbuf>, if it is non-NULL.
+ *            <eslEINCOMPAT> if not, with a short description of
+ *            the first thing 1/a can't store in <errbuf>, if it is
+ *            non-NULL, for the caller's message.
  */
 int
 cm_file_Check1aStorable(const CM_t *cm, int add_flags, char *errbuf)
@@ -1242,12 +1243,10 @@ cm_file_Check1aStorable(const CM_t *cm, int add_flags, char *errbuf)
   if (! ((cm->flags & CMH_FP7) && ! (cm->flags & CMH_FP7_DERIVED))) return eslOK;
   if (what == 0) return eslOK;
   if (errbuf != NULL)
-    esl_fail(errbuf, "CM %s is in the INFERNAL1/a format, which can't store %s.\n"
-             "Convert the model to the current format first, with cmconvert --upgrade, and rerun.",
-             cm->name,
-             (what & CMH_EXPTAIL_NONULL3_STATS) ? "E-value parameters for searches with null3 off (cmcalibrate --nonull3)" :
-             (what & CMH_P7NODEPAD)             ? "p7 band pads (cmconvert --p7pad)"                                     :
-             (what & CMH_PKNOT)                 ? "consensus pseudoknot annotation"                                      :
+    esl_fail(errbuf, "%s",
+             (what & CMH_EXPTAIL_NONULL3_STATS) ? "E-value parameters for searches with null3 off" :
+             (what & CMH_P7NODEPAD)             ? "p7 band pads"                                    :
+             (what & CMH_PKNOT)                 ? "consensus pseudoknot annotation"                 :
                                                   "per-model filter P-value cutoffs");
   return eslEINCOMPAT;
 }
