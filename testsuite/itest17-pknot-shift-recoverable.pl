@@ -19,7 +19,7 @@
 # (summary_027), so this is a strong known-answer check, not just "some 'o' appeared".
 #
 # Fixtures (checked in, self-contained): testsuite/tmRNA-pknot.cm (a calibrated
-# INFERNAL1/d pseudoknot CM built from the tmRNA seed) and
+# INFERNAL1/e pseudoknot CM built from the tmRNA seed) and
 # testsuite/tmRNA-pknot-targets.fa (the 5 real tmRNA windows + 2 decoys). The
 # 'o' overlay does not depend on the E-value calibration, only on the reported
 # alignment, so the frozen calibration in the checked-in CM is irrelevant to the
