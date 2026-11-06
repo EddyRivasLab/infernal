@@ -51,7 +51,11 @@ $ali_H{"Vault-cmconsensus-3p/1-40"}         = "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 $ali_H{"Vault-cmconsensus-5p-2/1-59"}       = "~GGCCGGCUUUAGCUCAGCGGUUACUUCGACUAUUAUAAUUUUAUUUUUUUAUAUUUUUC~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~";
 $ali_H{"Vault-cmconsensus-3p-2/1-39"}       = "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~UUUUGGGGUUCGAAACCCGCGGGCGCUGUCCGGCCCUUU~";
 $ali_H{"Vault-cmconsensus-5pspecial/11-62"} = "--------UUUAGCUCAGCGGUUACUUCGACUAUUAUAAUUUUAUUUUUUUAUAUUUUUC~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~";
-$ali_H{"Vault-cmconsensus-3pspecial/1-35"}  = "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~UUUUGGGGUUCGAAACCCGCGGGCGCUGUCCGGCC-----";
+# With Vault.c.cm in INFERNAL1/e (brief 26_0821-186), whose filter HMM is
+# derived from the CM, the hit to the 3pspecial sequence extends through
+# 5 of its trailing a's (it was 1-35, with 5 deleted consensus positions,
+# with the filter HMM stored in the INFERNAL1/a file).
+$ali_H{"Vault-cmconsensus-3pspecial/1-40"}  = "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~UUUUGGGGUUCGAAACCCGCGGGCGCUGUCCGGCCAAAAA";
 $ali_H{"Vault-cmconsensus-5p-and-3p/1-44"}  = "~~~~~~~~~~~~~~~~AGCGGUUACUUCGACUAUUAUAAUUUUAUUUUUUUAUAUUUUUC~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~";
 
 # define --tfile lines that start with is_std that we expect 
@@ -62,7 +66,7 @@ $is_std_H{"Vault-cmconsensus-3p/1-40"}         = "FALSE";
 $is_std_H{"Vault-cmconsensus-5p-2/1-59"}       = "FALSE";
 $is_std_H{"Vault-cmconsensus-3p-2/1-39"}       = "FALSE";
 $is_std_H{"Vault-cmconsensus-5pspecial/11-62"} = "FALSE";
-$is_std_H{"Vault-cmconsensus-3pspecial/1-35"}  = "FALSE";
+$is_std_H{"Vault-cmconsensus-3pspecial/1-40"}  = "FALSE";
 $is_std_H{"Vault-cmconsensus-5p-and-3p/1-44"}  = "FALSE";
 
 # define --tfile lines that start with pass_idx that we expect 
@@ -73,7 +77,7 @@ $pass_idx_H{"Vault-cmconsensus-3p/1-40"}         = "2";
 $pass_idx_H{"Vault-cmconsensus-5p-2/1-59"}       = "4";
 $pass_idx_H{"Vault-cmconsensus-3p-2/1-39"}       = "4";
 $pass_idx_H{"Vault-cmconsensus-5pspecial/11-62"} = "3";
-$pass_idx_H{"Vault-cmconsensus-3pspecial/1-35"}  = "2";
+$pass_idx_H{"Vault-cmconsensus-3pspecial/1-40"}  = "2";
 $pass_idx_H{"Vault-cmconsensus-5p-and-3p/1-44"}  = "4";
 # from infernal.h:
 #define PLI_PASS_STD_ANY         1  /* only standard alns allowed, no truncated ones, any subseq */

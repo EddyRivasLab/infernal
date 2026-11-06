@@ -49,8 +49,8 @@ for my $prog ("cmbuild", "cmconvert", "cmsearch") {
     if (! -x "$builddir/src/$prog") { die "FAIL: didn't find $prog binary in $builddir/src\n"; }
 }
 my $ali   = "$srcdir/testsuite/tRNA.sto";
-my $old0bp = "$srcdir/testsuite/snR75.c.cm";
-my $oldcm = "$srcdir/testsuite/4.c.cm";
+my $old0bp = "$srcdir/testsuite/snR75.1p1.c.cm"; # INFERNAL1/a, as Infernal 1.1 wrote it
+my $oldcm = "$srcdir/testsuite/4.1p1.c.cm";      # INFERNAL1/a, as Infernal 1.1 wrote it
 my $v1p0cm = "$srcdir/testsuite/4.1p0.cm";
 my $seqs  = "$srcdir/testsuite/1k-4.fa";
 my $prifile = "$srcdir/testsuite/plus1.prior";
@@ -58,6 +58,8 @@ if (! -e $ali)   { die "FAIL: didn't find $ali\n"; }
 if (! -e $oldcm) { die "FAIL: didn't find $oldcm\n"; }
 if (! -e $old0bp) { die "FAIL: didn't find $old0bp\n"; }
 if (! -e $v1p0cm) { die "FAIL: didn't find $v1p0cm\n"; }
+if (first_line($oldcm)  !~ /^INFERNAL1\/a/) { die "FAIL: $oldcm is not an INFERNAL1/a file\n"; }
+if (first_line($old0bp) !~ /^INFERNAL1\/a/) { die "FAIL: $old0bp is not an INFERNAL1/a file\n"; }
 if (! -e $seqs)  { die "FAIL: didn't find $seqs\n"; }
 if (! -e $prifile) { die "FAIL: didn't find $prifile\n"; }
 

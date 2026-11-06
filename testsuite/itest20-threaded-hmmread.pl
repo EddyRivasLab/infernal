@@ -1,15 +1,16 @@
 #! /usr/bin/perl
 
 # Test threaded reads of a pressed INFERNAL1/e CM database, as a
-# threaded cmscan does them, on a released INFERNAL1/a file upgraded
-# with cmconvert --upgrade.
+# threaded cmscan does them, on the tutorial's minifam.cm, a released
+# INFERNAL1/a file upgraded with cmconvert --upgrade (brief
+# 26_0821-186; upgrading it again changes nothing).
 #
 # A 1/e CM with an HMM-only HMM stores two HMMs. Reading the CM used
 # to find the second at the shared HMM file's position after another
 # thread could have moved it, so a threaded cmscan of an upgraded
 # Rfam library failed with "bad file format for HMM filter".
 #
-# 1. cmconvert --upgrade on tutorial/minifam.cm (1/a) gives a 1/e file
+# 1. cmconvert --upgrade on tutorial/minifam.cm (1/e) gives a 1/e file
 #    with HMM-only HMMs; cmpress presses it.
 # 2. itest_hmmread reads it from several threads (one reading CMs, the
 #    others filter HMMs): every read must succeed and give the right
