@@ -1786,7 +1786,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
   printf("#DEBUG: do_pass_hmm_only_any:    %d\n", do_pass_hmm_only_any);
 #endif
 
-  /* p7 per-HMM-node band pads: prefer CM-embedded pads (new v1/b CM files, computed
+  /* p7 per-HMM-node band pads: prefer CM-embedded pads (1/e CM files, computed
    * by cmbuild). Fall back to --p7nodepad-file sidecar (developer override) if the
    * CM doesn't have embedded pads. In SCAN mode (cmscan), *opt_cm may be NULL at
    * this point (the CM is loaded lazily by pli_scan_mode_read_cm), so use om->M as

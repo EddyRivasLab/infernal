@@ -2000,7 +2000,7 @@ typedef struct cm_s {
   /* HMM-only search HMM (cmsearch/cmscan --hmmonly), derived from the CM
    * by the transform <hp7_xform> (CM_HP7_*). NULL when HMM-only search
    * uses fp7 itself: CM_HP7_ML (zero-basepair models), and CM files
-   * that store their filter HMM (format 1/d and older). See
+   * that store their filter HMM (format 1/a and older). See
    * cm_p7_DeriveFilterHMMs(). (brief 26_0821-162) */
   P7_HMM       *hp7;
   float         hp7_evparam[CM_p7_NEVPARAM]; /* E-value params for hp7 */
@@ -2072,6 +2072,8 @@ typedef struct cm_s {
 #define CMH_PKNOT               (1<<26) /* consensus pseudoknot annotation exists (cm->pknot) */
 #define CMH_EXPTAIL_NONULL3_STATS (1<<27) /* null3-off exp tail stats (cm->expA_nonull3) are valid */
 #define CMH_FP7_DERIVED         (1<<28) /* cm->fp7 (and cm->hp7) were derived from the CM, not read from a stored filter HMM block */
+/* the flags of the data INFERNAL1/e can store and INFERNAL1/a can't (brief 26_0821-185) */
+#define CM_FILE_1E_ONLY_FLAGS   (CMH_P7NODEPAD | CMH_FILTER_PVAL_CUTOFFS | CMH_PKNOT | CMH_EXPTAIL_NONULL3_STATS)
 
 /* cmbuild --eforce's effective sequence number ceiling; this high, the
  * prior is effectively gone (brief 26_0824-088). A CM with this EFFN
@@ -2166,21 +2168,19 @@ typedef struct cm_p7_calopts_s {
  *****************************************************************/
 /* These tags need to be in temporal order, so we can do tests
  * like "if (format >= CM_FILE_1a) ..."
+ * Codes 2, 3 and 4 were INFERNAL1/b, /c and /d: development formats
+ * never in a release, no longer read or written (brief 26_0821-185).
+ * Their values are not reused, so CM_FILE_1e keeps its value.
  */
 enum cm_file_formats_e {
   CM_FILE_1  = 0, /* Infernal v1.0->v1.0.2 */
-  CM_FILE_1a = 1,
-  CM_FILE_1b = 2, /* v1.2: adds optional P7NODEPAD per-HMM-node band pad array */
-  CM_FILE_1c = 3, /* RETIRED: ambiguous dev-only format. Two unreleased branches both
-                   * bumped to 1/c (0xe3edb0b4 / INFERNAL1/c) with colliding meanings
-                   * (consensus pknot annotation vs. null3-OFF E-value block). Never
-                   * shipped. Unified into CM_FILE_1d below; 1/c is REJECTED on read.  */
-  CM_FILE_1d = 4, /* adds optional null3-OFF E-value block AND consensus pknot annotation
-                   * (union of the two retired 1/c formats; each block flag-gated)      */
-  CM_FILE_1e = 5, /* PROVISIONAL dev format (brief 26_0821-162): no stored filter HMM
-                   * block; the filter and HMM-only HMMs are derived from the CM when
-                   * read, and only their E-value parameters are stored (HP7, EFP7L,
-                   * EHP7L, EHP7GF lines). Not the final 1.2 format tag.              */
+  CM_FILE_1a = 1, /* Infernal v1.1: stores its filter HMM */
+  CM_FILE_1e = 5, /* Infernal v1.2: no stored filter HMM block; the filter
+                   * and HMM-only HMMs are derived from the CM when read, and
+                   * only their E-value parameters are stored (HP7, EFP7L,
+                   * EHP7L, EHP7GF lines) (brief 26_0821-162). Adds optional
+                   * P7NODEPAD band pads, F1F2F3CUT filter cutoffs, consensus
+                   * pknot annotation and a null3-OFF E-value set.          */
 };
 
 typedef struct cm_file_s {
@@ -3226,6 +3226,7 @@ extern int     cm_file_CreateLock(CM_FILE *cmfp);
 extern int     cm_file_WriteASCII(FILE *fp, int format, CM_t *cm);
 extern int     cm_file_WriteBinary(FILE *fp, int format, CM_t *cm, off_t *opt_fp7_offset, off_t *opt_hp7_offset);
 extern int     cm_file_DefaultFormat(CM_t *cm);
+extern int     cm_file_Check1aStorable(const CM_t *cm, int add_flags, char *errbuf);
 extern int     cm_file_UseHMMOnlyFilters(CM_FILE *cmfp, int which, char *errbuf);
 extern int     cm_file_Read(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_cm);
 extern int     cm_file_PositionByKey(CM_FILE *cmfp, const char *key);
