@@ -42,7 +42,7 @@ static ESL_OPTIONS options[] = {
   { "--mlhmm",   eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "output maximum likelihood HMM for CM in HMMER3 format",            1 },
   { "--fhmm",    eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "output filter HMM for CM in HMMER3 format (1/e: the ML HMM)",     1 },
   { "--cp9ascm", eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,       NULL,       NULL, "output CM's ML CP9 HMM as an unstructured (MATL-chain) CM", 1 },
-  { "--outfmt",  eslARG_STRING, NULL,  NULL, NULL,      NULL,       NULL,"-1,--mlhmm,--fhmm,--cp9ascm", "output format 1/a, 1/b or 1/d (default: 1/e or the input's)", 1 },
+  { "--outfmt",  eslARG_STRING, NULL,  NULL, NULL,      NULL,       NULL,"-1,--mlhmm,--fhmm,--cp9ascm", "output format 1/a or 1/e (default: 1/e, or 1/a for a 1/a CM)", 1 },
   { "--dropknots",eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,       NULL, "allow dropping pseudoknots the output format can't store", 1 },
   { "--upgrade", eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,"-1,--mlhmm,--fhmm,--cp9ascm,--outfmt", "convert older-format CMs to the current format", 1 },
   { "--prior",   eslARG_INFILE, NULL,  NULL, NULL,      NULL,"--upgrade", "--noprior", "with --upgrade: CMs were built with prior file <f>",      1 },
@@ -74,7 +74,7 @@ main(int argc, char **argv)
   CM_FILE       *cmfp    = NULL;
   CM_t          *cm      = NULL;
   FILE          *ofp     = NULL;
-  int            fmtcode = -1;	/* -1 = cm_file_DefaultFormat(): INFERNAL1/e, or an older format for a CM with a stored filter HMM; set by --outfmt */
+  int            fmtcode = -1;	/* -1 = cm_file_DefaultFormat(): INFERNAL1/e, or INFERNAL1/a for a CM with a stored filter HMM; set by --outfmt */
   int            status;
   char           errbuf[eslERRBUFSIZE];
   Prior_t       *user_pri = NULL;   /* --prior <f>: the prior the CMs were built with, for --upgrade */
@@ -117,19 +117,20 @@ main(int argc, char **argv)
 
   /* --outfmt <s>: choose the 1.x output format for -a/-b. Default (NULL) writes
    * the default format (fmtcode -1, cm_file_DefaultFormat(): INFERNAL1/e, or for
-   * a CM read with a stored filter HMM, its own older format family, unless
-   * --upgrade). 1/a and 1/b predate the
-   * consensus pseudoknot annotation, so writing to them drops pknots (handled below).
-   * 1/c is a retired ambiguous dev format and cannot be selected.
+   * a CM read with a stored filter HMM, INFERNAL1/a, unless --upgrade). 1/a
+   * predates the consensus pseudoknot annotation, so writing to it drops
+   * pknots (handled below). The development formats 1/b, 1/c and 1/d were
+   * never released, and can't be selected (brief 26_0821-185).
    */
   {
     char *outfmt = esl_opt_GetString(go, "--outfmt");
     if (outfmt != NULL) {
       if      (strcmp(outfmt, "1/a") == 0) fmtcode = CM_FILE_1a;
-      else if (strcmp(outfmt, "1/b") == 0) fmtcode = CM_FILE_1b;
-      else if (strcmp(outfmt, "1/d") == 0) fmtcode = CM_FILE_1d;
-      else    cm_Fail("No such output format code %s (try 1/a, 1/b, or 1/d).\n", outfmt);
+      else if (strcmp(outfmt, "1/e") == 0) fmtcode = CM_FILE_1e;
+      else    cm_Fail("No such output format code %s (try 1/a or 1/e).\n", outfmt);
     }
+    if (fmtcode == CM_FILE_1a && esl_opt_GetBoolean(go, "--p7pad"))
+      cm_Fail("--p7pad can't be used with --outfmt 1/a: the INFERNAL1/a format can't store p7 band pads.\n");
   }
 
   status = cm_file_Open(cmfile, NULL, TRUE, &cmfp, errbuf); /* TRUE says: allow CM file to be in v1.0 --> v1.0.2 format */
@@ -156,19 +157,19 @@ main(int argc, char **argv)
       CM_t *cp9cm = NULL;
       int   drops_pknot = FALSE; /* TRUE if the output format can't store this CM's pknot annotation */
 
-      /* The consensus pseudoknot annotation only exists in INFERNAL1/d.
-       * Converting to an older format that predates it (1/a, 1/b via
-       * --outfmt, or the legacy v0.7-v1.0.2 -1 format) would lose it, so
-       * that's an error unless --dropknots allows it (brief 26_0821-135).
-       * Checked before any other work on the CM. */
+      /* The consensus pseudoknot annotation only exists in INFERNAL1/e.
+       * Converting to an older format that predates it (1/a via --outfmt,
+       * or the legacy v0.7-v1.0.2 -1 format) would lose it, so that's an
+       * error unless --dropknots allows it (brief 26_0821-135). Checked
+       * before any other work on the CM. */
       if (cm->flags & CMH_PKNOT) {
         if ((esl_opt_GetBoolean(go, "-a") || esl_opt_GetBoolean(go, "-b")) &&
-            (fmtcode == CM_FILE_1a || fmtcode == CM_FILE_1b)) {
+            fmtcode == CM_FILE_1a) {
           drops_pknot = TRUE;
           if (! esl_opt_GetBoolean(go, "--dropknots"))
-            cm_Fail("CM %s has consensus pseudoknot annotation, which the INFERNAL1/%s format cannot store.\n"
+            cm_Fail("CM %s has consensus pseudoknot annotation, which the INFERNAL1/a format cannot store.\n"
                     "Use --dropknots to convert it anyway without that annotation, or omit --outfmt.",
-                    cm->name, (fmtcode == CM_FILE_1a) ? "a" : "b");
+                    cm->name);
         }
         else if (esl_opt_GetBoolean(go, "-1")) {
           drops_pknot = TRUE;
@@ -185,6 +186,19 @@ main(int argc, char **argv)
       int   is_v1p0_default = (cmfp->format == CM_FILE_1 && fmtcode == -1 &&
                                (esl_opt_GetBoolean(go, "-a") || esl_opt_GetBoolean(go, "-b"))) ? TRUE : FALSE;
       int   do_upgrade  = ((esl_opt_GetBoolean(go, "--upgrade") || is_v1p0_default) && ! (cm->flags & CMH_FP7_DERIVED)) ? TRUE : FALSE;
+
+      /* A CM with a filter HMM stored in an older format is written as
+       * INFERNAL1/a unless it is upgraded. --outfmt 1/e asks for the
+       * current format, which needs --upgrade. --p7pad needs the current
+       * format, to store the pads. Both are checked before any work on
+       * the CM (brief 26_0821-185). */
+      if ((esl_opt_GetBoolean(go, "-a") || esl_opt_GetBoolean(go, "-b")) && ! do_upgrade) {
+        if (fmtcode == CM_FILE_1e && ! (cm->flags & CMH_FP7_DERIVED))
+          cm_Fail("CM %s is in an older format. Use --upgrade, not --outfmt 1/e, to convert it to the current format.", cm->name);
+        if (fmtcode == -1 &&
+            cm_file_Check1aStorable(cm, esl_opt_GetBoolean(go, "--p7pad") ? CMH_P7NODEPAD : 0, errbuf) != eslOK)
+          cm_Fail(errbuf);
+      }
 
       /* Upgrading a CM built with cmbuild --prior <f> needs that prior
        * to derive its HMM-only search HMM; without it, that HMM can only
@@ -241,7 +255,7 @@ main(int argc, char **argv)
         {
           if (cm->fp7 == NULL) cm_Fail("CM %s has no filter HMM; cannot compute p7 node pads\n", cm->name);
           /* cm_ComputeP7CMNodePad needs cm->cp9map. For inputs that skipped
-           * configure_model() (v1/a, v1/b), cp9map is NULL — build just
+           * configure_model() (1/a, 1/e), cp9map is NULL — build just
            * the map cheaply rather than running full cm_Configure.
            */
           if (cm->cp9map == NULL) {
@@ -284,7 +298,7 @@ main(int argc, char **argv)
       }
 
       /* --dropknots, and this CM's pknot annotation can't be written (checked
-       * above): drop it silently. For -a/-b targeting 1/a or 1/b we must
+       * above): drop it silently. For -a/-b targeting 1/a we must
        * actually clear CMH_PKNOT and free cm->pknot, because the binary pknot
        * block is flag-gated (not format-gated) and would otherwise be emitted;
        * the -1 legacy writer cm_file_Write1p0ASCII() ignores cm->pknot. */
@@ -421,10 +435,7 @@ configure_model(CM_t *cm, char *errbuf, int set_filter)
  *              --Eseed), as cmbuild applies them. (Model libraries of
  *              long CMs are often built with small --EmN etc.)
  *            The CM's own E-value parameters (ECM lines, from
- *            cmcalibrate) belong to the CM and are kept. The per-CM
- *            filter P-value cutoffs (cmbuild --fil-pcut) belong to the
- *            old filter HMM and are dropped. P7 band pads (P7NODEPAD) are
- *            kept unless --p7pad recomputes them.
+ *            cmcalibrate) belong to the CM and are kept.
  *
  * Returns:   eslOK on success, errbuf filled on failure.
  */
@@ -459,9 +470,6 @@ upgrade_model(const ESL_GETOPTS *go, CM_t *cm, int format, const Prior_t *user_p
   do_sim = (user_pri != NULL || com_prior || cm->eff_nseq >= EFORCE_MAX_NEFF || comlog_cmbuild_option(cm->comlog, "--Esim", NULL)) ? TRUE : FALSE;
   if (comlog_cmbuild_option(cm->comlog, "--eset", &eset_arg) && eset_arg != NULL && atof(eset_arg) == 0.) do_sim = TRUE;
   if (eset_arg != NULL) free(eset_arg);
-
-  /* the per-CM filter P-value cutoffs were calibrated for the old filter HMM */
-  cm->flags &= ~CMH_FILTER_PVAL_CUTOFFS;
 
   /* calibration settings: cmbuild's, as in its build_and_calibrate_p7_filter() */
   cm_p7_CalOptsSetDefaults(&co, cm->clen, do_sim);
