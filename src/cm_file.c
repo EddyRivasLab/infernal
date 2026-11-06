@@ -556,13 +556,13 @@ open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, in
  *                                         cm_p7_oprofile_ReadMSV()
  *                                         (brief 26_0821-177).
  *
- *            A database pressed by an older cmpress has no
- *            .i1hf/.i1hp files; its filter HMMs are its HMM-only HMMs
- *            too (unless its binary CM file is in format 1/e), so it
- *            is left as it is.
+ *            A database without .i1hf/.i1hp files was pressed by an
+ *            older cmpress; rerun cmpress. (A database pressed by
+ *            Infernal 1.1, in format 1/a, fails when it is opened:
+ *            brief 26_0821-186.)
  *
  * Returns:   <eslOK> on success.
- *            <eslENOTFOUND> if a 1/e pressed database lacks the files,
+ *            <eslENOTFOUND> if the pressed database lacks the files,
  *            errbuf filled.
  *            <eslEINVAL> if <which> is not a valid code.
  */
@@ -591,11 +591,7 @@ cm_file_UseHMMOnlyFilters(CM_FILE *cmfp, int which, char *errbuf)
   if ((status = esl_sprintf(&hffile, "%s.i1hf", base))  != eslOK) goto ERROR;
   if ((status = esl_sprintf(&hpfile, "%s.i1hp", base))  != eslOK) goto ERROR;
 
-  if (! esl_FileExists(hffile) || ! esl_FileExists(hpfile)) { 
-    if (cmfp->format >= CM_FILE_1e) ESL_XFAIL(eslENOTFOUND, errbuf, "Opened %s, a pressed CM file; but no .i1hf and .i1hp files found; rerun cmpress", cmfp->fname);
-    free(base); free(hffile); free(hpfile);
-    return eslOK;
-  }
+  if (! esl_FileExists(hffile) || ! esl_FileExists(hpfile)) ESL_XFAIL(eslENOTFOUND, errbuf, "Opened %s, a pressed CM file; but no .i1hf and .i1hp files found; rerun cmpress", cmfp->fname);
 
   if (which == CM_HMMONLY_FILTERS_ZEROBP) { 
     /* open a second handle on the same database and switch all of it */
@@ -746,17 +742,10 @@ cm_file_WriteASCII(FILE *fp, int format, CM_t *cm)
   if((cm->flags & CMH_LOCAL_BEGIN) || (cm->flags & CMH_LOCAL_END)) cm_Fail("cm_file_WriteASCII(): CM is in local mode");
   if(cm->hp7_is_active) cm_Fail("cm_file_WriteASCII(): CM's HMM-only filter is active, it can't be saved");
 
-  /* Default format: 1/e unless the CM carries a stored (not derived)
-   * filter HMM, read from a 1/a file: then 1/a, so its filter HMM and
-   * E-value parameters are written back unchanged (briefs
-   * 26_0821-162/26_0821-171). Programs that give such a CM something 1/a
-   * can't store check before they start (cm_file_Check1aStorable());
-   * this is the backstop (brief 26_0821-185). */
-  if (format == -1) {
-    format = cm_file_DefaultFormat(cm);
-    if (format == CM_FILE_1a && cm_file_Check1aStorable(cm, 0, NULL) != eslOK)
-      ESL_EXCEPTION(eslEINVAL, "can't write CM %s in format 1/a: it has data that format can't store", cm->name);
-  }
+  /* Default format: 1/e. A CM with a stored (not derived) filter HMM,
+   * read from a 1/a file, can only be in cmconvert, which chooses its
+   * output format itself (brief 26_0821-186). */
+  if (format == -1) format = CM_FILE_1e;
   if (format == CM_FILE_1e && (cm->flags & CMH_FP7) && ! (cm->flags & CMH_FP7_DERIVED))
     ESL_EXCEPTION(eslEINVAL, "can't write CM %s in format 1/e: its filter HMM was read from a file, not derived from the CM", cm->name);
 
@@ -1030,11 +1019,11 @@ cm_file_WriteBinary(FILE *fp, int format, CM_t *cm, off_t *opt_fp7_offset, off_t
   if((cm->flags & CMH_LOCAL_BEGIN) || (cm->flags & CMH_LOCAL_END)) cm_Fail("cm_file_WriteASCII(): CM is in local mode");
   if(cm->hp7_is_active) cm_Fail("cm_file_WriteBinary(): CM's HMM-only filter is active, it can't be saved");
 
-  /* Default format: as cm_file_WriteASCII(). Unlike ASCII 1/e, binary
+  /* Default format: 1/e, as cm_file_WriteASCII(). Unlike ASCII 1/e, binary
    * 1/e stores the derived filter and HMM-only HMMs (cmpress's .i1m
    * file is a cache that cmscan reads without deriving them). The new
    * blocks live behind new magics that an old binary cleanly rejects. */
-  if (format == -1) format = cm_file_DefaultFormat(cm);
+  if (format == -1) format = CM_FILE_1e;
   if (format == CM_FILE_1e && (cm->flags & CMH_FP7) && ! (cm->flags & CMH_FP7_DERIVED))
     ESL_EXCEPTION(eslEINVAL, "can't write CM %s in format 1/e: its filter HMM was read from a file, not derived from the CM", cm->name);
   if (format == CM_FILE_1e && (cm->flags & CMH_FP7) && (cm->hp7_xform != CM_HP7_ML) != (cm->hp7 != NULL))
@@ -1206,40 +1195,19 @@ cm_file_WriteBinary(FILE *fp, int format, CM_t *cm, off_t *opt_fp7_offset, off_t
   return eslOK;
 }
 
-/* Function:  cm_file_DefaultFormat()
- * Incept:    EPN, Fri Oct 30 2026 (w/Claude)
- *
- * Purpose:   Return the format code that cm_file_WriteASCII() and
- *            cm_file_WriteBinary() use for <cm> when asked for the
- *            default format (-1). That is <CM_FILE_1e>, unless <cm>
- *            carries a filter HMM that was read from a 1/a file (and
- *            not derived from the CM): then <CM_FILE_1a>, so a
- *            released 1/a model stays 1/a, with its stored filter HMM
- *            and E-value parameters written back unchanged. A CM like
- *            that which has gained something 1/a can't store fails
- *            cm_file_Check1aStorable(), and isn't written.
- *            (briefs 26_0821-162/26_0821-171/26_0821-185)
- */
-int
-cm_file_DefaultFormat(CM_t *cm)
-{
-  if ((cm->flags & CMH_FP7) && ! (cm->flags & CMH_FP7_DERIVED)) return CM_FILE_1a;
-  return CM_FILE_1e;
-}
-
 /* Function:  cm_file_Check1aStorable()
  * Incept:    EPN, Fri Nov  6 2026 (w/Claude)
  *
- * Purpose:   Check that <cm>, if its default output format is
- *            INFERNAL1/a (it carries a filter HMM read from a 1/a
- *            file; see cm_file_DefaultFormat()), carries nothing
+ * Purpose:   Check that <cm>, if it carries a filter HMM read
+ *            from an INFERNAL1/a file (cmconvert writes such a CM
+ *            as 1/a unless it is upgraded), carries nothing
  *            INFERNAL1/a can't store, counting the CMH_* flags in
- *            <add_flags> as well as <cm>'s own: a program that is
- *            about to give <cm> something (cmcalibrate --nonull3's
- *            null3-off E-value parameters, cmconvert --p7pad's band
- *            pads) passes its flag, so that it fails before doing the
- *            work, not when it writes the CM. A CM whose default
- *            format is 1/e always passes.
+ *            <add_flags> as well as <cm>'s own: cmconvert, about to
+ *            give <cm> something (--p7pad's band pads), passes its
+ *            flag, so that it fails before doing the work, not when
+ *            it writes the CM. A CM with derived filter HMMs always
+ *            passes. Only cmconvert reads 1/a files (brief
+ *            26_0821-186).
  *
  *            The things 1/a can't store are consensus pseudoknot
  *            annotation (CMH_PKNOT), null3-off E-value parameters
@@ -1247,7 +1215,8 @@ cm_file_DefaultFormat(CM_t *cm)
  *            (CMH_P7NODEPAD) and filter P-value cutoffs
  *            (CMH_FILTER_PVAL_CUTOFFS). (brief 26_0821-185)
  *
- * Returns:   <eslOK> if <cm> can be written in its default format.
+ * Returns:   <eslOK> if <cm> can be written as cmconvert would by
+ *            default.
  *            <eslEINCOMPAT> if not, with a short description of
  *            the first thing 1/a can't store in <errbuf>, if it is
  *            non-NULL, for the caller's message.
@@ -1377,9 +1346,6 @@ cm_file_Read(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc,  CM_t **opt_cm
 
   /* A call to SSI to remember file position may eventually go here.  */
   status = (*cmfp->parser)(cmfp, read_fp7, ret_abc, opt_cm);
-  /* record the source format, so cm_file_DefaultFormat() can keep a
-   * released 1/a model in 1/a (brief 26_0821-171) */
-  if (status == eslOK && opt_cm != NULL && *opt_cm != NULL) (*opt_cm)->file_format = cmfp->format;
   return status;
 }
 

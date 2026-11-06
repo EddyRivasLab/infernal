@@ -1993,14 +1993,13 @@ typedef struct cm_s {
 
   /* p7 hmms, added 08.05.08 */
   P7_HMM       *mlp7;         /* the maximum likelihood p7 HMM, built from the CM  */
-  P7_HMM       *fp7;          /* the filter p7 HMM: derived from the CM (mlp7, CMH_FP7_DERIVED), or read from an older CM file */
-  int           file_format;  /* CM_FILE_* format the CM was read from; -1 if not read from a file.
-                               * cm_file_DefaultFormat() uses it to write a released 1/a model back as 1/a */
+  P7_HMM       *fp7;          /* the filter p7 HMM: derived from the CM (mlp7, CMH_FP7_DERIVED), or (cmconvert only) read from an older CM file */
   float         fp7_evparam[CM_p7_NEVPARAM]; /* E-value params (CMH_FP7_STATS) */
   /* HMM-only search HMM (cmsearch/cmscan --hmmonly), derived from the CM
    * by the transform <hp7_xform> (CM_HP7_*). NULL when HMM-only search
-   * uses fp7 itself: CM_HP7_ML (zero-basepair models), and CM files
-   * that store their filter HMM (format 1/a and older). See
+   * uses fp7 itself: CM_HP7_ML (zero-basepair models), and, in
+   * cmconvert only, CM files that store their filter HMM (format 1/a
+   * and older; brief 26_0821-186). See
    * cm_p7_DeriveFilterHMMs(). (brief 26_0821-162) */
   P7_HMM       *hp7;
   float         hp7_evparam[CM_p7_NEVPARAM]; /* E-value params for hp7 */
@@ -3225,7 +3224,6 @@ extern void    cm_file_Close(CM_FILE *cmfp);
 extern int     cm_file_CreateLock(CM_FILE *cmfp);
 extern int     cm_file_WriteASCII(FILE *fp, int format, CM_t *cm);
 extern int     cm_file_WriteBinary(FILE *fp, int format, CM_t *cm, off_t *opt_fp7_offset, off_t *opt_hp7_offset);
-extern int     cm_file_DefaultFormat(CM_t *cm);
 extern int     cm_file_Check1aStorable(const CM_t *cm, int add_flags, char *errbuf);
 extern int     cm_file_UseHMMOnlyFilters(CM_FILE *cmfp, int which, char *errbuf);
 extern int     cm_file_Read(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_cm);

@@ -74,7 +74,7 @@ main(int argc, char **argv)
   CM_FILE       *cmfp    = NULL;
   CM_t          *cm      = NULL;
   FILE          *ofp     = NULL;
-  int            fmtcode = -1;	/* -1 = cm_file_DefaultFormat(): INFERNAL1/e, or INFERNAL1/a for a CM with a stored filter HMM; set by --outfmt */
+  int            fmtcode = -1;	/* -1: INFERNAL1/e, or INFERNAL1/a for a CM with a stored filter HMM that isn't upgraded; set by --outfmt */
   int            status;
   char           errbuf[eslERRBUFSIZE];
   Prior_t       *user_pri = NULL;   /* --prior <f>: the prior the CMs were built with, for --upgrade */
@@ -115,9 +115,9 @@ main(int argc, char **argv)
     }
   cmfile = esl_opt_GetArg(go, 1);
 
-  /* --outfmt <s>: choose the 1.x output format for -a/-b. Default (NULL) writes
-   * the default format (fmtcode -1, cm_file_DefaultFormat(): INFERNAL1/e, or for
-   * a CM read with a stored filter HMM, INFERNAL1/a, unless --upgrade). 1/a
+  /* --outfmt <s>: choose the 1.x output format for -a/-b. Default (NULL,
+   * fmtcode -1) writes INFERNAL1/e, or for a CM read from a 1/a file (with a
+   * stored filter HMM), INFERNAL1/a, unless --upgrade (<wfmt> below). 1/a
    * predates the consensus pseudoknot annotation, so writing to it drops
    * pknots (handled below). The development formats 1/b, 1/c and 1/d were
    * never released, and can't be selected (brief 26_0821-185).
@@ -186,6 +186,12 @@ main(int argc, char **argv)
       int   is_v1p0_default = (cmfp->format == CM_FILE_1 && fmtcode == -1 &&
                                (esl_opt_GetBoolean(go, "-a") || esl_opt_GetBoolean(go, "-b"))) ? TRUE : FALSE;
       int   do_upgrade  = ((esl_opt_GetBoolean(go, "--upgrade") || is_v1p0_default) && ! (cm->flags & CMH_FP7_DERIVED)) ? TRUE : FALSE;
+      /* this CM's output format for -a/-b: --outfmt's, or by default 1/a
+       * for a CM that keeps the filter HMM stored in its 1/a file, else
+       * 1/e. The writers' own default is 1/e: cmconvert is the only
+       * program that holds a 1/a CM (brief 26_0821-186). */
+      int   wfmt        = (fmtcode != -1) ? fmtcode :
+                          ((cm->flags & CMH_FP7) && ! (cm->flags & CMH_FP7_DERIVED) && ! do_upgrade) ? CM_FILE_1a : CM_FILE_1e;
 
       /* A CM with a filter HMM stored in an older format is written as
        * INFERNAL1/a unless it is upgraded. --outfmt 1/e asks for the
@@ -308,8 +314,8 @@ main(int argc, char **argv)
         if (cm->pknot != NULL) { free(cm->pknot); cm->pknot = NULL; }
       }
 
-      if      (esl_opt_GetBoolean(go, "-a")       == TRUE) cm_file_WriteASCII (ofp, fmtcode, cm);
-      else if (esl_opt_GetBoolean(go, "-b")       == TRUE) cm_file_WriteBinary(ofp, fmtcode, cm, NULL, NULL);
+      if      (esl_opt_GetBoolean(go, "-a")       == TRUE) cm_file_WriteASCII (ofp, wfmt, cm);
+      else if (esl_opt_GetBoolean(go, "-b")       == TRUE) cm_file_WriteBinary(ofp, wfmt, cm, NULL, NULL);
       else if (esl_opt_GetBoolean(go, "-1")       == TRUE) cm_file_Write1p0ASCII(ofp, cm);
       else if (esl_opt_GetBoolean(go, "--mlhmm")  == TRUE) p7_hmmfile_WriteASCII(ofp, -1, cm->mlp7); /* -1 = write the current default format */
       else if (esl_opt_GetBoolean(go, "--fhmm")   == TRUE) p7_hmmfile_WriteASCII(ofp, -1, cm->fp7);  /* -1 = write the current default format */

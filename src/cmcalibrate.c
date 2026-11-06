@@ -206,7 +206,6 @@ static void process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, cha
 static int  output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, int relevant_ncpus, int ncpus);
 static int  init_master_cfg (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static int  init_shared_cfg (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
-static int  check_nonull3_format(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static int  initialize_cm   (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int do_local);
 static int  initialize_stats(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static int  fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *scores, int nscores, int exp_mode, double *ret_mu, double *ret_lambda, int *ret_nrandhits, float *ret_tailp);
@@ -332,7 +331,6 @@ main(int argc, char **argv)
     /* make sure the CM file exists and we can read it */
     /* open CM file */
     if((status = cm_file_Open(cfg.cmfile, NULL, FALSE, &(cfg.cmfp), errbuf)) != eslOK) cm_Fail(errbuf);
-    if((status = check_nonull3_format(go, &cfg, errbuf)) != eslOK) cm_Fail(errbuf);
     if((status = cm_file_Read(cfg.cmfp, TRUE, &(cfg.abc), &cm)) != eslOK) cm_Fail(cfg.cmfp->errbuf);
     if(cm != NULL) FreeCM(cm);
 
@@ -1821,25 +1819,6 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 }
 
 
-/* check_nonull3_format()
- * Incept: EPN, Fri Nov  6 2026 (w/Claude)
- *
- * --nonull3 stores a null3-off E-value set in each CM, which the
- * INFERNAL1/a format can't hold, and a CM read from a 1/a file is
- * written back as 1/a (cm_file_DefaultFormat()). Fail before
- * calibrating, not when the CMs are written (brief 26_0821-185).
- * Every CM in a file has the file's format, so <cfg->cmfp>'s format
- * decides.
- */
-static int
-check_nonull3_format(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
-{
-  if (esl_opt_GetBoolean(go, "--nonull3") && cfg->cmfp->format < CM_FILE_1e)
-    ESL_FAIL(eslEINCOMPAT, errbuf, /* errbuf is short: eslERRBUFSIZE */
-             "--nonull3: the INFERNAL1/a format can't store its E-values.\nConvert the CMs with cmconvert --upgrade first.");
-  return eslOK;
-}
-
 /* init_shared_cfg()
  * Called by serial masters and mpi workers and masters.
  * Allocates/sets: 
@@ -1864,7 +1843,6 @@ init_shared_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   if      (status == eslENOTFOUND) return status;
   else if (status == eslEFORMAT)   return status;
   else if (status != eslOK)        return status;
-  if ((status = check_nonull3_format(go, cfg, errbuf)) != eslOK) return status;
 
   /* optionally, get distribution of GC content from an input database (default is use cm->null for GC distro) */
   if(esl_opt_GetString(go, "--gc") != NULL) {
