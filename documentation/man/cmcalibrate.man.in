@@ -430,6 +430,13 @@ recommended unless you plan on using the same option to
 .B cmsearch 
 and/or
 .B cmscan.
+The E-value parameters this calibrates are stored alongside the
+default ones, which the INFERNAL1/a format (Infernal 1.1's) can't do,
+so for an INFERNAL1/a file
+.B --nonull3
+is an error: convert it with
+.B cmconvert --upgrade
+first.
 
 .TP 
 .B --random

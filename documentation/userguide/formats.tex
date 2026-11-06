@@ -81,14 +81,22 @@ In format \prog{INFERNAL1/e} (the format this version writes), the profile HMMs 
 Infernal uses as filters, and for HMM-only searches, are not stored:
 every program that reads a CM derives them from the CM (see the
 \prog{HP7} line below), and the file stores only their E-value
-parameters. In the older formats (\prog{INFERNAL1/a}, \prog{/b} and
-\prog{/d}), each CM is immediately followed by a separately built
+parameters. In the older format \prog{INFERNAL1/a}, written by
+Infernal 1.1, each CM is immediately followed by a separately built
 filter HMM, in HMMER3 format: it starts with its own format version
 identifier (\prog{HMMER3/f}) and also ends with \prog{//} on a line by
-itself. Infernal 1.2 reads these older files and uses their stored
-filter HMM, as before; \prog{cmconvert --upgrade} converts them to
-the current format. A single file must not mix CMs in different
-formats.
+itself. Infernal 1.2 reads \prog{INFERNAL1/a} files and uses their
+stored filter HMM, as before, and writes a CM read from one back in
+\prog{INFERNAL1/a} format by default, so Infernal 1.1 can still read
+it; \prog{cmconvert --upgrade} converts them to the current format.
+\prog{INFERNAL1/a} can't store the \prog{P7NODEPAD}, \prog{PKNOT},
+\prog{F1F2F3CUT} and \prog{NONULL3\_xx} data described below; a
+program that would add any of them to an \prog{INFERNAL1/a} model
+(\prog{cmcalibrate --nonull3}, \prog{cmconvert --p7pad}) fails and
+asks for the model to be upgraded first. A single file must not mix
+CMs in different formats. (Development versions of Infernal 1.2 also
+wrote formats \prog{INFERNAL1/b}, \prog{/c} and \prog{/d}, which were
+never released; Infernal 1.2 can't read them.)
 
 The CM format is divided into two regions. The first region contains
 textual information and miscalleneous parameters in a roughly
@@ -203,7 +211,7 @@ CM alignment back to the original multiple alignment, via the model.
 
 \item [\emprog{P7NODEPAD <s>}] Per-HMM-node band-pad annotation flag;
 \prog{<s>} is either \prog{no} or \prog{yes} (case insensitive). Only
-present in \prog{INFERNAL1/b} format. If \prog{yes}, the per-node pad
+present in \prog{INFERNAL1/e} format. If \prog{yes}, the per-node pad
 fields on each node line (see below) are valid and contain the
 empirically-derived band-pad widths used by the p7 HMM Viterbi banding
 pipeline in \prog{cmsearch} / \prog{cmscan}. These pads are computed
@@ -218,7 +226,7 @@ present.
 
 \item [\emprog{PKNOT <s>}] Consensus pseudoknot annotation flag;
 \prog{<s>} is either \prog{no} or \prog{yes} (case insensitive). Only
-present in \prog{INFERNAL1/d} format and later. If \prog{yes}, the
+present in \prog{INFERNAL1/e} format. If \prog{yes}, the
 pseudoknot fields on each \prog{MATP}/\prog{MATL}/\prog{MATR} node line
 (see below) are valid and record the pseudoknot stem label(s) --
 letters \prog{a-z}/\prog{A-Z}, following the same convention as the
@@ -480,21 +488,14 @@ found by searches during preparation of the Rfam database.
   null3-off set is used in place of the \prog{ECMxx} set only when
   \prog{--nonull3} is in effect; the default (null3-on) search path is
   unaffected. The tags deliberately do not begin with \prog{ECM} so
-  that parsers of older Infernal versions silently skip them. In the
-  \textbf{binary} CM file format the same four parameter sets are
-  written as an optional block immediately following the \prog{ECMxx}
-  (EXPTAIL) block; presence of this block, or of consensus pseudoknot
-  annotation (\prog{PKNOT}, described above), advances the binary
-  save-file magic number to the \prog{INFERNAL1/d} code (\prog{v1d};
-  the ASCII format identifier is unchanged). An older Infernal binary
-  cleanly rejects a \prog{v1d} binary file rather than misreading it;
-  binary files without either addition keep their previous magic
-  number and remain readable by older versions. (An intermediate
-  \prog{v1c} binary magic was used only transiently in development and
-  is not a supported format; a current Infernal rejects it and asks
-  for the CM to be rebuilt as \prog{INFERNAL1/d}.) The binary form of
-  \prog{INFERNAL1/e} (\prog{v1e}, written by \prog{cmpress}) does
-  store the derived filter and HMM-only search HMMs, so that
+  that parsers of older Infernal versions silently skip them. Only
+  present in \prog{INFERNAL1/e} format. In the \textbf{binary} CM
+  file format the same four parameter sets are written as an optional
+  block immediately following the \prog{ECMxx} (EXPTAIL) block. The
+  binary form of \prog{INFERNAL1/e} (written by \prog{cmconvert -b}
+  and \prog{cmpress}) has its own magic number, which an older
+  Infernal cleanly rejects rather than misreading the file; it also
+  stores the derived filter and HMM-only search HMMs, so that
   \prog{cmscan} need not derive them.
 
 \item [\emprog{NONULL3\_GC <f1> <f2> <f3> <d1> <d2> <f4>}] Null3-off
@@ -525,11 +526,10 @@ state lines, one each for each state within the node.
 \begin{sreitems}{\textbf{State line}}
 
 \item [\textbf{Node line}] Each node line begins with 45 spaces, and
-  includes ten fields in \prog{INFERNAL1/a} format, twelve fields in
-  \prog{INFERNAL1/b} format and later (adding the \prog{P7NODEPAD}
-  pair), and fourteen fields in \prog{INFERNAL1/d} format and later
-  (further adding the \prog{PKNOT} pair). Additional fields always
-  appear at the end of the line, in the order described below.
+  includes ten fields in \prog{INFERNAL1/a} format and fourteen
+  fields in \prog{INFERNAL1/e} format (adding the \prog{P7NODEPAD}
+  pair and the \prog{PKNOT} pair). Additional fields always appear at
+  the end of the line, in the order described below.
 
   The first field is always a \prog{[} character.
 
@@ -581,19 +581,20 @@ state lines, one each for each state within the node.
   the node is any other type, or if the \prog{CONS} was \prog{no} in
   the header, then both fields will be '-'.
 
-  If \prog{P7NODEPAD yes} is set in the header (\prog{INFERNAL1/b}
-  format), the final two fields are the per-HMM-node p7 band pad values
-  for this node. If the node is a MATP (match pair) node, both fields
+  In \prog{INFERNAL1/e} format, the next two fields are for the
+  per-HMM-node p7 band pads (present on the node line whether or not
+  \prog{P7NODEPAD} is \prog{yes} in the header). If \prog{P7NODEPAD}
+  is \prog{yes}, they are the pad values for this node. If the node is a MATP (match pair) node, both fields
   will be non-negative integers: the pad widths for the left and right
   HMM consensus positions, respectively. If the node is a MATL (match
   left) node, the first field will be the pad width and the second
   field will be '-'. If the node is a MATR (match right) node, the
   first field will be '-' and the second field will be the pad width.
   If the node is any other type (ROOT, BIF, BEGL, BEGR, END), both
-  fields will be '-'. If \prog{P7NODEPAD} is \prog{no} or absent, these
-  two fields are omitted entirely from the node line.
+  fields will be '-'. If \prog{P7NODEPAD} is \prog{no}, both fields
+  are '-'.
 
-  In \prog{INFERNAL1/d} format and later, a further two fields follow
+  In \prog{INFERNAL1/e} format, a further two fields follow
   for the \prog{PKNOT} consensus pseudoknot annotation (present on the
   node line whether or not \prog{PKNOT} is \prog{yes} in the header, in
   the same way as the \prog{RF} fields above). If \prog{PKNOT} is

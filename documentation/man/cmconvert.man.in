@@ -27,7 +27,7 @@ CM files written by Infernal versions before 1.2 store a separately
 built filter HMM after each CM. Infernal 1.2 reads them and uses that
 stored filter HMM, and by default
 .B cmconvert
-writes such a CM in an older format again, keeping its filter HMM: a
+writes such a CM in that format again, keeping its filter HMM: a
 CM read from an INFERNAL1/a file (the format of Infernal 1.1) stays
 INFERNAL1/a, so Infernal 1.1 can still read it. Use
 .B --upgrade
@@ -140,32 +140,32 @@ With
 .B -a
 or
 .B -b,
-write the CMs in an older format,
+write the CMs in format
 .I <s>
-= 1/a, 1/b or 1/d. INFERNAL1/a is the format of Infernal 1.1, so
+= 1/a or 1/e. INFERNAL1/a is the format of Infernal 1.1, so
 .B --outfmt 1/a
-writes CMs that Infernal 1.1 can read. INFERNAL1/b and INFERNAL1/d
-were used only during the development of Infernal 1.2, and no earlier
-release reads them. These formats store a filter HMM after each CM; a
-CM in the current format has none, so its filter HMM (its maximum
-likelihood p7 HMM) is stored. The current format, INFERNAL1/e, is not
-a value of
-.B --outfmt:
-it is the default, and
+writes CMs that Infernal 1.1 can read. It stores a filter HMM after
+each CM; a CM in the current format has none, so its filter HMM (its
+maximum likelihood p7 HMM) is stored. INFERNAL1/a can't store a CM's
+consensus pseudoknot annotation (see
+.BR --dropknots ),
+nor its null3-off E-value parameters, which are left out.
+INFERNAL1/e is the current format, and the default for CMs in it;
+for a CM in an older format,
+.B --outfmt 1/e
+is an error: use
 .B --upgrade
-writes it for CMs in older formats.
+instead.
 
 .TP
 .B --dropknots
 Allow a conversion that loses consensus pseudoknot annotation. Only
-the INFERNAL1/d and current (INFERNAL1/e) CM formats can
+the current CM format (INFERNAL1/e) can
 store a CM's consensus pseudoknot annotation. Converting such a CM to
 an older format (with
 .B -1,
 or with
-.B --outfmt 1/a
-or
-.B --outfmt 1/b )
+.B --outfmt 1/a )
 is an error unless
 .B --dropknots
 is used, in which case the annotation is silently left out of the
@@ -173,7 +173,7 @@ output. CMs without pseudoknot annotation are unaffected.
 
 .TP
 .B --upgrade
-Convert CMs in older formats (INFERNAL1/a, /b, /d, and Infernal v1.0)
+Convert CMs in older formats (INFERNAL1/a, and Infernal v1.0)
 to the current format (INFERNAL1/e), the format
 .B cmbuild
 writes. The filter HMM stored after each CM is discarded; the two
@@ -189,12 +189,7 @@ does, so the output CM is the one that
 would have written, without needing the CM's training alignment.
 The CM itself and its own E-value parameters (from
 .BR cmcalibrate )
-are unchanged. Per-CM filter P-value cutoffs (from
-.BR "cmbuild --fil-pcut" )
-are dropped, because they belonged to the old filter HMM.
-P7 band pads are kept, unless
-.B --p7pad
-recomputes them for the derived filter HMM.
+are unchanged.
 CMs already in the current format are written unchanged.
 
 .IP
