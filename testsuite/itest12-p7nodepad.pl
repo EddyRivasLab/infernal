@@ -1,12 +1,11 @@
 #! /usr/bin/perl
 
-# Test the INFERNAL1/d (calibrated cmbuild) and INFERNAL1/b (cmconvert
-# of legacy v1a) CM file formats and --p7pad-* options of cmbuild
-# and cmconvert. Regression-covers the c09285c8 pass-2 rewind dispatch
-# fix (cmcalibrate rereads v1b output) via a separate sqc entry in
-# dev_testsuite.sqc at level 2; this script covers the ASCII-format
-# invariants, determinism, serial-vs-threaded equivalence, and the
-# cmconvert v1a -> v1b pad injection path.
+# Test the P7NODEPAD band pads of the INFERNAL1/e CM file format and
+# the --p7pad-* options of cmbuild and cmconvert. Regression-covers the
+# c09285c8 fix (cmcalibrate rereads its own output of a CM with pads)
+# via a separate sqc entry in dev_testsuite.sqc at level 2; this script
+# covers the ASCII-format invariants, determinism, serial-vs-threaded
+# equivalence, and the cmconvert v1.0 -> 1/e pad injection path.
 #
 # Usage:    ./itest12-p7nodepad.pl <builddir> <srcdir> <tmpfile prefix>
 # Example:  ./itest12-p7nodepad.pl ..         ..       tmpfoo
@@ -47,11 +46,7 @@ for my $suffix ("default.cm", "nopad.cm", "nopad2.cm",
 }
 
 ######################################################################
-# Subtest 1: cmbuild --p7pad produces INFERNAL1/e with pads (1/d before
-# the filter HMM was derived from the CM, brief 26_0821-162).
-# (Default cmbuild now stores a null3-OFF E-value set via the fastcal
-# store-both path, so the CM carries CMH_EXPTAIL_NONULL3_STATS and is
-# written as INFERNAL1/d, not 1/b -- see cm_file.c write-format gate.)
+# Subtest 1: cmbuild --p7pad produces INFERNAL1/e with pads.
 ######################################################################
 `$builddir/src/cmbuild --wnone -F --p7pad --p7pad-N 50 --p7pad-seed 42 $tmppfx.default.cm $ali > $tmppfx.cmbuild.log 2>&1`;
 if ($? != 0) { die "FAIL: cmbuild (default) failed\n"; }
@@ -63,9 +58,8 @@ if (! file_has_header("$tmppfx.default.cm", "P7NODEPAD", "yes")) { die "FAIL: su
 ######################################################################
 # Subtest 2: default cmbuild (no --p7pad) computes no pads; --no-p7pad
 # is accepted as a no-op and gives the same header.
-# First line is INFERNAL1/d (format tag is independent of whether pads
-# are populated; default cmbuild still stores the null3-OFF E-value set,
-# so the CM is 1/d), header says 'P7NODEPAD no', and the first MATL node
+# First line is INFERNAL1/e (format tag is independent of whether pads
+# are populated), header says 'P7NODEPAD no', and the first MATL node
 # line trails with '- -' (both dashes) rather than '<int> -'.
 ######################################################################
 `$builddir/src/cmbuild --wnone -F $tmppfx.nopad.cm $ali > $tmppfx.cmbuild.log 2>&1`;
@@ -84,8 +78,8 @@ if (! defined $matl_nopad) { die "FAIL: subtest 2: no MATL node line found in $t
 my @f_nopad = split /\s+/, $matl_nopad;
 # leading empty element from leading whitespace?
 shift @f_nopad if $f_nopad[0] eq "";
-# INFERNAL1/d node lines carry 14 whitespace fields: the 12 base 1/b
-# columns plus two trailing consensus-pseudoknot annotation columns
+# INFERNAL1/e node lines carry 14 whitespace fields: the 10 1/a
+# columns, two p7 pad columns, and two consensus-pseudoknot annotation columns
 # (idx 12,13). The left/right p7 pad fields remain at idx 10,11.
 if (scalar(@f_nopad) != 14) { die "FAIL: subtest 2: MATL line should have 14 whitespace fields, got " . scalar(@f_nopad) . ": '$matl_nopad'\n"; }
 if ($f_nopad[10] ne "-" || $f_nopad[11] ne "-") {
@@ -93,8 +87,8 @@ if ($f_nopad[10] ne "-" || $f_nopad[11] ne "-") {
 }
 
 ######################################################################
-# Subtest 3: With pads, MATL node lines have 14 fields (12 base 1/b
-# columns + 2 trailing 1/d pknot columns); for MATL (left-only match)
+# Subtest 3: With pads, MATL node lines have 14 fields (10 1/a columns,
+# 2 pad columns, 2 pknot columns); for MATL (left-only match)
 # the pad fields at idx 10,11 are <int> followed by '-'.
 ######################################################################
 my $matl_pad = first_matl_line("$tmppfx.default.cm");
@@ -158,7 +152,7 @@ if (! file_has_header("$tmppfx.threaded.cm", "P7NODEPAD", "yes")) { die "FAIL: s
 
 ######################################################################
 # Subtest 6: Binary round-trip preserves pads.
-# cmconvert -b writes a binary v1b, then cmconvert -a converts back to
+# cmconvert -b writes a binary 1/e, then cmconvert -a converts back to
 # ASCII. Pad columns on MAT* node lines must match the original.
 # We pass --no-p7pad on both conversions to suppress pad re-computation
 # (the input already has pads from cmbuild; cmconvert's compute path
@@ -185,10 +179,10 @@ if ($pads_orig ne $pads_back) {
 # writes to the current directory and we want isolation.
 ######################################################################
 `cp $v1a_in $tmppfx.1p0-input.cm`;
-if ($? != 0) { die "FAIL: failed to copy legacy v1a input CM\n"; }
+if ($? != 0) { die "FAIL: failed to copy legacy v1.0 input CM\n"; }
 
 `$builddir/src/cmconvert --p7pad --p7pad-N 50 --p7pad-seed 42 $tmppfx.1p0-input.cm > $tmppfx.converted.cm 2>>$tmppfx.cmbuild.log`;
-if ($? != 0) { die "FAIL: cmconvert v1a->v1b (with pads) failed\n"; }
+if ($? != 0) { die "FAIL: cmconvert v1.0->1/e (with pads) failed\n"; }
 
 $first = first_line("$tmppfx.converted.cm");
 if ($first !~ /^INFERNAL1\/e\b/) { die "FAIL: subtest 7: cmconvert output first line is '$first', expected to start with 'INFERNAL1/e'\n"; }

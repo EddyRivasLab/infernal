@@ -77,6 +77,7 @@
 1 exercise  itest/build-sscons      !testsuite/itest21-cmbuild-sscons.pl!    @@ !! %OUTFILES%
 1 exercise  itest/scan-hmmonly-hmm   !testsuite/itest22-scan-hmmonly-hmm.pl!  @@ !! %OUTFILES%
 1 exercise  itest/no-basepair-chasm !testsuite/itest24-no-basepair-chasm.pl! @@ !! %OUTFILES%
+1 exercise  itest/removed-formats   !testsuite/itest25-removed-formats.pl!   @@ !! %OUTFILES%
 1 exercise  itest/brute             @src/itest_brute@
 
 ################################################################
@@ -181,7 +182,7 @@
 1  fail        search/tf2     @src/cmsearch@ --tblout %TMP4.TBLOUT% --fmt 2 -Z 1000 %TRNA.C.CM% !testsuite/emitted-tRNA.fa!
 1  exercise    search/tf3     @src/cmsearch@ --tblout %TMP5.TBLOUT% --fmt 3 -Z 1000 %TRNA.C.CM% !testsuite/emitted-tRNA.fa!
 # Note: cmsearch smoke for --p7padplus against %T.PAD.CM% is placed
-# after calibrate/t.v1b (below), because T.PAD.CM is uncalibrated out
+# after calibrate/t.pad (below), because T.PAD.CM is uncalibrated out
 # of the build/t.pad.default prep and cmsearch refuses to run without
 # E-value parameters.
 
@@ -317,15 +318,14 @@
 1  exercise  calibrate/tFC      @src/cmcalibrate@ --forecast %TRNA.CM%
 1  prep      build/se           @src/cmbuild@ -F %SE.CM% !testsuite/se.sto!
 1  exercise  calibrate/se       @src/cmcalibrate@ -L 0.1 %SE.CM%
-# Regression test for commit c09285c8: cm_file.c pass-2 rewind dispatch
-# was missing the CM_FILE_1b case, causing cmcalibrate to fail when
-# rereading its own v1b output on the second pass. %T.PAD.CM% is
-# produced by the build/t.pad.default prep above.
-2  exercise  calibrate/t.v1b    @src/cmcalibrate@ -L 0.01 --seed 42 %T.PAD.CM%
-# cmsearch smoke for --p7padplus against a v1b CM that carries embedded
+# Regression test for commit c09285c8: cmcalibrate failed when
+# rereading, on its second pass, its own output of a CM that carries
+# P7NODEPAD pads. %T.PAD.CM% is produced by the build/t.pad.on prep above.
+2  exercise  calibrate/t.pad    @src/cmcalibrate@ -L 0.01 --seed 42 %T.PAD.CM%
+# cmsearch smoke for --p7padplus against a CM that carries embedded
 # P7NODEPAD pads (exercises the embedded-pads loader path in
 # cm_pipeline.c and the +plus add-to-every-pad adjustment). Runs at
-# level 2 and is placed after calibrate/t.v1b so T.PAD.CM carries
+# level 2 and is placed after calibrate/t.pad so T.PAD.CM carries
 # E-value parameters (cmcalibrate edits the CM in place).
 2  exercise  search/t.padplus   @src/cmsearch@ --p7padplus 20 %T.PAD.CM% !testsuite/1k-tRNA.fa!
 1  prep      build2/se          @src/cmbuild@ -F %SE2.CM% !testsuite/se.sto!

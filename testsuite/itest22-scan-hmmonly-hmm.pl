@@ -13,7 +13,7 @@
 # We press a mixed database of three models built from tRNA.sto:
 #   trnaP: 0 basepairs, with no separate hp7 (HP7 ml), as cmconvert
 #          --upgrade gives an old-format 0-bp CM: built with --noss,
-#          written as INFERNAL1/b with cmconvert --outfmt 1/b, and
+#          written as INFERNAL1/a with cmconvert --outfmt 1/a, and
 #          upgraded with cmconvert --upgrade. (cmbuild no longer
 #          builds such a model itself, brief 26_0821-182.)
 #   trnaN: 0 basepairs (--noss), which has an hp7 (HP7 h3pri)
@@ -64,9 +64,9 @@ if ($ok) {
     `$cmbuild -F -n $m $bopts{$m} $tmp.$m.raw.cm $alifile`;
     if ($? != 0) { $ok = 0; last; }
     if ($m eq "trnaP") {
-      `$cmconvert --outfmt 1/b $tmp.$m.raw.cm > $tmp.$m.1b.cm`;
+      `$cmconvert --outfmt 1/a $tmp.$m.raw.cm > $tmp.$m.1a.cm`;
       if ($? != 0) { $ok = 0; last; }
-      `$cmconvert --upgrade $tmp.$m.1b.cm > $tmp.$m.raw.cm`;
+      `$cmconvert --upgrade $tmp.$m.1a.cm > $tmp.$m.raw.cm`;
       if ($? != 0) { $ok = 0; last; }
     }
     if (`grep '^HP7 ' $tmp.$m.raw.cm` !~ /^HP7\s+$hp7{$m}\s*$/) { printf("model $m: HP7 is not $hp7{$m}\n"); $ok = 0; last; }
@@ -109,7 +109,7 @@ foreach $mode (@modes) {
   }
 }
 
-foreach $sfx ("db.cm", "db.cm.i1m", "db.cm.i1i", "db.cm.i1f", "db.cm.i1p", "db.cm.i1hf", "db.cm.i1hp", "scan.tbl", "search.tbl", "trnaP.cm", "trnaN.cm", "trnaS.cm", "trnaP.raw.cm", "trnaN.raw.cm", "trnaS.raw.cm", "trnaP.1b.cm") {
+foreach $sfx ("db.cm", "db.cm.i1m", "db.cm.i1i", "db.cm.i1f", "db.cm.i1p", "db.cm.i1hf", "db.cm.i1hp", "scan.tbl", "search.tbl", "trnaP.cm", "trnaN.cm", "trnaS.cm", "trnaP.raw.cm", "trnaN.raw.cm", "trnaS.raw.cm", "trnaP.1a.cm") {
   unlink "$tmp.$sfx";
 }
 

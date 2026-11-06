@@ -11,12 +11,12 @@
 #    INFERNAL1/a, equal to the library apart from version stamps,
 #    whitespace and the COM line cmconvert adds.
 # 3. cmconvert -b, then cmconvert -a, round-trips to the same 1/a file.
-# 4. A 1/b file stays 1/b under cmfetch and cmconvert.
+# (A 1/a model that gains something 1/a can't store: itest25.)
 #
 # Usage:    ./itest23-format1a-stays-1a.pl <builddir> <srcdir> <tmpfile prefix>
 # Example:  ./itest23-format1a-stays-1a.pl ..         ..       tmpfoo
 #
-# brief 26_0821-171
+# briefs 26_0821-171/26_0821-185
 
 BEGIN {
     $builddir = shift;
@@ -68,19 +68,6 @@ if ($? != 0) { die "FAIL: subtest 3: cmconvert -b failed\n"; }
 if ($? != 0) { die "FAIL: subtest 3: cmconvert -a failed\n"; }
 if (grep { /^INFERNAL1/ && ! /^INFERNAL1\/a/ } read_lines($asc)) { die "FAIL: subtest 3: binary round trip didn't stay INFERNAL1/a\n"; }
 if (normalized($asc, 1) ne normalized($lib, 1)) { die "FAIL: subtest 3: binary round trip changed the models\n"; }
-
-# 4.
-my $old  = tmp("1b.cm");
-my $old2 = tmp("1b.conv.cm");
-my $old3 = tmp("1b.fetch.cm");
-`$builddir/src/cmconvert --outfmt 1/b $lib > $old 2> /dev/null`;
-if ($? != 0) { die "FAIL: subtest 4: cmconvert --outfmt 1/b failed\n"; }
-`$builddir/src/cmconvert $old > $old2 2> /dev/null`;
-if ($? != 0) { die "FAIL: subtest 4: cmconvert of a 1/b file failed\n"; }
-if (grep { /^INFERNAL1/ && ! /^INFERNAL1\/b/ } read_lines($old2)) { die "FAIL: subtest 4: cmconvert didn't keep INFERNAL1/b\n"; }
-`$builddir/src/cmfetch $old $names[0] > $old3 2> /dev/null`;
-if ($? != 0) { die "FAIL: subtest 4: cmfetch of a 1/b file failed\n"; }
-if (first_line($old3) !~ /^INFERNAL1\/b/) { die "FAIL: subtest 4: cmfetch didn't keep INFERNAL1/b\n"; }
 
 foreach my $f (@tmpfiles) { unlink $f if -e $f; }
 print "ok\n";
