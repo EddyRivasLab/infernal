@@ -10,7 +10,9 @@
 #    format, saying it was never in a release and to use cmconvert
 #    --upgrade.
 # 2. The same for binary files with the 1/b, 1/c and 1/d magic numbers,
-#    and for a pressed database (cmscan) with them.
+#    and for a pressed database with them (cmscan, and cmsearch, which
+#    reads a CM file's pressed index if it has one), which asks for the
+#    file to be pressed again.
 # 3. cmconvert --outfmt 1/b and --outfmt 1/d are rejected.
 # 4. cmcalibrate --nonull3 on a 1/a file fails, naming cmconvert
 #    --upgrade, and leaves the file unchanged.
@@ -89,7 +91,9 @@ foreach my $x ("b", "c", "d") {
     $b = slurp_bin("$db.i1m");
     substr($b, 0, 4) = pack("L", $magic{$x});
     write_bin("$db.i1m", $b);
-    check_rejected("cmscan $db $seqs", $x, "subtest 2");
+    check_rejected("cmscan $db $seqs",   $x, "subtest 2", 1);
+    # a 1/a CM file with a dev-format pressed index (as an earlier development cmpress wrote it)
+    check_rejected("cmsearch $db $seqs", $x, "subtest 2", 1);
 }
 
 # 3.
@@ -128,13 +132,15 @@ print "ok\n";
 exit 0;
 
 sub check_rejected {
-    my ($cmd, $x, $subtest) = @_;
+    my ($cmd, $x, $subtest, $pressed) = @_;
     `$builddir/src/$cmd > $err 2>&1`;
     my $rc = $?;
     my $msg = slurp($err);
     if ($rc == 0)                         { die "FAIL: $subtest: '$cmd' of a 1/$x file didn't fail\n"; }
     if (($rc & 127) != 0)                 { die "FAIL: $subtest: '$cmd' of a 1/$x file crashed\n"; }
-    if ($msg !~ /INFERNAL1\/$x/ || $msg !~ /a development format, never released/ || $msg !~ /cmconvert --upgrade/) {
+    my $ok = $pressed ? ($msg =~ /Pressed file in INFERNAL1\/$x, a never-released development format/ && $msg =~ /cmpress -F/)
+                      : ($msg =~ /INFERNAL1\/$x: a development format, never released/ && $msg =~ /cmconvert --upgrade/);
+    if (! $ok) {
         die "FAIL: $subtest: '$cmd' of a 1/$x file: unexpected error:\n$msg\n";
     }
 }

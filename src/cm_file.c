@@ -54,6 +54,9 @@ static uint32_t  v1b_magic  = 0xe3edb0b3;
 static uint32_t  v1c_magic  = 0xe3edb0b4;
 static uint32_t  v1d_magic  = 0xe3edb0b5;
 #define CM_FILE_DEVFMT_MSG(x) "INFERNAL1/" x ": a development format, never released.\nConvert it with an earlier 1.2 development version's cmconvert --upgrade."
+/* a pressed .i1m file can be 1/b etc. when its CM file is 1/a: an earlier
+ * development cmpress wrote such a file as 1/b (both fit in eslERRBUFSIZE) */
+#define CM_FILE_DEVFMT_PRESSED_MSG(x) "Pressed file in INFERNAL1/" x ", a never-released development format.\nRerun cmpress -F (and cmconvert --upgrade first, if needed)."
 static uint32_t  v1a_fmagic = 0xb1e1e6f3; /* 1/a binary MSV/SSV file: "1afs" = 0x 31 61 66 73  + 0x80808080 */
 /* Note: 's' at end of 1afs is arbitrary. It is consistent with H3's
  * trailing 's' iforSSE binary files, but in Infernal this is used
@@ -474,9 +477,9 @@ open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, in
   if (! fread((char *) &(magic.n), sizeof(uint32_t), 1, cmfp->f))  ESL_XFAIL(eslEFORMAT, errbuf, "File exists, but appears to be empty?");
   if      (magic.n == v1a_magic) { cmfp->format = CM_FILE_1a; cmfp->parser = read_bin_1p1_cm; cmfp->is_binary = TRUE; }
   else if (magic.n == v1e_magic) { cmfp->format = CM_FILE_1e; cmfp->parser = read_bin_1p1_cm; cmfp->is_binary = TRUE; }
-  else if (magic.n == v1b_magic) ESL_XFAIL(eslEFORMAT, errbuf, CM_FILE_DEVFMT_MSG("b"));
-  else if (magic.n == v1c_magic) ESL_XFAIL(eslEFORMAT, errbuf, CM_FILE_DEVFMT_MSG("c"));
-  else if (magic.n == v1d_magic) ESL_XFAIL(eslEFORMAT, errbuf, CM_FILE_DEVFMT_MSG("d"));
+  else if (magic.n == v1b_magic) ESL_XFAIL(eslEFORMAT, errbuf, cmfp->is_pressed ? CM_FILE_DEVFMT_PRESSED_MSG("b") : CM_FILE_DEVFMT_MSG("b"));
+  else if (magic.n == v1c_magic) ESL_XFAIL(eslEFORMAT, errbuf, cmfp->is_pressed ? CM_FILE_DEVFMT_PRESSED_MSG("c") : CM_FILE_DEVFMT_MSG("c"));
+  else if (magic.n == v1d_magic) ESL_XFAIL(eslEFORMAT, errbuf, cmfp->is_pressed ? CM_FILE_DEVFMT_PRESSED_MSG("d") : CM_FILE_DEVFMT_MSG("d"));
   else if (cmfp->is_pressed) ESL_XFAIL(eslEFORMAT, errbuf, "Binary format tag in %s unrecognized\nCurrent Infernal format is INFERNAL1/e. Previous binary formats are not supported.", cmfp->fname);
 
   /* 8. Checks for ASCII file format */
