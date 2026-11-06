@@ -844,8 +844,10 @@ cm_file_WriteASCII(FILE *fp, int format, CM_t *cm)
    * default (null3-on) block is byte-identical and old parsers silently skip
    * these unknown tags (the if/else-if tag chain has no error else-clause). The
    * tag does NOT begin with "ECM" on purpose: an "ECM"-prefixed tag would trip
-   * the old reader's ECM branch and fail. See briefs 053/068/069. */
-  if (cm->flags & CMH_EXPTAIL_NONULL3_STATS)
+   * the old reader's ECM branch and fail. See briefs 053/068/069.
+   * 1/e only: a 1/a reader skips them, so 1/a, like its binary form,
+   * can't store them (brief 26_0821-185). */
+  if (format >= CM_FILE_1e && (cm->flags & CMH_EXPTAIL_NONULL3_STATS))
     {
       if(cm->expA_nonull3[EXP_CM_LC]->dbsize > (2000. * 1000000.)) ESL_EXCEPTION(eslEINVAL, "invalid nonull3 dbsize (too big) EXP_CM_LC");
       if(cm->expA_nonull3[EXP_CM_GC]->dbsize > (2000. * 1000000.)) ESL_EXCEPTION(eslEINVAL, "invalid nonull3 dbsize (too big) EXP_CM_GC");

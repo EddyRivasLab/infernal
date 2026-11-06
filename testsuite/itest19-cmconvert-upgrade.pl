@@ -5,7 +5,7 @@
 # calibrating the filter and HMM-only HMMs as cmbuild does; and the
 # HP7/HP7A lines that record how the HMM-only HMM is derived.
 #
-# 1. cmbuild -> cmconvert --outfmt 1/b -> cmconvert --upgrade gives the
+# 1. cmbuild -> cmconvert --outfmt 1/a -> cmconvert --upgrade gives the
 #    file cmbuild wrote (apart from DATE and COM lines), for a default
 #    build, --p56, and non-default filter HMM calibration options,
 #    which --upgrade reads from the cmbuild COM line. For --noss (zero
@@ -73,13 +73,13 @@ my @builds = ( [ "default", "",                                      "h3pri", "h
 foreach my $b (@builds) {
     my ($tag, $opts, $direct_hp7, $hp7) = @{$b};
     my $direct = tmp("$tag.cm");
-    my $old    = tmp("$tag.1b.cm");
+    my $old    = tmp("$tag.1a.cm");
     my $up     = tmp("$tag.up.cm");
     `$builddir/src/cmbuild --cpu 1 -F $opts $direct $ali > /dev/null 2>&1`;
     if ($? != 0) { die "FAIL: subtest 1: cmbuild $opts failed\n"; }
-    `$builddir/src/cmconvert --outfmt 1/b $direct > $old 2> /dev/null`;
-    if ($? != 0) { die "FAIL: subtest 1: cmconvert --outfmt 1/b ($tag) failed\n"; }
-    if (first_line($old) !~ /^INFERNAL1\/b/) { die "FAIL: subtest 1: --outfmt 1/b ($tag) didn't write INFERNAL1/b\n"; }
+    `$builddir/src/cmconvert --outfmt 1/a $direct > $old 2> /dev/null`;
+    if ($? != 0) { die "FAIL: subtest 1: cmconvert --outfmt 1/a ($tag) failed\n"; }
+    if (first_line($old) !~ /^INFERNAL1\/a/) { die "FAIL: subtest 1: --outfmt 1/a ($tag) didn't write INFERNAL1/a\n"; }
     `$builddir/src/cmconvert --cpu 1 --upgrade $old > $up 2> /dev/null`;
     if ($? != 0) { die "FAIL: subtest 1: cmconvert --upgrade ($tag) failed\n"; }
     if (first_line($up) !~ /^INFERNAL1\/e/) { die "FAIL: subtest 1: --upgrade ($tag) didn't write INFERNAL1/e\n"; }
@@ -153,13 +153,13 @@ if ($? != 0) { die "FAIL: subtest 5: cmsearch --hmmonly on the --cp9ascm CMs fai
 
 # 6.
 my $pdirect = tmp("pri.cm");
-my $pold    = tmp("pri.1b.cm");
+my $pold    = tmp("pri.1a.cm");
 my $pout    = tmp("pri.up.cm");
 my $perr    = tmp("pri.err");
 `$builddir/src/cmbuild --cpu 1 -F --prior $prifile $pdirect $ali > /dev/null 2>&1`;
 if ($? != 0) { die "FAIL: subtest 6: cmbuild --prior failed\n"; }
-`$builddir/src/cmconvert --outfmt 1/b $pdirect > $pold 2> /dev/null`;
-if ($? != 0) { die "FAIL: subtest 6: cmconvert --outfmt 1/b failed\n"; }
+`$builddir/src/cmconvert --outfmt 1/a $pdirect > $pold 2> /dev/null`;
+if ($? != 0) { die "FAIL: subtest 6: cmconvert --outfmt 1/a failed\n"; }
 `$builddir/src/cmconvert --cpu 1 --upgrade $pold > $pout 2> $perr`;
 if ($? == 0) { die "FAIL: subtest 6: --upgrade of a --prior CM without --prior or --noprior didn't fail\n"; }
 if (-s $pout) { die "FAIL: subtest 6: failed --upgrade wrote output\n"; }
@@ -200,7 +200,9 @@ sub check_prior_error {
     if (scalar(@l) != 2 || $l[0] !~ /^Error: CM \S+ was built with cmbuild --prior/) { die "FAIL: subtest 6: unexpected stderr from a --prior CM:\n@l"; }
     if (index($l[1], "Use $opt1 ") != 0 || index($l[1], " $opt2 ") < 0)          { die "FAIL: subtest 6: error doesn't name $opt1 and $opt2:\n@l"; }
 }
-sub stripped    { return join("", grep { ! /^(DATE|COM) / } read_lines($_[0])); }
+# (NONULL3_ lines too: the INFERNAL1/a intermediate can't store cmbuild's
+# null3-off E-value set, so --upgrade can't restore it)
+sub stripped    { return join("", grep { ! /^(DATE|COM|NONULL3_\S+) / } read_lines($_[0])); }
 sub header_value {
     my ($f, $tag) = @_;
     foreach my $l (read_lines($f)) { if ($l =~ /^\Q$tag\E\s+(.*?)\s*$/) { return $1; } if ($l =~ /^CM\s*$/) { last; } }
