@@ -133,7 +133,7 @@ main(int argc, char **argv)
       cm_Fail("--p7pad can't be used with --outfmt 1/a: the INFERNAL1/a format can't store p7 band pads.\n");
   }
 
-  status = cm_file_Open(cmfile, NULL, TRUE, &cmfp, errbuf); /* TRUE says: allow CM file to be in v1.0 --> v1.0.2 format */
+  status = cm_file_Open(cmfile, NULL, TRUE, &cmfp, errbuf); /* TRUE: also read INFERNAL1/a and v1.0-v1.0.2 files, which only cmconvert reads (brief 26_0821-186) */
   if      (status == eslENOTFOUND) cm_Fail("File existence/permissions problem in trying to open CM file %s.\n%s\n", cmfile, errbuf);
   else if (status == eslEFORMAT)   cm_Fail("File format problem in trying to open CM file %s.\n%s\n",                cmfile, errbuf);
   else if (status != eslOK)        cm_Fail("Unexpected error %d in opening CM file %s.\n%s\n",                       status, cmfile, errbuf);

@@ -3218,9 +3218,9 @@ extern void debug_print_shadow_banded(void ***shadow, CM_t *cm, int L, int *dmin
 extern void debug_print_shadow_banded_deck(int v, void ***shadow, CM_t *cm, int L, int *dmin, int *dmax);
 
 /* from cm_file.c */
-extern int     cm_file_Open(char *filename, char *env, int allow_1p0, CM_FILE **ret_cmfp, char *errbuf);
-extern int     cm_file_OpenNoDB(char *filename, char *env, int allow_1p0, CM_FILE **ret_cmfp, char *errbuf);
-extern int     cm_file_OpenBuffer(char *buffer, int size, int allow_1p0, CM_FILE **ret_cmfp);
+extern int     cm_file_Open(char *filename, char *env, int allow_old, CM_FILE **ret_cmfp, char *errbuf);
+extern int     cm_file_OpenNoDB(char *filename, char *env, int allow_old, CM_FILE **ret_cmfp, char *errbuf);
+extern int     cm_file_OpenBuffer(char *buffer, int size, int allow_old, CM_FILE **ret_cmfp);
 extern void    cm_file_Close(CM_FILE *cmfp);
 extern int     cm_file_CreateLock(CM_FILE *cmfp);
 extern int     cm_file_WriteASCII(FILE *fp, int format, CM_t *cm);

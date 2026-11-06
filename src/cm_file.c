@@ -57,6 +57,10 @@ static uint32_t  v1d_magic  = 0xe3edb0b5;
 /* a pressed .i1m file can be 1/b etc. when its CM file is 1/a: an earlier
  * development cmpress wrote such a file as 1/b (both fit in eslERRBUFSIZE) */
 #define CM_FILE_DEVFMT_PRESSED_MSG(x) "Pressed file in INFERNAL1/" x ", a never-released development format.\nRerun cmpress -F (and cmconvert --upgrade first, if needed)."
+/* INFERNAL1/a, Infernal 1.1's format: only cmconvert reads it, to
+ * convert it (brief 26_0821-186). Short enough for eslERRBUFSIZE. */
+#define CM_FILE_1A_MSG         "INFERNAL1/a (Infernal 1.1) model file: convert it with cmconvert --upgrade first."
+#define CM_FILE_1A_PRESSED_MSG "INFERNAL1/a (Infernal 1.1) pressed file: convert the model file with cmconvert --upgrade, then rerun cmpress."
 static uint32_t  v1a_fmagic = 0xb1e1e6f3; /* 1/a binary MSV/SSV file: "1afs" = 0x 31 61 66 73  + 0x80808080 */
 /* Note: 's' at end of 1afs is arbitrary. It is consistent with H3's
  * trailing 's' iforSSE binary files, but in Infernal this is used
@@ -93,7 +97,7 @@ static int read_bin30hmm(P7_HMMFILE *hfp, ESL_ALPHABET **ret_abc, P7_HMM **opt_h
 /*****************************************************************
  * 1. The CM_FILE object for reading CMs.
  *****************************************************************/
-static int open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, int allow_1p0, char *errbuf);
+static int open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, int allow_old, char *errbuf);
 
 /* Function:  cm_file_Open()
  * Synopsis:  Open an CM file <filename>. 
@@ -103,9 +107,14 @@ static int open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_asc
  * Purpose:   Open an CM file <filename>, and prepare to read the first
  *            CM from it. 
  *
- *            The format should be INFERNAL1/a or more recent.  If
- *            <allow_1p0>, we also allow the file to be in Infernal
- *            v1.0 to v1.0.2 ascii format.
+ *            The format should be INFERNAL1/e, Infernal 1.2's
+ *            format. If <allow_old>, we also allow the older formats
+ *            only cmconvert reads, to convert them: INFERNAL1/a
+ *            (Infernal 1.1) and the Infernal v1.0 to v1.0.2 ascii
+ *            format. Otherwise a 1/a file (ASCII, binary or pressed)
+ *            fails here with a message saying to convert it with
+ *            cmconvert --upgrade, as Infernal 1.1 refused v1.0 files
+ *            outside cmconvert (brief 26_0821-186).
  *            
  *            We look for <filename> relative to the current working
  *            directory. Additionally, if we don't find it in the cwd
@@ -130,7 +139,8 @@ static int open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_asc
  * Args:      filename  - CM file to open; or "-" for <stdin>
  *            env       - list of paths to look for <cmfile> in, in 
  *                        addition to current working dir; or <NULL>
- *            allow_1p0 - TRUE to allow 1.0 formatted files 
+ *            allow_old - TRUE to allow 1/a and 1.0 formatted files
+                        (cmconvert only)
  *            ret_cmfp  - RETURN: opened <P7_CMFILE>.
  *            errbuf    - error message buffer: <NULL>, or a ptr
  *                        to <eslERRBUFSIZE> chars of allocated space.
@@ -151,9 +161,9 @@ static int open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_asc
  * Throws:    <eslEMEM> on allocation failure.
  */
 int
-cm_file_Open(char *filename, char *env, int allow_1p0, CM_FILE **ret_cmfp, char *errbuf)
+cm_file_Open(char *filename, char *env, int allow_old, CM_FILE **ret_cmfp, char *errbuf)
 {
-  return open_engine(filename, env, ret_cmfp, FALSE, allow_1p0, errbuf);
+  return open_engine(filename, env, ret_cmfp, FALSE, allow_old, errbuf);
 }
 
 /* Function:  cm_file_OpenNoDB()
@@ -168,9 +178,9 @@ cm_file_Open(char *filename, char *env, int allow_1p0, CM_FILE **ret_cmfp, char 
  *            database that it may be about to overwrite.
  */
 int
-cm_file_OpenNoDB(char *filename, char *env, int allow_1p0, CM_FILE **ret_cmfp, char *errbuf)
+cm_file_OpenNoDB(char *filename, char *env, int allow_old, CM_FILE **ret_cmfp, char *errbuf)
 {
-  return open_engine(filename, env, ret_cmfp, TRUE, allow_1p0, errbuf);
+  return open_engine(filename, env, ret_cmfp, TRUE, allow_old, errbuf);
 }
 
 
@@ -206,7 +216,7 @@ cm_file_OpenNoDB(char *filename, char *env, int allow_1p0, CM_FILE **ret_cmfp, c
  * Throws:    <eslEMEM> on allocation failure.
  */
 int
-cm_file_OpenBuffer(char *buffer, int size, int allow_1p0, CM_FILE **ret_cmfp)
+cm_file_OpenBuffer(char *buffer, int size, int allow_old, CM_FILE **ret_cmfp)
 {
   CM_FILE    *cmfp = NULL;
   int         status;
@@ -238,9 +248,9 @@ cm_file_OpenBuffer(char *buffer, int size, int allow_1p0, CM_FILE **ret_cmfp)
   if ((status = esl_fileparser_SetCommentChar(cmfp->efp, '#'))        != eslOK)  goto ERROR;
   if ((status = esl_fileparser_GetToken(cmfp->efp, &tok, &toklen))    != eslOK)  goto ERROR;
 
-  if      (             strcmp("INFERNAL1/a", tok) == 0) { cmfp->format = CM_FILE_1a; cmfp->parser = read_asc_1p1_cm; }
+  if      (allow_old && strcmp("INFERNAL1/a", tok) == 0) { cmfp->format = CM_FILE_1a; cmfp->parser = read_asc_1p1_cm; }
   else if (             strcmp("INFERNAL1/e", tok) == 0) { cmfp->format = CM_FILE_1e; cmfp->parser = read_asc_1p1_cm; }
-  else if (allow_1p0 && strcmp("INFERNAL-1",  tok) == 0) { cmfp->format = CM_FILE_1;  cmfp->parser = read_asc_1p0_cm; }
+  else if (allow_old && strcmp("INFERNAL-1",  tok) == 0) { cmfp->format = CM_FILE_1;  cmfp->parser = read_asc_1p0_cm; }
 
   if (cmfp->parser == NULL) { status = eslEFORMAT; goto ERROR; }
 
@@ -270,7 +280,7 @@ cm_file_OpenBuffer(char *buffer, int size, int allow_1p0, CM_FILE **ret_cmfp)
  *              
  */
 static int 
-open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, int allow_1p0, char *errbuf)
+open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, int allow_old, char *errbuf)
 {
   CM_FILE    *cmfp     = NULL;
   char       *envfile  = NULL;	/* full path to filename after using environment  */
@@ -475,7 +485,8 @@ open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, in
 
   /* 7. Check for binary file format. A pressed db is automatically binary: verify. */
   if (! fread((char *) &(magic.n), sizeof(uint32_t), 1, cmfp->f))  ESL_XFAIL(eslEFORMAT, errbuf, "File exists, but appears to be empty?");
-  if      (magic.n == v1a_magic) { cmfp->format = CM_FILE_1a; cmfp->parser = read_bin_1p1_cm; cmfp->is_binary = TRUE; }
+  if      (magic.n == v1a_magic && ! allow_old) ESL_XFAIL(eslEFORMAT, errbuf, cmfp->is_pressed ? CM_FILE_1A_PRESSED_MSG : CM_FILE_1A_MSG);
+  else if (magic.n == v1a_magic) { cmfp->format = CM_FILE_1a; cmfp->parser = read_bin_1p1_cm; cmfp->is_binary = TRUE; }
   else if (magic.n == v1e_magic) { cmfp->format = CM_FILE_1e; cmfp->parser = read_bin_1p1_cm; cmfp->is_binary = TRUE; }
   else if (magic.n == v1b_magic) ESL_XFAIL(eslEFORMAT, errbuf, cmfp->is_pressed ? CM_FILE_DEVFMT_PRESSED_MSG("b") : CM_FILE_DEVFMT_MSG("b"));
   else if (magic.n == v1c_magic) ESL_XFAIL(eslEFORMAT, errbuf, cmfp->is_pressed ? CM_FILE_DEVFMT_PRESSED_MSG("c") : CM_FILE_DEVFMT_MSG("c"));
@@ -493,13 +504,14 @@ open_engine(char *filename, char *env, CM_FILE **ret_cmfp, int do_ascii_only, in
       if ((status = esl_fileparser_NextLinePeeked(cmfp->efp, magic.c, 4)) != eslOK)  ESL_XFAIL(status,  errbuf, "internal error in esl_fileparser_NextLinePeeked()");
       if ((status = esl_fileparser_GetToken(cmfp->efp, &tok, &toklen))    != eslOK)  ESL_XFAIL(status,  errbuf, "internal error in esl_fileparser_GetToken()");
 
-      if      (                 strcmp("INFERNAL1/a", tok) == 0) { cmfp->format = CM_FILE_1a; cmfp->parser = read_asc_1p1_cm; }
+      if      ((  allow_old) && strcmp("INFERNAL1/a", tok) == 0) { cmfp->format = CM_FILE_1a; cmfp->parser = read_asc_1p1_cm; }
+      else if ((! allow_old) && strcmp("INFERNAL1/a", tok) == 0) { ESL_XFAIL(eslEFORMAT, errbuf, CM_FILE_1A_MSG); }
       else if (                 strcmp("INFERNAL1/e", tok) == 0) { cmfp->format = CM_FILE_1e; cmfp->parser = read_asc_1p1_cm; }
       else if (                 strcmp("INFERNAL1/b", tok) == 0) { ESL_XFAIL(eslEFORMAT, errbuf, CM_FILE_DEVFMT_MSG("b")); }
       else if (                 strcmp("INFERNAL1/c", tok) == 0) { ESL_XFAIL(eslEFORMAT, errbuf, CM_FILE_DEVFMT_MSG("c")); }
       else if (                 strcmp("INFERNAL1/d", tok) == 0) { ESL_XFAIL(eslEFORMAT, errbuf, CM_FILE_DEVFMT_MSG("d")); }
-      else if ((  allow_1p0) && strcmp("INFERNAL-1",  tok) == 0) { cmfp->format = CM_FILE_1;  cmfp->parser = read_asc_1p0_cm; }
-      else if ((! allow_1p0) && strcmp("INFERNAL-1",  tok) == 0) { ESL_XFAIL(eslEFORMAT, errbuf, "Format tag is '%s': use cmconvert to reformat Infernal v1.0 to v1.0.2 CM files to current format", tok); }
+      else if ((  allow_old) && strcmp("INFERNAL-1",  tok) == 0) { cmfp->format = CM_FILE_1;  cmfp->parser = read_asc_1p0_cm; }
+      else if ((! allow_old) && strcmp("INFERNAL-1",  tok) == 0) { ESL_XFAIL(eslEFORMAT, errbuf, "Format tag is '%s': use cmconvert to reformat Infernal v1.0 to v1.0.2 CM files to current format", tok); }
       else                                                       { ESL_XFAIL(eslEFORMAT, errbuf, "Format tag is '%s': unrecognized or not supported.", tok); }
     }
 
