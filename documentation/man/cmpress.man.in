@@ -15,7 +15,7 @@ cmpress - prepare a covariance model database for cmscan
 .PP
 Starting from a CM database
 .I <cmfile>
-in standard Infernal-1.1 format,
+in the current Infernal format (INFERNAL1/e),
 construct binary compressed datafiles for 
 .B cmscan.
 The 
@@ -76,6 +76,18 @@ may not be '-' (dash); running
 .B cmpress
 on a standard input stream rather than a file
 is not allowed.
+
+.PP
+.B cmpress
+refuses a model file written by Infernal 1.1 (INFERNAL1/a): convert
+it once with
+.B cmconvert --upgrade
+(see
+.BR cmconvert (1)),
+then press the converted file. A database pressed by Infernal 1.1
+must be pressed again (with
+.BR -F )
+from its converted model file.
 
 .SH OPTIONS
 

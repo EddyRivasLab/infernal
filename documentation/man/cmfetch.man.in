@@ -119,7 +119,18 @@ create a list of CM names or accessions, then fetch them all
 to a new file, just with one command.
 
 .PP
-By default, the CM is printed to standard output in Infernal-1.1 format.
+By default, the CM is printed to standard output, in the current
+Infernal format (INFERNAL1/e).
+
+.PP
+.I <cmfile>
+must be in the model file format of Infernal 1.2 (INFERNAL1/e).
+.B cmfetch
+refuses a model file written by Infernal 1.1 (INFERNAL1/a):
+convert it once with
+.B cmconvert --upgrade
+(see
+.BR cmconvert (1)).
 
 .SH OPTIONS
 

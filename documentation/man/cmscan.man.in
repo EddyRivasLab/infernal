@@ -117,6 +117,21 @@ or
 options are used because it relies on the use of an accelerated HMM
 banded alignment strategy that is turned off by any of those options.
 
+.PP
+The CM file
+.I <cmdb>
+must be in the model file format of Infernal 1.2 (INFERNAL1/e), and
+pressed by Infernal 1.2's
+.BR cmpress .
+.B cmscan
+refuses a model file written by Infernal 1.1 (INFERNAL1/a), and a
+database pressed by Infernal 1.1: convert the model file once with
+.B cmconvert --upgrade
+(see
+.BR cmconvert (1)),
+then press it again with
+.BR "cmpress -F" .
+
 .SH OPTIONS
 
 .TP

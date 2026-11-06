@@ -587,11 +587,11 @@ with its filter HMM; adding a single basepair to its alignment changed
 all its parameters.
 \prog{cmbuild} calibrates both. Before version 1.2, \prog{cmbuild}
 built a separate filter HMM from the alignment and stored it in the
-CM file, which made the file about 50\% larger. CM files in those
-older formats keep working: their stored filter HMM is used, as
-before, for both purposes. \prog{cmconvert --upgrade} converts them
-to the current format, deriving and calibrating the two HMMs, without
-the alignment.
+CM file, which made the file about 50\% larger. Infernal 1.2's
+programs, except \prog{cmconvert}, don't read CM files in those older
+formats: convert them once with \prog{cmconvert --upgrade}, which
+derives and calibrates the two HMMs without the alignment, and leaves
+the CM itself unchanged.
 
 \subsubsection{Automatic E-value calibration}
 \label{section:cmbuild-autocal}

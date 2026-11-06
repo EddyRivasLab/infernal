@@ -85,15 +85,20 @@ parameters. In the older format \prog{INFERNAL1/a}, written by
 Infernal 1.1, each CM is immediately followed by a separately built
 filter HMM, in HMMER3 format: it starts with its own format version
 identifier (\prog{HMMER3/f}) and also ends with \prog{//} on a line by
-itself. Infernal 1.2 reads \prog{INFERNAL1/a} files and uses their
-stored filter HMM, as before, and writes a CM read from one back in
-\prog{INFERNAL1/a} format by default, so Infernal 1.1 can still read
-it; \prog{cmconvert --upgrade} converts them to the current format.
+itself. In Infernal 1.2, only \prog{cmconvert} reads
+\prog{INFERNAL1/a} files; every other program refuses them and asks
+for them to be converted once with \prog{cmconvert --upgrade}, which
+leaves the CM's parameters and its \prog{cmcalibrate} E-value
+parameters unchanged and derives the filter and HMM-only HMMs as
+\prog{cmbuild} does. A pressed database made by Infernal 1.1's
+\prog{cmpress} is refused too: convert its CM file, then press it
+again. \prog{cmconvert} can still write \prog{INFERNAL1/a}, so that
+Infernal 1.1 can read a model (\prog{cmconvert --outfmt 1/a}, or
+plain \prog{cmconvert} of an \prog{INFERNAL1/a} file).
 \prog{INFERNAL1/a} can't store the \prog{P7NODEPAD}, \prog{PKNOT},
-\prog{F1F2F3CUT} and \prog{NONULL3\_xx} data described below; a
-program that would add any of them to an \prog{INFERNAL1/a} model
-(\prog{cmcalibrate --nonull3}, \prog{cmconvert --p7pad}) fails and
-asks for the model to be upgraded first. A single file must not mix
+\prog{F1F2F3CUT} and \prog{NONULL3\_xx} data described below:
+\prog{cmconvert --outfmt 1/a} leaves them out (pseudoknot annotation
+only with \prog{--dropknots}). A single file must not mix
 CMs in different formats. (Development versions of Infernal 1.2 also
 wrote formats \prog{INFERNAL1/b}, \prog{/c} and \prog{/d}, which were
 never released; Infernal 1.2 can't read them.)
@@ -127,14 +132,13 @@ indicated.
 
 \begin{sreitems}{QDBBETA1 <f>}
 
-\item [\emprog{INFERNAL1/a}] Unique identifier for the save file format
-  version; the \prog{/a} means that this is INFERNAL1 CM file format
-  version a. When INFERNAL changes its save file format, the revision
-  code advances. This way, parsers may easily remain backwards
-  compatible. The remainder of the line after the \prog{INFERNAL1/a} tag
+\item [\emprog{INFERNAL1/e}] Unique identifier for the save file format
+  version; the \prog{/e} means that this is INFERNAL1 CM file format
+  version e. When INFERNAL changes its save file format, the revision
+  code advances. The remainder of the line after the \prog{INFERNAL1/e} tag
   is free text that is ignored by the parser. INFERNAL currently writes
   its version number and release date in brackets here,
-  e.g. \prog{[1.1 | June 2012]} in this
+  e.g. \prog{[1.2 | January 2026]} in this
   example. \textbf{Mandatory.}
 
 \item [\emprog{NAME <s>}] Model name; \prog{<s>} is a single word

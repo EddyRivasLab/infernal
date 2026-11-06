@@ -227,6 +227,16 @@ with the
 .BI --sfile " <f>"
 option.
 
+.PP
+.I <cmfile>
+must be in the model file format of Infernal 1.2 (INFERNAL1/e).
+.B cmalign
+refuses a model file written by Infernal 1.1 (INFERNAL1/a):
+convert it once with
+.B cmconvert --upgrade
+(see
+.BR cmconvert (1)).
+
 .SH OPTIONS
 
 .TP

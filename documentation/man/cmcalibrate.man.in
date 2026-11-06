@@ -134,6 +134,16 @@ programs.
 If you are not going to use these programs then
 do not waste time calibrating your models.
 
+.PP
+.I <cmfile>
+must be in the model file format of Infernal 1.2 (INFERNAL1/e).
+.B cmcalibrate
+refuses a model file written by Infernal 1.1 (INFERNAL1/a):
+convert it once with
+.B cmconvert --upgrade
+(see
+.BR cmconvert (1)).
+
 .SH OPTIONS
 
 .TP
@@ -430,13 +440,6 @@ recommended unless you plan on using the same option to
 .B cmsearch 
 and/or
 .B cmscan.
-The E-value parameters this calibrates are stored alongside the
-default ones, which the INFERNAL1/a format (Infernal 1.1's) can't do,
-so for an INFERNAL1/a file
-.B --nonull3
-is an error: convert it with
-.B cmconvert --upgrade
-first.
 
 .TP 
 .B --random

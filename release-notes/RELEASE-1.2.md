@@ -5,6 +5,31 @@
 
 ## Notable changes from 1.1.5:
 
+ * **Infernal 1.2 reads only Infernal 1.2 model files: convert each
+   Infernal 1.1 CM file once, with `cmconvert --upgrade`, before using
+   it.** Every program except `cmconvert` refuses a CM file written by
+   Infernal 1.1 (format `INFERNAL1/a`) and says to convert it, as
+   Infernal 1.1 did for Infernal 1.0 files. This includes the CM files
+   of current Rfam releases.
+   - `cmconvert --upgrade old.cm > new.cm` writes the current format,
+     `INFERNAL1/e` (see the next item). For a model built with
+     `cmbuild --prior <f>`, add `--prior <f>`, or `--noprior` to
+     convert it without that prior file. Converting takes seconds for
+     most models and about a minute for the largest; all of Rfam takes
+     a few CPU-minutes.
+   - Converting leaves the CM's parameters and its `cmcalibrate`
+     E-value parameters unchanged. It replaces only the filter HMM
+     stored in the file with the profile HMMs Infernal 1.2 derives
+     from the CM, so `cmsearch` and `cmscan` results can differ from
+     Infernal 1.1's results on the original file, while `cmalign`
+     alignments are not expected to change because of the conversion.
+   - Press `cmscan` databases again: a database pressed by Infernal
+     1.1 is refused too. Convert its CM file, then run `cmpress -F` on
+     the converted file.
+   - To write a model that Infernal 1.1 can read, use
+     `cmconvert --outfmt 1/a`. Plain `cmconvert` of an `INFERNAL1/a`
+     file writes it back in `INFERNAL1/a`.
+
  * The `cmsearch`/`cmscan` per-hit alignment display's base-pair-quality
    trailer line, previously labeled `NC`, is now labeled `PS` ("Pair
    Status") on every structured-CM hit, not just pseudoknot-containing
@@ -49,14 +74,11 @@
    Infernal 1.1 cannot read `INFERNAL1/e` files: it stops with a file
    format error rather than misreading them.
 
-   Infernal 1.2 still reads Infernal 1.1 (`INFERNAL1/a`) CM files, and
-   uses the filter HMM stored in them. `cmconvert` writes such a file
-   back in `INFERNAL1/a` by default, so Infernal 1.1 can still read
-   it; `cmconvert --upgrade` converts it to `INFERNAL1/e`, deriving and
-   calibrating the HMMs as `cmbuild` would. `cmconvert --outfmt 1/a`
-   writes an `INFERNAL1/e` model in a format Infernal 1.1 can read.
-   Infernal v1.0 CM files must still be converted with `cmconvert`,
-   which now writes them in `INFERNAL1/e`. The `cmbuild` options
+   Only `cmconvert` reads Infernal 1.1 (`INFERNAL1/a`) CM files (see
+   the previous item); `cmconvert --upgrade` converts them to
+   `INFERNAL1/e`, deriving and calibrating the HMMs as `cmbuild`
+   would. Infernal v1.0 CM files must still be converted with
+   `cmconvert`, which now writes them in `INFERNAL1/e`. The `cmbuild` options
    `--p7ere`, `--p7prior`, `--p7hprior` and `--p7hemit`, which
    controlled how the separate filter HMM was built, have been
    removed; `--p7ml` is still accepted and has no effect.
