@@ -1309,19 +1309,6 @@ and gunzipping it, like this:
 
 \user{gunzip Rfam.cm.gz}
 
-This file is in the model file format of Infernal 1.1
-(\prog{INFERNAL1/a}), which Infernal 1.2's programs, other than
-\prog{cmconvert}, don't read. Convert it once to the current format
-with \prog{cmconvert --upgrade}, which takes a few minutes and leaves
-the CMs, their E-value parameters and their GA thresholds unchanged:
-
-\user{cmconvert --upgrade Rfam.cm > Rfam.1p2.cm}
-
-\user{mv Rfam.1p2.cm Rfam.cm}
-
-(If you download an \prog{Rfam.cm} that is already in the current
-format, \prog{INFERNAL1/e} on its first line, skip this step.)
-
 Then, as in the previous example, you'll need to run \prog{cmpress} on
 this CM database:
 
@@ -2508,7 +2495,7 @@ will output a FASTA file, which is finally being piped into
 actually printed to the screen will be a multiple alignment of all the
 included tRNA hits.
 
-You can do similar commands piping subsets of CMs. Supposing you have a copy of Rfam in Rfam.cm, converted to the current format as described above:
+You can do similar commands piping subsets of CMs. Supposing you have a copy of Rfam in Rfam.cm:
 
 \user{cmfetch --index Rfam.cm} \\ 
 \user{cat myqueries.list | cmfetch -f Rfam.cm - | cmsearch - mrum-genome.fa}
