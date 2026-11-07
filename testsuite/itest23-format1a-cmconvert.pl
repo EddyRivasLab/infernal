@@ -12,6 +12,9 @@
 # 4. cmconvert --outfmt 1/a of the same CMs in INFERNAL1/e writes
 #    INFERNAL1/a, and cmconvert --upgrade of that gives back the 1/e
 #    file, apart from version stamps, whitespace and COM lines.
+# 5. A 1/a CM with an invalid E-value database size (as some old files
+#    have) is refused by cmconvert with a message saying to recalibrate
+#    it, and no CM is written.
 # (cmconvert of a 1/a CM that would gain something 1/a can't store:
 # itest25.)
 #
@@ -81,6 +84,20 @@ if (grep { /^INFERNAL1/ && ! /^INFERNAL1\/a/ } read_lines($to1a)) { die "FAIL: s
 if ($? != 0) { die "FAIL: subtest 4: cmconvert --upgrade of the 1/a file failed:\n" . slurp($err); }
 if (normalized($back, 1) ne normalized($lib1e, 1)) { die "FAIL: subtest 4: 1/e -> 1/a -> 1/e changed the models\n"; }
 
+# 5.
+my $bad = tmp("bad.cm");
+my $badout = tmp("bad.out.cm");
+my $nsub = 0;
+write_lines($bad, map { ($nsub == 0 && s/^(ECMLC(\s+\S+){3}\s+)\d+/${1}4699193262664056832/) ? do { $nsub++; $_ } : $_ } read_lines($lib));
+if ($nsub != 1) { die "FAIL: subtest 5: couldn't make the bad-dbsize file\n"; }
+foreach my $opts ("", "--upgrade") {
+    `$builddir/src/cmconvert $opts $bad > $badout 2> $err`;
+    if ($? == 0)         { die "FAIL: subtest 5: cmconvert $opts of a CM with a bad database size didn't fail\n"; }
+    if (($? & 127) != 0) { die "FAIL: subtest 5: cmconvert $opts of a CM with a bad database size crashed\n"; }
+    if (slurp($err) !~ /invalid E-value parameters \(database size 4699193262664056832\).*Recalibrate it first/s) { die "FAIL: subtest 5: unexpected error:\n" . slurp($err); }
+    if (grep { /^INFERNAL1/ } read_lines($badout)) { die "FAIL: subtest 5: cmconvert $opts wrote a CM\n"; }
+}
+
 foreach my $f (@tmpfiles) { unlink $f if -e $f; }
 print "ok\n";
 exit 0;
@@ -88,6 +105,7 @@ exit 0;
 sub read_lines { my ($f) = @_; open(my $fh, "<", $f) || die "FAIL: couldn't open $f\n"; my @l = <$fh>; close $fh; return @l; }
 sub first_line { my @l = read_lines($_[0]); return (scalar(@l) > 0) ? $l[0] : ""; }
 sub slurp      { return join("", read_lines($_[0])); }
+sub write_lines { my ($f, @l) = @_; open(my $fh, ">", $f) || die "FAIL: couldn't write $f\n"; print $fh @l; close $fh; }
 # file contents without version-stamp lines (and COM lines if <nocom>),
 # with each run of whitespace collapsed to one space
 sub normalized {

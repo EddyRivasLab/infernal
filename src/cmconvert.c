@@ -207,6 +207,25 @@ main(int argc, char **argv)
                   "Convert it to the current format first, with cmconvert --upgrade, and rerun.", cm->name, errbuf);
       }
 
+      /* Some old CM files (e.g. Infernal v1.0 models converted during
+       * 1.1 development) carry a garbage E-value database size, which
+       * a reader accepts but the writers refuse (the same limit as
+       * Infernal 1.1's). Say so before any work, and how to fix it:
+       * Infernal 1.1's cmcalibrate reads such a file and writes valid
+       * E-value parameters (brief 26_0821-186). */
+      if ((esl_opt_GetBoolean(go, "-a") || esl_opt_GetBoolean(go, "-b")) &&
+          (cm->flags & CMH_EXPTAIL_STATS)) {
+        int x;
+        for (x = 0; x < EXP_NMODES; x++) {
+          double dbsize = cm->expA[x]->dbsize;
+          if ((cm->flags & CMH_EXPTAIL_NONULL3_STATS) && cm->expA_nonull3 != NULL && cm->expA_nonull3[x]->dbsize > dbsize) dbsize = cm->expA_nonull3[x]->dbsize;
+          if (dbsize > (2000. * 1000000.) || dbsize < 0.)
+            cm_Fail("CM %s has invalid E-value parameters (database size %.0f), so it can't be written.\n"
+                    "Recalibrate it first with the cmcalibrate of the Infernal version that wrote it (for an INFERNAL1/a file, Infernal 1.1), then convert it.",
+                    cm->name, dbsize);
+        }
+      }
+
       /* Upgrading a CM built with cmbuild --prior <f> needs that prior
        * to derive its HMM-only search HMM; without it, that HMM can only
        * be the filter HMM (HP7 ml). That's an error unless --noprior

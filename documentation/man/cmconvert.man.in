@@ -40,7 +40,12 @@ add
 .B --prior <f>
 (see below). A database pressed by Infernal 1.1's
 .B cmpress
-must be pressed again from the converted file.
+must be pressed again from the converted file. A few old CM files
+carry invalid E-value parameters (an impossible database size), which
+.B cmconvert
+can't write; it says so, and such a file must first be recalibrated
+with Infernal 1.1's
+.BR cmcalibrate .
 
 .PP
 Without
