@@ -21,8 +21,14 @@
      E-value parameters unchanged. It replaces only the filter HMM
      stored in the file with the profile HMMs Infernal 1.2 derives
      from the CM, so `cmsearch` and `cmscan` results can differ from
-     Infernal 1.1's results on the original file, while `cmalign`
-     alignments are not expected to change because of the conversion.
+     Infernal 1.1's results on the original file. For most models,
+     `cmalign` alignments are unchanged by the conversion. For some
+     models, notably unstructured models built with `cmbuild --noh3pri`
+     such as VADR's influenza models, bit scores and posterior
+     probabilities can change slightly, and sequences that match the
+     model poorly can align differently. This is because `cmalign`
+     computes its alignment bands from the filter HMM, which
+     `cmconvert --upgrade` recomputes from the model.
    - Press `cmscan` databases again: a database pressed by Infernal
      1.1 is refused too. Convert its CM file, then run `cmpress -F` on
      the converted file.
