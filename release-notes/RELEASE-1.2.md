@@ -47,6 +47,23 @@
    plain-text/alidisplay-only change; machine-readable formats (`--tblout`,
    Stockholm output from `cmalign`) are unaffected.
 
+ * **HMM-only search changes in `cmsearch` and `cmscan`.** These
+   apply to `--hmmonly` and to models with no basepairs, which are
+   searched in HMM-only mode by default.
+   - The default HMM-only filter P-value thresholds are looser:
+     `--hmmF1` 0.05 (was 0.02), `--hmmF2` 3e-3 (was 1e-3) and
+     `--hmmF3` 1e-4 (was 1e-5), tuned for the HMM that 1.2 derives
+     from the CM. HMM-only searches can report more hits, and take
+     somewhat longer, than in 1.1.
+   - `-g` combined with `--hmmonly`, which 1.1 rejected, now runs a
+     glocal HMM-only search. With `-g` alone, models with no basepairs
+     are now searched with a glocal HMM; in 1.1 `-g` switched them to
+     a glocal CM search, which needed `cmcalibrate` E-value parameters.
+     Use `--nohmmonly` for the 1.1 behavior.
+   - New option `--hmmwindows`: with `--hmmonly` and `--noali`, stop
+     after the third filter stage (Forward) and report the target
+     windows that survive it instead of hits.
+
  * **`cmbuild` now calibrates E-value statistical parameters
    automatically**, using a fast analytical predictor
    (`cm_FastCalibrate`) in place of `cmcalibrate`'s Monte Carlo
@@ -85,7 +102,7 @@
    `INFERNAL1/e`, deriving and calibrating the HMMs as `cmbuild`
    would. Infernal v1.0 CM files must still be converted with
    `cmconvert`, which now writes them in `INFERNAL1/e`. The `cmbuild` options
-   `--p7ere`, `--p7prior`, `--p7hprior` and `--p7hemit`, which
+   `--p7ere`, `--p7eent`, `--p7prior`, `--p7hprior` and `--p7hemit`, which
    controlled how the separate filter HMM was built, have been
    removed; `--p7ml` is still accepted and has no effect.
 
