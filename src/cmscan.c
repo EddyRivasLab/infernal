@@ -303,7 +303,7 @@ static ESL_OPTIONS options[] = {
   { "--onlytrunc",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */ "allow only truncated hits, anywhere within sequences",         108 },
   { "--5trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */ "allow truncated hits only at 5' ends of sequences",            108 },
   { "--3trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */ "allow truncated hits only at 3' ends of sequences",            108 },
-  { "--devdiag",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                     "show developer stage/band diagnostics on stderr",              108 },
+  { "--devdiag",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                     "show developer diagnostics (stage timing in main output, rest on stderr)", 108 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
