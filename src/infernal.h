@@ -3885,7 +3885,7 @@ extern void         cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9
 extern void         cp9_PredictStartAndEndPositionsP7B(CP9_MX *pmx, CP9Bands_t *cp9b, int *kmin, int *kmax, int i0, int j0);
 extern int          cp9_MarginalCandidatesFromStartEndPositions(CM_t *cm, CP9Bands_t *cp9b, int pass_idx, char *errbuf);
 extern void         ij2d_bands(CM_t *cm, CP9Bands_t *cp9b, int do_trunc, int debug_level);
-extern void         PrintDPCellsSaved_jd(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax, int W);
+extern void         PrintDPCellsSaved_jd(CM_t *cm, CP9Bands_t *cp9b, int W);
 extern void         debug_print_ij_bands(CM_t *cm);
 
 /* from logsum.c */

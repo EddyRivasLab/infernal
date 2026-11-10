@@ -3596,7 +3596,7 @@ cp9_FBMatrices2BandsP7B(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_MX *fmx, CP9_MX 
   ESL_DPRINTF1(("#DEBUG: bands validated.\n"));
 #endif
   if(debug_level > 0) debug_print_ij_bands(cm);
-  if(debug_level > 0) PrintDPCellsSaved_jd(cm, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, L);
+  if(debug_level > 0) PrintDPCellsSaved_jd(cm, cp9b, L);
 
   return eslOK;
 }
@@ -6541,7 +6541,7 @@ cp9_FBMatrices2BandsF(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_FMX *fmx, CP9_FMX 
   if((status = cp9_ValidateBands(cm, errbuf, cp9b, i0, j0, do_trunc)) != eslOK) return status;
 #endif
   if(debug_level > 0) debug_print_ij_bands(cm);
-  if(debug_level > 0) PrintDPCellsSaved_jd(cm, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, L);
+  if(debug_level > 0) PrintDPCellsSaved_jd(cm, cp9b, L);
 
   return eslOK;
 }
