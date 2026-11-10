@@ -1772,9 +1772,10 @@ consensus sequence, which is much faster at that scale; the
 \prog{--hbanded} option selects the plan 9 HMM bands for these models
 too. Models with zero basepairs are aligned with their profile HMM
 instead of the CM, which is faster and needs less memory;
-\prog{--nohmm} aligns them with the CM. For these models, an option
-that needs CM alignment, such as \prog{--tfile} or \prog{--cyk}, is an
-error unless \prog{--nohmm} is also given (the man page lists them).
+\prog{--nohmm} aligns them with the CM, as does a CM alignment method
+such as \prog{--sample}. For these models, an option that only CM
+alignment uses, such as \prog{--tfile} or \prog{--tau}, is an error
+unless \prog{--nohmm} is also given (the man page lists them).
 When either of these applies, the output header says so.
 
 The memory \prog{cmalign} may use for each sequence is limited by the

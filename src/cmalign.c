@@ -118,12 +118,14 @@ typedef struct hmm_aligner_s {
 
 #define ACCOPTS      "--hbanded,--nonbanded,--p7band"         /* Exclusive choice for acceleration or not */
 #define ALGOPTS      "--cyk,--optacc,--sample"               /* Exclusive choice for algorithm */
-/* Options that need CM alignment (a CM parse tree, the CM's structure, or
- * CM DP), so HMM-only alignment can't honor them: errors with --hmm. Keep
- * in sync with hmm_cm_only_option(), which applies the same rule when a
- * 0-basepair CM is switched to HMM-only alignment by default (brief
+/* Options that need CM alignment, so HMM-only alignment can't honor them:
+ * errors with --hmm. The CM methods (--small, --sample, --hbanded,
+ * --p7band, --ckpt; see hmm_cm_method_option()), and the CM-only output
+ * and tuning options of hmm_cm_only_option(), which are also errors when
+ * a 0-basepair CM is switched to HMM-only alignment by default. --cyk and
+ * --nonbanded have HMM-only meanings (hmm_map_method_options()) (brief
  * 26_0821-192). */
-#define HMMINCOMPAT  "--small,--cyk,--sample,--nonbanded,--hbanded,--p7band,--ckpt,--tfile,--elfile,--regress,--bpstatus,--bpcons,--bpcov"
+#define HMMINCOMPAT  "--small,--sample,--hbanded,--p7band,--ckpt,--tfile,--elfile,--regress,--bpstatus,--bpcons,--bpcov,--tau,--fixedtau,--maxtau,--no-mxesc,--no-mxesc-fixedtau,--ckpt-cykbands"
 #if defined (HMMER_THREADS) && defined (HAVE_MPI)
 #define CPUOPTS     "--mpi"
 #define MPIOPTS     "--cpu"
@@ -714,26 +716,101 @@ autoswitch_force_opt(ESL_GETOPTS *go, char *optname, char *strval)
  * can't tell it from a user's --hmm; output_header() reads this to say
  * the mode was auto-selected (brief 26_0821-135). */
 static int hmm_autoswitched = FALSE;
+static const char *hmm_kept_cm_opt = NULL; /* the option that kept a 0-basepair CM on CM alignment, for output_header() */
+static int hmm_mapped_cyk = FALSE;         /* TRUE if --cyk was taken as --hmmvit, for output_header() */
+static int hmm_mapped_nonbanded = FALSE;   /* TRUE if --nonbanded was taken as --hmmnoband, for output_header() */
 static const char *hmm_cm_only_option(const ESL_GETOPTS *go);
+
+/* hmm_cm_method_option()
+ * Incept: EPN, Tue Nov 10 2026 (w/Claude)
+ *
+ * The first option set in <go> that selects a CM alignment method with
+ * no HMM-only counterpart, or NULL: --sample, --small, --ckpt, --p7band,
+ * or a typed --hbanded (it is on by default, so only if typed). One of
+ * these keeps a 0-basepair CM on CM alignment, as if --nohmm were given,
+ * and output_header() says so (brief 26_0821-192).
+ */
+static const char *
+hmm_cm_method_option(const ESL_GETOPTS *go)
+{
+  static char *opts[] = { "--sample", "--small", "--ckpt", "--p7band", NULL };
+  int i;
+
+  for (i = 0; opts[i] != NULL; i++)
+    if (esl_opt_IsOn(go, opts[i])) return opts[i];
+  if (esl_opt_GetSetter(go, "--hbanded") != eslARG_SETBY_DEFAULT && esl_opt_GetBoolean(go, "--hbanded")) return "--hbanded";
+  return NULL;
+}
+
+/* autoswitch_unset_opt()
+ * Incept: EPN, Tue Nov 10 2026 (w/Claude)
+ *
+ * Turn boolean option <optname> off in <go>, as if never given, after
+ * getopts' checks have run (counterpart of autoswitch_force_opt()).
+ */
+static void
+autoswitch_unset_opt(ESL_GETOPTS *go, char *optname)
+{
+  int i;
+  for (i = 0; i < go->nopts; i++)
+    if (strcmp(optname, go->opt[i].name) == 0) {
+      if (go->valloc[i] > 0) { free(go->val[i]); go->valloc[i] = 0; }
+      go->val[i]   = NULL;
+      go->setby[i] = eslARG_SETBY_DEFAULT;
+      return;
+    }
+  cm_Fail("autoswitch_unset_opt(): no such option %s", optname);
+}
+
+/* hmm_map_method_options()
+ * Incept: EPN, Tue Nov 10 2026 (w/Claude)
+ *
+ * In HMM-only mode (--hmm, explicit or auto-switched), take the two CM
+ * method options that have an HMM-only counterpart as that counterpart:
+ * --cyk (the most likely alignment) as --hmmvit (the HMM's Viterbi
+ * alignment), and --nonbanded as --hmmnoband (unbanded optimal accuracy
+ * alignment). The CM options are then turned off, so initialize_cm()
+ * configures no CM DP for them. process_commandline() has rejected the
+ * combinations with a band builder or the other HMM sub-mode (brief
+ * 26_0821-192).
+ */
+static void
+hmm_map_method_options(ESL_GETOPTS *go)
+{
+  if (esl_opt_GetBoolean(go, "--cyk")) {
+    if (! esl_opt_GetBoolean(go, "--hmmvit")) autoswitch_force_opt(go, "--hmmvit", NULL);
+    autoswitch_unset_opt(go, "--cyk");
+    hmm_mapped_cyk = TRUE;
+    if (esl_opt_GetBoolean(go, "--nonbanded")) autoswitch_unset_opt(go, "--nonbanded"); /* Viterbi uses no bands */
+  }
+  else if (esl_opt_GetBoolean(go, "--nonbanded")) {
+    if (! esl_opt_GetBoolean(go, "--hmmvit") && ! esl_opt_GetBoolean(go, "--hmmnoband")) autoswitch_force_opt(go, "--hmmnoband", NULL);
+    autoswitch_unset_opt(go, "--nonbanded");
+    hmm_mapped_nonbanded = TRUE;
+  }
+}
 /* The error for an option that needs CM alignment on a CM that the
  * switch aligns with its HMM: option name, CM name. */
 #define HMM_AUTOSWITCH_OPT_FMT "%s requires CM alignment, but %s has no base pairs and is aligned with its HMM by default; add --nohmm to use the CM."
 static void
 maybe_hmm_autoswitch(ESL_GETOPTS *go, CM_t *cm)
 {
+  if (esl_opt_GetBoolean(go, "--hmm"))    { hmm_map_method_options(go); return; } /* user requested HMM mode */
   if (CMCountNodetype(cm, MATP_nd) != 0)  return; /* structured CM: leave untouched           */
   if (esl_opt_GetBoolean(go, "--nohmm"))  return; /* explicit override: force CM-DP            */
-  if (esl_opt_GetBoolean(go, "--hmm"))    return; /* user already requested HMM mode           */
-  /* Options that need CM alignment (CM DP, a parse tree; see
-   * hmm_cm_only_option()) used to keep some runs on the CM here (--small,
-   * --cyk, --sample, --p7band) and were silently overridden in others
-   * (--nonbanded, --ckpt, --hbanded). The alignment method must not depend
-   * on such an option, so they no longer stop the switch; the caller
-   * makes each of them an error that says to add --nohmm (brief
-   * 26_0821-192). */
+  /* Brief 26_0821-192: a CM method with no HMM-only counterpart (--sample,
+   * --small, --ckpt, --p7band, a typed --hbanded) keeps the CM, as --nohmm
+   * does, and output_header() says why. --cyk and --nonbanded used to keep
+   * the CM too (--nonbanded was silently overridden); they now switch, and
+   * are taken as --hmmvit and --hmmnoband. CM-only output and tuning
+   * options don't change the method: the caller makes them errors that
+   * say to add --nohmm (hmm_cm_only_option()). */
+  if ((hmm_kept_cm_opt = hmm_cm_method_option(go)) != NULL) return;
 
   autoswitch_force_opt(go, "--hmm", NULL);
-  if (cm->clen <= CM_KMERCHAIN_DEFAULT_MINM && ! esl_opt_GetBoolean(go, "--p7ibv"))
+  hmm_map_method_options(go);
+  if (cm->clen <= CM_KMERCHAIN_DEFAULT_MINM && ! esl_opt_GetBoolean(go, "--p7ibv") &&
+      ! esl_opt_GetBoolean(go, "--hmmvit") && ! esl_opt_GetBoolean(go, "--hmmnoband"))
     autoswitch_force_opt(go, "--p7ibv", NULL);
   hmm_autoswitched = TRUE;
 }
@@ -1882,25 +1959,25 @@ hmm_map_alignment(const ESL_GETOPTS *go, CM_t *cm, ESL_SQ ***ret_sq, P7_TRACE **
 /* hmm_cm_only_option()
  * Incept: EPN, Tue Nov 10 2026 (w/Claude)
  *
- * The name of the first option set in <go> that needs CM alignment (a
- * CM parse tree, the CM's structure, or CM DP), or NULL. HMM-only
- * alignment can't honor these, and the alignment method must not
- * depend on an output option, so they are errors in HMM-only mode
- * instead of a silent switch back to the CM (brief 26_0821-192). Keep
- * in sync with HMMINCOMPAT, the same list as Easel incompatibilities of
- * an explicit --hmm. --hbanded is on by default, so it counts only if
- * typed.
+ * The name of the first option given in <go> that only CM alignment
+ * uses, or NULL: output from a CM parse tree or the CM's structure
+ * (--tfile, --elfile, --regress, --bpstatus, --bpcons, --bpcov) and
+ * tuning of the CM's bands and engines (--tau, --fixedtau, --maxtau,
+ * --no-mxesc, --no-mxesc-fixedtau, --ckpt-cykbands). HMM-only alignment
+ * can't honor these, and the alignment method must not depend on them,
+ * so they are errors in HMM-only mode instead of a silent switch back to
+ * the CM or a silent no-op (brief 26_0821-192). Keep in sync with
+ * HMMINCOMPAT, the Easel incompatibilities of an explicit --hmm.
  */
 static const char *
 hmm_cm_only_option(const ESL_GETOPTS *go)
 {
-  static char *opts[] = { "--small", "--cyk", "--sample", "--nonbanded", "--p7band", "--ckpt",
-                          "--tfile", "--elfile", "--regress", "--bpstatus", "--bpcons", "--bpcov", NULL };
+  static char *opts[] = { "--tfile", "--elfile", "--regress", "--bpstatus", "--bpcons", "--bpcov",
+                          "--tau", "--fixedtau", "--maxtau", "--no-mxesc", "--no-mxesc-fixedtau", "--ckpt-cykbands", NULL };
   int i;
 
   for (i = 0; opts[i] != NULL; i++)
-    if (esl_opt_IsOn(go, opts[i])) return opts[i];
-  if (esl_opt_GetSetter(go, "--hbanded") != eslARG_SETBY_DEFAULT && esl_opt_GetBoolean(go, "--hbanded")) return "--hbanded";
+    if (esl_opt_IsUsed(go, opts[i])) return opts[i];
   return NULL;
 }
 
@@ -3475,6 +3552,21 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     }
   }
 
+  /* With --hmm, --cyk is the HMM's Viterbi alignment (--hmmvit) and
+   * --nonbanded unbanded optimal accuracy (--hmmnoband); see
+   * hmm_map_method_options(). Reject what those can't be combined with
+   * (brief 26_0821-192). */
+  if(esl_opt_GetBoolean(go, "--hmm") && esl_opt_GetBoolean(go, "--cyk") &&
+     (esl_opt_GetBoolean(go, "--hmmnoband") || esl_opt_GetBoolean(go, "--p7ibv") || esl_opt_GetBoolean(go, "--p7kmerchain"))) {
+    puts("\nERROR: with --hmm, --cyk means the HMM's Viterbi alignment, which can't be combined with --hmmnoband, --p7ibv or --p7kmerchain\n");
+    goto ERROR;
+  }
+  if(esl_opt_GetBoolean(go, "--hmm") && esl_opt_GetBoolean(go, "--nonbanded") &&
+     (esl_opt_GetBoolean(go, "--p7ibv") || esl_opt_GetBoolean(go, "--p7kmerchain"))) {
+    puts("\nERROR: with --hmm, --nonbanded means alignment without bands, which can't be combined with --p7ibv or --p7kmerchain\n");
+    goto ERROR;
+  }
+
   /* --p7padplus pads the p7 bands, which only --p7band and --hmm use. */
   if(esl_opt_IsUsed(go, "--p7padplus") &&
      (! esl_opt_GetBoolean(go, "--p7band")) && (! esl_opt_GetBoolean(go, "--hmm"))) {
@@ -3576,8 +3668,9 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *sqfile, CM_t
   if (esl_opt_IsUsed(go, "--notrunc"))   {  fprintf(ofp, "# truncated sequence alignment mode:           off\n"); }
   if (esl_opt_IsUsed(go, "--hmm"))       {  fprintf(ofp, "# alignment method:                            p7 HMM only (no CM)%s\n",
                                                     hmm_autoswitched ? " [auto-selected for a 0-basepair CM; --nohmm to use the CM]" : ""); }
-  if (esl_opt_IsUsed(go, "--hmmvit"))    {  fprintf(ofp, "# HMM alignment algorithm:                     Viterbi\n"); }
-  if (esl_opt_IsUsed(go, "--hmmnoband")) {  fprintf(ofp, "# HMM alignment banding:                       off (full OA)\n"); }
+  if (hmm_kept_cm_opt != NULL)           {  fprintf(ofp, "# alignment method:                            CM [%s given; the default for a 0-basepair CM is its HMM]\n", hmm_kept_cm_opt); }
+  if (esl_opt_IsUsed(go, "--hmmvit"))    {  fprintf(ofp, "# HMM alignment algorithm:                     Viterbi%s\n", hmm_mapped_cyk ? " [--cyk]" : ""); }
+  if (esl_opt_IsUsed(go, "--hmmnoband")) {  fprintf(ofp, "# HMM alignment banding:                       off (full OA)%s\n", hmm_mapped_nonbanded ? " [--nonbanded]" : ""); }
 
   /* Which p7 band builder this run uses, whenever p7 bands are in play:
    * HMM-only mode (--hmm, explicit or auto-selected) or --p7band. Mirrors

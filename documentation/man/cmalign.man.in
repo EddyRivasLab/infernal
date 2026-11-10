@@ -64,12 +64,25 @@ basepairs are aligned with the profile HMM alone (no CM), as with
 .B --hmm,
 unless
 .B --nohmm
-is used. Options that need CM alignment are errors for such a model
+or one of the CM alignment methods
+.B --sample,
+.B --small,
+.B --ckpt,
+.B --p7band
+or
+.B --hbanded
+is given (the output header then says which).
+.B --cyk
+and
+.B --nonbanded
+are taken as their HMM counterparts (see
+.BR --hmm ).
+Options for CM output or CM band tuning are errors for such a model
 unless
 .B --nohmm
 is also given (see
 .B --hmm
-for the list); they never change the alignment method by themselves.
+for the list).
 Their bands are derived from the HMM's Forward and Backward
 posterior probabilities (as with
 .B --p7ibv)
@@ -367,25 +380,41 @@ The output options
 and
 .B --sfile
 work as they do with CM alignment.
-Options that need CM alignment (a CM parse tree, the CM's base pairs, or
-a CM alignment algorithm) cannot be combined with
+.B --cyk
+selects the HMM's Viterbi alignment (as
+.BR --hmmvit ),
+and
+.B --nonbanded
+optimal accuracy alignment without bands (as
+.BR --hmmnoband ).
+The CM alignment methods
+.B --sample,
+.B --small,
+.B --ckpt,
+.B --p7band
+and
+.B --hbanded
+cannot be combined with
+.B --hmm;
+for a model with zero basepairs, which is aligned with its HMM by
+default, each of them selects CM alignment instead.
+Options that only CM alignment uses cannot be combined with
 .B --hmm:
-.B --tfile,
+CM output
+.RB ( --tfile,
 .B --elfile,
 .B --regress,
 .B --bpstatus,
 .B --bpcons,
-.B --bpcov,
-.B --cyk,
-.B --sample,
-.B --small,
-.B --nonbanded,
-.B --hbanded,
-.B --p7band
-and
-.B --ckpt.
-For a model with zero basepairs, which is aligned with its HMM by
-default, each of these is an error unless
+.BR --bpcov )
+and CM band and engine tuning
+.RB ( --tau,
+.B --fixedtau,
+.B --maxtau,
+.B --no-mxesc,
+.B --no-mxesc-fixedtau,
+.BR --ckpt-cykbands ).
+For a model with zero basepairs each of them is an error unless
 .B --nohmm
 is given.
 
