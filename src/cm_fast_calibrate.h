@@ -1,26 +1,17 @@
 /* cm_fast_calibrate.h
- * Fast CM calibration via ridge regression on compiled-in JSON models.
- *
- * Phase 1 stub: cm_FastCalibrate() returns eslFAIL with no side effects.
- * JSON parsing and model loading are implemented in Phase 1; real prediction
- * lands in Phase 4.
- *
- * Phase 2: feature extraction (cm_FastCalibrate_ExtractFeatures and friends).
- * Phase 3: topo_fraglen_v2 (noend basic) and C1_OLD legacy features.
- *
- * See CPORT_SPEC.md for the full specification.
+ * Fast CM calibration via ridge regression on compiled-in JSON models:
+ * feature extraction, prediction of the ECM E-value parameters, and the
+ * null3-off corrector. See cm_fast_calibrate.c.
  */
 #ifndef cm_FAST_CALIBRATE_INCLUDED
 #define cm_FAST_CALIBRATE_INCLUDED
 #include "infernal.h"  /* CM_t */
 
 /* cm_FastCalibrate()
- *   Compute lambda, mu_extrap, mu_orig for the 4 ECM modes via ridge prediction.
- *   Populates cm->expA[ECM_LC|ECM_LI|ECM_GC|ECM_GI] in place.
+ *   Predict lambda, mu_extrap, mu_orig and K for the 4 ECM modes and
+ *   populate cm->expA[] in place; then derive cm->expA_nonull3[] with
+ *   cm_FastCalibrate_Null3OffFromOn(cm, FALSE).
  *   Returns eslOK on success, eslFAIL on prediction failure.
- *
- *   Phase 1 stub: returns eslFAIL with no side effects. Real
- *   implementation lands in Phase 4.
  */
 extern int  cm_FastCalibrate(CM_t *cm);
 
@@ -95,7 +86,7 @@ extern double cm_fastcal_gc_emit(const CM_t *cm, int *opt_ncons);
 extern int  cm_FastCalibrate_PrintModels(FILE *fp);
 
 /* cm_FastCalibrate_ExtractFeatures()
- * Fills feats[0..FAST_CAL_NFEAT-1] from cm (all 27 features, Phases 2+3).
+ * Fills feats[0..FAST_CAL_NFEAT-1] from cm (all FAST_CAL_NFEAT features).
  * Caller passes a buffer >= FAST_CAL_NFEAT doubles.
  *
  * Returns eslOK on success, eslFAIL/eslEMEM on error.

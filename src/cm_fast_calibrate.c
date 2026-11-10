@@ -1,10 +1,12 @@
 /* cm_fast_calibrate.c
  * Fast CM calibration via ridge regression on compiled-in JSON models.
  *
- * Phase 1: JSON parsing, model loading, and print_models() debug helper.
- * Phase 2: feature extraction (cm_FastCalibrate_ExtractFeatures), 20 features.
- * Phase 3: topo_fraglen_v2 (noend basic) + C1_OLD legacy, 7 more features.
- * cm_FastCalibrate() is a stub returning eslFAIL (real prediction: Phase 4).
+ * Contents: JSON parsing and model loading (load_models()); feature
+ * extraction (cm_FastCalibrate_ExtractFeatures(), FAST_CAL_NFEAT features);
+ * prediction of the four ECM modes' lambda, mu_extrap, mu_orig and K
+ * (cm_FastCalibrate()); the null3-off corrector
+ * (cm_FastCalibrate_Null3OffFromOn()); cm_LocalMu() (mini-simulation, off by
+ * default); and the cm_FastCalibrate_PrintModels() debug dump.
  *
  * Model loading (see load_models()): v5.5 flat-schema JSONs (v55_{bucket}_
  * models.json + v55_K_{bucket}_models.json) are the live source for STR
@@ -1151,13 +1153,8 @@ parse_noss_hybrid(ESL_JSON *pi, ESL_BUFFER *bf)
  *   Caller specifies which target ("lambda", "mu_extrap", "mu_orig", "K") and
  *   which bucket the file represents.
  *
- *   IMPORTANT: this function is INFRASTRUCTURE for forward compatibility.
- *   v5.5 ridges use 55+ features but the C feature extractor knows only the
- *   subset described in fast_cal_feature_names[]. ridge_predict() will
- *   silently skip unknown features, which (per analysis 2026-05-19) drops
- *   50-67% of the v5.5 coefficient mass and produces wrong predictions.
- *   This is documented in summary 14; the parser is here so JSON-only swaps
- *   work once the C feature extractor is widened to match v5.5.
+ *   Every feature a ridge names must be in fast_cal_feature_names[];
+ *   load_models() checks this (check_feature_names()) and fails otherwise.
  */
 static int
 parse_v55_flat(ESL_JSON *pi, ESL_BUFFER *bf,
@@ -1643,24 +1640,13 @@ ridge_predict(const FastCalRidge *r, const double *feats_full)
 
 
 /* === K = nrandhits/dbsize predictor =====
- * K is now loaded as a ridge model (one per bucket × mode × is_noss), not
- * a hardcoded constant table. This unifies the C code path: λ, μ_extrap,
- * μ_orig, AND K all flow through ridge_predict(). Future bucket updates
- * are JSON swaps with no C changes.
- *
- * The current K models are v4.x→ridge placeholders converted from the
- * historical hardcoded constants (see scratch/cm_localmu_v55integration/
- * build_v4x_K_ridges.py):
- *   - Glocal modes (ECMGC, ECMGI): K = exp(a) * clen^b
- *     encoded as 1-feature ridge with feature=log_clen, coef=b, intercept=a,
- *     y_transform=exp.
- *   - Local modes (ECMLC, ECMLI): K = constant per bucket
- *     encoded as 0-feature ridge with intercept=K, y_transform=identity.
- *
- * Source of v4.x constants: analysis/nrandhits_rfam_all.tsv (4110 calibrated
- * CMs). Per-mode rmse log(K) ≈ 0.28–0.41. Future v5.5+K K-ridges can replace
- * these placeholders via JSON swap once the C feature extractor supports the
- * full v5.5 feature set.
+ * K is a ridge model per bucket × mode × is_noss, like λ, μ_extrap and μ_orig:
+ *   - structured CMs: the v5.5 K ridges (v55_K_<bucket>_models.json), 55-65
+ *     features, trained on log K (y_transform exp);
+ *   - 0-bp (NOSS) CMs: the K cells of v55_noss_hybrid_production.json.
+ * (The older v4.x placeholders, local intercept-only and glocal clen power
+ * law, are no longer loaded.) Structured clen < 40 CMs take K from the
+ * short-CM predictors instead (see shortcm_b2[]).
  * ===================================================== */
 
 /* predict_K: predict the cur_eff_dbsize / Z_search density factor K =
@@ -1794,7 +1780,7 @@ cm_FastCalibrate(CM_t *cm)
       if ((status = load_models()) != eslOK) return eslFAIL;
     }
 
-  /* Extract all 27 features */
+  /* Extract all FAST_CAL_NFEAT features */
   if ((status = cm_FastCalibrate_ExtractFeatures(cm, feats)) != eslOK)
     return eslFAIL;
 
@@ -2020,12 +2006,9 @@ cm_FastCalibrate(CM_t *cm)
           mu_e = ridge_predict(ra_mue, feats);
       }
 
-      /* Predict K = nrandhits/dbsize via the K ridge.
+      /* Predict K = nrandhits/dbsize via the K ridge (see predict_K()).
        * In cmsearch, cur_eff_dbsize = (Z_search/dbsize) * nrandhits, so
-       * K controls the absolute E-value scale. The K ridge is loaded as
-       * one of the embedded JSONs (v4.x→ridge placeholder; future v5.5+K
-       * swap is JSON-only). Local-mode K ridges are intercept-only;
-       * glocal-mode K ridges are clen power laws (feature=log_clen).
+       * K controls the absolute E-value scale.
        */
       /* brief 074: ere K dispatch — use the ere K ridge where deployed, else
        * fall back to C0's predict_K (gaps: huge-glocal STR, NOSS ml/large/huge). */
@@ -2766,7 +2749,8 @@ cm_LocalMu(CM_t *cm, ESL_RANDOMNESS *rng, int N, int use_wcap, char *errbuf)
 
 /* Feature name table — indexed by FAST_CAL_FEAT_* enum.
  * Must stay in sync with the enum in cm_fast_calibrate.h.
- * 69 entries (Phase 2: 0..19, Phase 3: 20..26, Phase 4: 27, Phase 5: 28..68).
+ * FAST_CAL_NFEAT entries (Phase 2: 0..19, Phase 3: 20..26, Phase 4: 27,
+ * Phase 5: 28..68, effn: 69, gc: 70).
  */
 static const char *fast_cal_feature_names[] = {
     "clen",                          /* 0  */
@@ -5118,7 +5102,7 @@ stage_timing_log(const char *path, const char *cm_name, const char *stage, doubl
 }
 
 /* cm_FastCalibrate_ExtractFeatures()
- * Fill feats[0..FAST_CAL_NFEAT-1] from cm (all 69 features).
+ * Fill feats[0..FAST_CAL_NFEAT-1] from cm (all FAST_CAL_NFEAT features).
  * Returns eslOK on success, eslFAIL/eslEMEM on error.
  *
  * Stage timing: if FASTCAL_STAGE_TIMING=<path> is set in the environment,
