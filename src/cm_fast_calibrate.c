@@ -101,15 +101,20 @@
  * Δλ form per mode (mode index = MODE_ECMLC/LI/GC/GI below):
  *   ECMLC/ECMGC/ECMGI: b0 + b1*gc + b2*gc*lc + b3*gc*lc^2   ("gc_quadlogc")
  *   ECMLI            : b0 + b1*gc + b2*lc    + b3*gc*lc      ("b0+b1gc+b2logc+b3_gc_logc")
- * Coefficients are verbatim from offset_spec_gc_corrected.json (brief 068).
+ * Coefficients: brief 068's forms, refit on structured families only (below).
  */
 #define NONULL3_GC_GATE  0.48  /* corrected gc_emit gate for the null3-off corrector (brief 068) */
 
+/* Refit in brief 26_0823-006 on the 59 STRUCTURED families of the brief-068 pool:
+ * brief 068 had also fit 8 0-bp families (DLEU1_2, DLEU2_1, FMR1-AS1_2, HOTTIP_3,
+ * HOXA11-AS1_4, MIMT1_1, RMST_7, snosnR61), which cm_FastCalibrate_Null3OffFromOn()
+ * routes to the 0-bp corrector. Same forms, gate and t_eff. Leave-one-family-out on
+ * structured AT-rich cells: 74 vs 76 of 148 cells > 2x permissive at E = 1. */
 static const double nonull3_dlam_coef[N_MODES][4] = {
-  /* ECMLC */ { -0.26405523686056775, -0.7613954123488369,  1.1527883933479806, -0.2657580589698738 },
-  /* ECMLI */ {  2.0677636328662783,  -3.7780182458253924, -1.194062250628696,   2.1615796027902023 },
-  /* ECMGC */ { -0.15690783757436041,  1.375800970559872,  -0.8997431990754934,  0.16810422340129869 },
-  /* ECMGI */ { -0.18671066783680723,  1.743042910230306,  -1.1587088412111677,  0.21748100163485096 },
+  /* ECMLC */ { -0.2700293738485722, -0.7759821436579106,  1.1837521520180039, -0.2731656297628665  },
+  /* ECMLI */ {  2.1575936038435644, -3.982966789666825,  -1.2727020134705427,  2.33392374277961    },
+  /* ECMGC */ { -0.1681324416971591,  1.4448681419916647, -0.9424633172913832,  0.17695863787141683 },
+  /* ECMGI */ { -0.19133892657851337, 1.7419585697021056, -1.1500356995465466,  0.21567558129695102 },
 };
 /* per-mode effective tailp t_eff (brief 068; from 054 fastcal preds) */
 static const double nonull3_teff[N_MODES] = {
