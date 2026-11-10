@@ -64,12 +64,12 @@ basepairs are aligned with the profile HMM alone (no CM), as with
 .B --hmm,
 unless
 .B --nohmm
-is used, or one of
-.B --cyk,
-.B --sample,
-.B --small
-or
-.B --p7band.
+is used. Options that need CM alignment are errors for such a model
+unless
+.B --nohmm
+is also given (see
+.B --hmm
+for the list); they never change the alignment method by themselves.
 Their bands are derived from the HMM's Forward and Backward
 posterior probabilities (as with
 .B --p7ibv)
@@ -357,9 +357,37 @@ has no effect; with
 .B --notrunc,
 .B -g
 configures the HMM for global alignment.
-.B --hmm
-cannot be combined with
-.B --small.
+The output options
+.B --noprob,
+.B --matchonly,
+.B --miss,
+.B --mapali,
+.B --mapstr,
+.B --ifile
+and
+.B --sfile
+work as they do with CM alignment.
+Options that need CM alignment (a CM parse tree, the CM's base pairs, or
+a CM alignment algorithm) cannot be combined with
+.B --hmm:
+.B --tfile,
+.B --elfile,
+.B --regress,
+.B --bpstatus,
+.B --bpcons,
+.B --bpcov,
+.B --cyk,
+.B --sample,
+.B --small,
+.B --nonbanded,
+.B --hbanded,
+.B --p7band
+and
+.B --ckpt.
+For a model with zero basepairs, which is aligned with its HMM by
+default, each of these is an error unless
+.B --nohmm
+is given.
 
 .TP
 .B --hmmvit
@@ -383,7 +411,10 @@ length.
 Align models with zero basepairs with the CM, instead of switching
 automatically to HMM alignment
 .RB ( --hmm )
-for them.
+for them. This is needed to use an option that requires CM alignment
+(see
+.B --hmm)
+with such a model.
 
 .SH OPTIONS FOR CONTROLLING SPEED AND MEMORY REQUIREMENTS
 

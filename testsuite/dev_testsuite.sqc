@@ -464,6 +464,27 @@
 1  exercise  align:t/outclu       @src/cmalign@  --outformat clustal %TRNA.CM% !testsuite/3trnas.gb!
 1  exercise  align:t/outphy       @src/cmalign@  --outformat phylip %TRNA.CM% !testsuite/3trnas.gb!
 
+# HMM-only alignment (--hmm; the default for a model with zero
+# basepairs, snR75): output options it honors, and options that need
+# CM alignment, which are errors unless --nohmm (brief 26_0821-192).
+1  prep      align:copy/zbp       cp !testsuite/snR75.c.cm! %ZBP.A.CM%
+1  exercise  align:z/df           @src/cmalign@  %ZBP.A.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:z/noprob       @src/cmalign@  --noprob    %ZBP.A.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:z/match        @src/cmalign@  --matchonly %ZBP.A.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:z/miss         @src/cmalign@  --miss      %ZBP.A.CM% !testsuite/se.fa!
+1  exercise  align:z/ifile        @src/cmalign@  --ifile  %TMP.FILE% %ZBP.A.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:z/sfile        @src/cmalign@  --sfile  %TMP.FILE% %ZBP.A.CM% !testsuite/emitted-tRNA.fa!
+1  fail      align:z/tfile        @src/cmalign@  --tfile  %TMP.FILE% %ZBP.A.CM% !testsuite/emitted-tRNA.fa!
+1  fail      align:z/cyk          @src/cmalign@  --cyk       %ZBP.A.CM% !testsuite/emitted-tRNA.fa!
+1  fail      align:z/nonbanded    @src/cmalign@  --nonbanded %ZBP.A.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:z/nohmm/tfile  @src/cmalign@  --nohmm --tfile %TMP.FILE% %ZBP.A.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:z/nohmm/cyk    @src/cmalign@  --nohmm --cyk   %ZBP.A.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/hmm/noprob   @src/cmalign@  --hmm --noprob    %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:t/hmm/match    @src/cmalign@  --hmm --matchonly %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  fail      align:t/hmm/tfile    @src/cmalign@  --hmm --tfile %TMP.FILE% %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  fail      align:t/hmm/hbanded  @src/cmalign@  --hmm --hbanded  %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:pkhav/hmm/map  @src/cmalign@  --hmm --mapstr --mapali !testsuite/PK-HAV.sto! %PKHAV.CM% !testsuite/emitted-3pkhavs.fa!
+
 # Algorithm options:
 #
 # Each algorithm option with 8 seperate combinations 
