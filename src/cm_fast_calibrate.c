@@ -2109,82 +2109,137 @@ cm_FastCalibrate(CM_t *cm)
     }
   }
 
-  /* brief 068/069/070/072: produce the null3-OFF E-value parameter set
-   * (cm->expA_nonull3). Done LAST, after cm_LocalMu has finalized the on-set, so
-   * the off-set is derived from the final on-set params. PURELY ADDITIVE:
-   * cm->expA is untouched. Reuse the corrected gc_emit already computed above
-   * (atrich_gc). The corrector DISPATCHES on is_noss (brief 072):
-   *   STR  CMs (is_noss==0): brief-068 corrector, gate 0.48, all 4 modes' Δλ.
-   *   NOSS CMs (is_noss==1): brief-070 corrector, gate 0.47, ONLY the local
-   *                          modes (ECMLC, ECMLI) corrected; glocal (ECMGC,
-   *                          ECMGI) ship off==on (NOSS glocal not corrected).
-   * Per corrected mode: lam_off = lam_on + Δλ(gc, lc); μ recompute via μ_orig_on
-   * reuse (Δμ_orig=0); on-set K/dbsize/tailp reused; lam_off<=0 degeneracy guard
-   * (and the gate) ship off==on. Identical μ/K/guard machinery for STR and NOSS;
-   * only (gate, coef table, form, t_eff, which-modes-corrected) differ. */
-  {
-    double lc        = log10((double) cm->clen);
-    double gate      = is_noss ? NONULL3_NOSS_GC_GATE : NONULL3_GC_GATE;
-    int    apply_off = (atrich_gc >= 0.0 && atrich_gc <= gate);
-
-    if (cm->expA_nonull3 == NULL) {
-      ESL_ALLOC(cm->expA_nonull3, sizeof(ExpInfo_t *) * EXP_NMODES);
-      for (i = 0; i < EXP_NMODES; i++) cm->expA_nonull3[i] = NULL;
-    }
-    for (i = 0; i < EXP_NMODES; i++) {
-      if (cm->expA_nonull3[i] == NULL) {
-        cm->expA_nonull3[i] = CreateExpInfo();
-        if (cm->expA_nonull3[i] == NULL) goto ERROR;
-      }
-      /* default: off = on (balanced/GC-rich, out-of-gate, degenerate, or — for
-       * NOSS — a glocal mode that is not corrected) */
-      CopyExpInfo(cm->expA[i], cm->expA_nonull3[i]);
-
-      if (apply_off) {
-        int    mmode   = inf_to_model_mode[i];
-        /* NOSS corrects only the local modes; STR corrects all 4. */
-        int    correct = is_noss ? (mmode == MODE_ECMLC || mmode == MODE_ECMLI) : 1;
-        if (correct) {
-          double lam_on  = cm->expA[i]->lambda;
-          double dlam    = is_noss ? nonull3_noss_dlam(mmode, atrich_gc, lc)
-                                   : nonull3_dlam     (mmode, atrich_gc, lc);
-          double teff    = is_noss ? nonull3_noss_teff[mmode] : nonull3_teff[mmode];
-          double lam_off = lam_on + dlam;
-          if (lam_off > 0.0) {               /* else: degeneracy guard -> keep off=on */
-            double mu_orig_on = cm->expA[i]->mu_orig;
-            cm->expA_nonull3[i]->lambda    = lam_off;
-            cm->expA_nonull3[i]->mu_orig   = mu_orig_on;   /* Δμ_orig = 0 (brief 068/070) */
-            cm->expA_nonull3[i]->mu_extrap = mu_orig_on - log(1.0 / teff) / lam_off;
-            /* nrandhits (K), dbsize, tailp reused via CopyExpInfo */
-          }
-        }
-      }
-      cm->expA_nonull3[i]->is_valid = TRUE;
-    }
-    cm->flags |= CMH_EXPTAIL_NONULL3_STATS;
-
-    /* Optional full-precision validation dump (brief 069): one line per mode,
-     * name mode(0=GC,1=GI,2=LC,3=LI) gc clen apply lam_on lam_off muorig_on muext_off */
-    {
-      const char *n3_dump = getenv("FASTCAL_NONULL3_DUMP");
-      if (n3_dump != NULL) {
-        FILE *nfp = fopen(n3_dump, "a");
-        if (nfp != NULL) {
-          for (i = 0; i < EXP_NMODES; i++)
-            fprintf(nfp, "%s\t%d\t%.17g\t%d\t%d\t%.17g\t%.17g\t%.17g\t%.17g\n",
-                    cm->name ? cm->name : "unknown", i, atrich_gc, cm->clen, apply_off,
-                    cm->expA[i]->lambda, cm->expA_nonull3[i]->lambda,
-                    cm->expA[i]->mu_orig, cm->expA_nonull3[i]->mu_extrap);
-          fclose(nfp);
-        }
-      }
-    }
-  }
+  /* The null3-OFF E-value parameter set (cm->expA_nonull3), derived from the
+   * final on-set; see cm_FastCalibrate_Null3OffFromOn(). cmbuild's on-set has
+   * a placeholder tailp (0.01), so use the corrector's per-mode t_eff. */
+  if ((status = cm_FastCalibrate_Null3OffFromOn(cm, FALSE)) != eslOK) return status;
 
   return eslOK;
 
  ERROR:
   return eslEMEM;
+}
+
+
+/* Function:  cm_FastCalibrate_Null3OffFromOn()
+ *
+ * Purpose:   Compute the null3-OFF E-value parameter set <cm->expA_nonull3>
+ *            from the null3-ON set in <cm->expA>, with the gated
+ *            delta-lambda corrector (briefs 26_0422-068/070/072; moved
+ *            into its own function in brief 26_0823-006 so that a CM's
+ *            stored on-set can be converted outside cmbuild).
+ *
+ *            Gate: corrected consensus-emission gc (cm_fastcal_gc_emit())
+ *            <= 0.48 for structured CMs, <= 0.47 for 0-bp (NOSS) CMs;
+ *            otherwise, and for NOSS glocal modes, off = on. Per corrected
+ *            mode:
+ *              lambda_off    = lambda_on + dlambda(gc, log10 clen)
+ *              mu_extrap_off = mu_orig_on - ln(1/t) / lambda_off
+ *            with mu_orig, K (nrandhits), dbsize and tailp reused from the
+ *            on-set; lambda_off <= 0 keeps off = on.
+ *
+ *            <use_onset_tailp> selects t: FALSE = the corrector's fixed
+ *            per-mode t_eff (for cmbuild's predicted on-set, whose stored
+ *            tailp is a placeholder); TRUE = the on-set's own stored tailp
+ *            (for an on-set fit by cmcalibrate, where mu_orig and mu_extrap
+ *            are related through that tailp). On the paired cmcalibrate
+ *            null3-on/off data the corrector was fit to, TRUE gives fewer
+ *            AT-rich family x mode cells > 2x permissive at E = 1 (78 vs
+ *            85 of 168; off = on gives 132) (brief 26_0823-006).
+ *
+ * Returns:   eslOK on success; eslEINVAL if <cm> has no valid on-set;
+ *            eslEMEM on allocation failure.
+ */
+int
+cm_FastCalibrate_Null3OffFromOn(CM_t *cm, int use_onset_tailp)
+{
+  static const int inf_to_model_mode[EXP_NMODES] = {
+    MODE_ECMGC,  /* EXP_CM_GC = 0 */
+    MODE_ECMGI,  /* EXP_CM_GI = 1 */
+    MODE_ECMLC,  /* EXP_CM_LC = 2 */
+    MODE_ECMLI,  /* EXP_CM_LI = 3 */
+  };
+  int    is_noss, nd, i, status;
+  double gc, lc, gate;
+  int    apply_off;
+
+  if (cm->expA == NULL || ! (cm->flags & CMH_EXPTAIL_STATS)) return eslEINVAL;
+  for (i = 0; i < EXP_NMODES; i++)
+    if (cm->expA[i] == NULL || ! cm->expA[i]->is_valid) return eslEINVAL;
+
+  is_noss = 1;
+  for (nd = 0; nd < cm->nodes; nd++)
+    if (cm->ndtype[nd] == MATP_nd) { is_noss = 0; break; }
+
+  /* The corrector DISPATCHES on is_noss (brief 072):
+   *   STR  CMs (is_noss==0): brief-068 corrector, gate 0.48, all 4 modes' dlambda.
+   *   NOSS CMs (is_noss==1): brief-070 corrector, gate 0.47, ONLY the local
+   *                          modes (ECMLC, ECMLI) corrected; glocal (ECMGC,
+   *                          ECMGI) ship off==on (NOSS glocal not corrected).
+   * Identical mu/K/guard machinery for STR and NOSS; only (gate, coef table,
+   * form, t_eff, which-modes-corrected) differ. */
+  gc        = cm_fastcal_gc_emit(cm, NULL);
+  lc        = log10((double) cm->clen);
+  gate      = is_noss ? NONULL3_NOSS_GC_GATE : NONULL3_GC_GATE;
+  apply_off = (gc >= 0.0 && gc <= gate);
+
+  if (cm->expA_nonull3 == NULL) {
+    ESL_ALLOC(cm->expA_nonull3, sizeof(ExpInfo_t *) * EXP_NMODES);
+    for (i = 0; i < EXP_NMODES; i++) cm->expA_nonull3[i] = NULL;
+  }
+  for (i = 0; i < EXP_NMODES; i++) {
+    if (cm->expA_nonull3[i] == NULL) {
+      cm->expA_nonull3[i] = CreateExpInfo();
+      if (cm->expA_nonull3[i] == NULL) { status = eslEMEM; goto ERROR; }
+    }
+    /* default: off = on (balanced/GC-rich, out-of-gate, degenerate, or, for
+     * NOSS, a glocal mode that is not corrected) */
+    CopyExpInfo(cm->expA[i], cm->expA_nonull3[i]);
+
+    if (apply_off) {
+      int    mmode   = inf_to_model_mode[i];
+      /* NOSS corrects only the local modes; STR corrects all 4. */
+      int    correct = is_noss ? (mmode == MODE_ECMLC || mmode == MODE_ECMLI) : 1;
+      if (correct) {
+        double lam_on  = cm->expA[i]->lambda;
+        double dlam    = is_noss ? nonull3_noss_dlam(mmode, gc, lc)
+                                 : nonull3_dlam     (mmode, gc, lc);
+        double teff    = use_onset_tailp ? cm->expA[i]->tailp
+                       : (is_noss ? nonull3_noss_teff[mmode] : nonull3_teff[mmode]);
+        double lam_off = lam_on + dlam;
+        if (lam_off > 0.0 && teff > 0.0) {   /* else: degeneracy guard -> keep off=on */
+          double mu_orig_on = cm->expA[i]->mu_orig;
+          cm->expA_nonull3[i]->lambda    = lam_off;
+          cm->expA_nonull3[i]->mu_orig   = mu_orig_on;   /* delta mu_orig = 0 (brief 068/070) */
+          cm->expA_nonull3[i]->mu_extrap = mu_orig_on - log(1.0 / teff) / lam_off;
+          /* nrandhits (K), dbsize, tailp reused via CopyExpInfo */
+        }
+      }
+    }
+    cm->expA_nonull3[i]->is_valid = TRUE;
+  }
+  cm->flags |= CMH_EXPTAIL_NONULL3_STATS;
+
+  /* Optional full-precision validation dump (brief 069): one line per mode,
+   * name mode(0=GC,1=GI,2=LC,3=LI) gc clen apply lam_on lam_off muorig_on muext_off */
+  {
+    const char *n3_dump = getenv("FASTCAL_NONULL3_DUMP");
+    if (n3_dump != NULL) {
+      FILE *nfp = fopen(n3_dump, "a");
+      if (nfp != NULL) {
+        for (i = 0; i < EXP_NMODES; i++)
+          fprintf(nfp, "%s\t%d\t%.17g\t%d\t%d\t%.17g\t%.17g\t%.17g\t%.17g\n",
+                  cm->name ? cm->name : "unknown", i, gc, cm->clen, apply_off,
+                  cm->expA[i]->lambda, cm->expA_nonull3[i]->lambda,
+                  cm->expA[i]->mu_orig, cm->expA_nonull3[i]->mu_extrap);
+        fclose(nfp);
+      }
+    }
+  }
+  return eslOK;
+
+ ERROR:
+  return status;
 }
 
 

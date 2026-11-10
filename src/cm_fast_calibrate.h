@@ -24,6 +24,16 @@
  */
 extern int  cm_FastCalibrate(CM_t *cm);
 
+/* cm_FastCalibrate_Null3OffFromOn()
+ *   Compute cm->expA_nonull3 (null3-OFF E-value parameters) from the
+ *   null3-ON set in cm->expA with the gated delta-lambda corrector.
+ *   use_onset_tailp: FALSE = fixed per-mode t_eff (cmbuild's predicted
+ *   on-set); TRUE = each mode's stored tailp (an on-set fit by cmcalibrate).
+ *   Called by cm_FastCalibrate() with FALSE.
+ *   Returns eslOK, eslEINVAL (no valid on-set) or eslEMEM.
+ */
+extern int  cm_FastCalibrate_Null3OffFromOn(CM_t *cm, int use_onset_tailp);
+
 /* cm_LocalMu()
  *   Fixed-lambda mini-simulation for local mu_extrap estimation.
  *   Overwrites cm->expA[EXP_CM_LC/LI]->mu_extrap and ->mu_orig.
