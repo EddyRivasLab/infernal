@@ -139,6 +139,8 @@ check:
 	${QUIET_SUBDIR0}${ESLDIR}              ${QUIET_SUBDIR1} check
 	${QUIET_SUBDIR0}${HMMERDIR}/testsuite  ${QUIET_SUBDIR1} check
 	${QUIET_SUBDIR0}testsuite              ${QUIET_SUBDIR1} check
+	${QUIET_SUBDIR0}src                    ${QUIET_SUBDIR1} cm_fast_calibrate_regression
+	./src/cm_fast_calibrate_regression ${top_srcdir}/testsuite/cm_fast_calibrate
 
 # devcheck: Run Infernal developer test suite (slower, but more comprehensive than 'check').
 #
