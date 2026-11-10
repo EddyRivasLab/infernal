@@ -2212,11 +2212,16 @@ hmm_master(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int ncpus, int nproc)
   else if (sstatus != eslEOF)     hmm_fatal("Unexpected error while reading sequence file");
 
 #ifdef HAVE_MPI
-  /* done with all blocks: tell the workers */
+  /* done with all blocks: each worker has said it is ready for another
+   * block; receive that, so no message is left unreceived at
+   * MPI_Finalize(), and tell it there is none */
   if (nproc > 0) {
-    int wi;
-    for (wi = 1; wi < nproc; wi++)
+    int        wi, wstatus;
+    MPI_Status mpistatus;
+    for (wi = 1; wi < nproc; wi++) {
+      MPI_Recv(&wstatus, 1, MPI_INT, wi, INFERNAL_INITIALREADY_TAG, MPI_COMM_WORLD, &mpistatus);
       if (cm_dsq_MPISend(NULL, -1, -1, wi, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size) != eslOK) mpi_failure("MPI send failed");
+    }
   }
 #endif
 
