@@ -455,7 +455,7 @@ static void hmm_pipeline_thread(void *arg);
 static int  mpi_master   (ESL_GETOPTS *go, struct cfg_s *cfg);
 static int  mpi_worker   (ESL_GETOPTS *go, struct cfg_s *cfg);
 static void mpi_failure  (char *format, ...);
-static void hmm_mpi_align_block(ESL_SQ_BLOCK *sq_block, P7_TRACE **trA, float *stA, char **buf, int *nalloc, int nproc);
+static void hmm_mpi_align_block(ESL_SQ_BLOCK *sq_block, P7_TRACE **trA, float *stA, char **buf, int *nalloc, int *idle, int *ret_nidle, int *ready_seen);
 #define INFERNAL_ERROR_TAG          1
 #define INFERNAL_DSQ_TAG            2
 #define INFERNAL_INITIALREADY_TAG   3
@@ -2080,6 +2080,9 @@ hmm_master(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int ncpus, int nproc)
 #ifdef HAVE_MPI
   char          *mpibuf          = NULL;
   int            mpibuf_size     = 0;
+  int           *mpi_idle        = NULL;  /* MPI workers free between blocks */
+  int            mpi_nidle       = 0;
+  int           *mpi_ready_seen  = NULL;  /* [wi] TRUE once worker wi's start-up message is received */
 #endif
 #ifdef HMMER_THREADS
   ESL_THREADS    *threadObj      = NULL;
@@ -2124,6 +2127,13 @@ hmm_master(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int ncpus, int nproc)
     if (ncpus == 0 && (ha = hmm_aligner_Create(go, cm)) == NULL) hmm_fatal("out of memory");
   }
 
+#ifdef HAVE_MPI
+  if (nproc > 0) {
+    ESL_ALLOC(mpi_idle,       sizeof(int) * nproc);
+    ESL_ALLOC(mpi_ready_seen, sizeof(int) * nproc);
+    esl_vec_ISet(mpi_ready_seen, nproc, FALSE);
+  }
+#endif
   ESL_ALLOC(pp_totp, sizeof(double) * (cm->mlp7->M + 1));
   ESL_ALLOC(pp_nuse, sizeof(int)    * (cm->mlp7->M + 1));
   esl_vec_DSet(pp_totp, cm->mlp7->M + 1, 0.);
@@ -2165,7 +2175,7 @@ hmm_master(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int ncpus, int nproc)
     /* align the sequences in the block */
     if (nproc > 0) {
 #ifdef HAVE_MPI
-      hmm_mpi_align_block(sq_block, trA + nmap_cur, stA, &mpibuf, &mpibuf_size, nproc);
+      hmm_mpi_align_block(sq_block, trA + nmap_cur, stA, &mpibuf, &mpibuf_size, mpi_idle, &mpi_nidle, mpi_ready_seen);
 #endif
     }
 #ifdef HMMER_THREADS
@@ -2212,14 +2222,14 @@ hmm_master(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int ncpus, int nproc)
   else if (sstatus != eslEOF)     hmm_fatal("Unexpected error while reading sequence file");
 
 #ifdef HAVE_MPI
-  /* done with all blocks: each worker has said it is ready for another
-   * block; receive that, so no message is left unreceived at
-   * MPI_Finalize(), and tell it there is none */
+  /* done with all blocks: every worker is free now. Receive the start-up
+   * message of any worker that never got a sequence, so no message is
+   * left unreceived at MPI_Finalize(), then stop each worker. */
   if (nproc > 0) {
     int        wi, wstatus;
     MPI_Status mpistatus;
     for (wi = 1; wi < nproc; wi++) {
-      MPI_Recv(&wstatus, 1, MPI_INT, wi, INFERNAL_INITIALREADY_TAG, MPI_COMM_WORLD, &mpistatus);
+      if (! mpi_ready_seen[wi]) MPI_Recv(&wstatus, 1, MPI_INT, wi, INFERNAL_INITIALREADY_TAG, MPI_COMM_WORLD, &mpistatus);
       if (cm_dsq_MPISend(NULL, -1, -1, wi, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size) != eslOK) mpi_failure("MPI send failed");
     }
   }
@@ -2253,7 +2263,9 @@ hmm_master(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int ncpus, int nproc)
   }
 #endif
 #ifdef HAVE_MPI
-  if (mpibuf != NULL) free(mpibuf);
+  if (mpibuf         != NULL) free(mpibuf);
+  if (mpi_idle       != NULL) free(mpi_idle);
+  if (mpi_ready_seen != NULL) free(mpi_ready_seen);
 #endif
   hmm_aligner_Destroy(ha);
   free(pp_totp);
@@ -2704,16 +2716,24 @@ hmm_trace_MPISend(P7_TRACE *tr, int64_t idx, const float *st, int dest, int tag,
  * HMM-only alignment's MPI master side for one block of sequences:
  * send each sequence to the next free worker, and receive each trace
  * into <trA>[i] and its score-table values into <stA> + i*HMMST_N, i =
- * the sequence's index in the block. Then tell the <nproc>-1 workers
- * the block is done, as mpi_master() does in CM mode. <*buf>/<*nalloc>
- * is the master's MPI buffer.
+ * the sequence's index in the block. <*buf>/<*nalloc> is the master's
+ * MPI buffer.
+ *
+ * Unlike CM mode, there is no end-of-block signal: an HMM-only worker
+ * keeps no per-block state, and in CM mode's protocol a worker that got
+ * no sequence in a block takes that signal for the end of the input and
+ * quits. Instead the workers that are free at the end of a block are
+ * kept in <idle> (<*ret_nidle> of them) for the next one, and
+ * <ready_seen>[wi] records that worker <wi>'s one start-up "ready"
+ * message has been received; hmm_master() stops all workers after the
+ * last block (brief 26_0821-192).
  */
 static void
-hmm_mpi_align_block(ESL_SQ_BLOCK *sq_block, P7_TRACE **trA, float *stA, char **buf, int *nalloc, int nproc)
+hmm_mpi_align_block(ESL_SQ_BLOCK *sq_block, P7_TRACE **trA, float *stA, char **buf, int *nalloc, int *idle, int *ret_nidle, int *ready_seen)
 {
   MPI_Status  mpistatus;
   int         buf_size, pos, wi;
-  int         have_work = TRUE;
+  int         nidle     = *ret_nidle;
   int         nworking  = 0;
   int         si        = 0;
   int64_t     recv_idx;
@@ -2723,7 +2743,16 @@ hmm_mpi_align_block(ESL_SQ_BLOCK *sq_block, P7_TRACE **trA, float *stA, char **b
   void       *tmp;
   int         status;
 
-  while (have_work || nworking > 0) {
+  /* first the workers left free by the previous block */
+  while (nidle > 0 && si < sq_block->count) {
+    wi = idle[--nidle];
+    sq = sq_block->list + si;
+    if (cm_dsq_MPISend(sq->dsq, sq->L, sq_block->first_seqidx + si, wi, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, buf, nalloc) != eslOK) mpi_failure("problem sending dsq to worker %d", wi);
+    nworking++;
+    si++;
+  }
+
+  while (si < sq_block->count || nworking > 0) {
     if (MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &mpistatus) != 0) mpi_failure("MPI error receiving message");
     if (MPI_Get_count(&mpistatus, MPI_PACKED, &buf_size)                   != 0) mpi_failure("MPI get count failed");
     if (*buf == NULL || buf_size > *nalloc) { ESL_RALLOC(*buf, tmp, sizeof(char) * buf_size); *nalloc = buf_size; }
@@ -2739,20 +2768,19 @@ hmm_mpi_align_block(ESL_SQ_BLOCK *sq_block, P7_TRACE **trA, float *stA, char **b
       esl_vec_FCopy(recv_st, HMMST_N, stA + (size_t) recv_idx * HMMST_N);
       nworking--;
     }
+    else if (mpistatus.MPI_TAG == INFERNAL_INITIALREADY_TAG) ready_seen[wi] = TRUE;
     else if (mpistatus.MPI_TAG == INFERNAL_ERROR_TAG)        mpi_failure("MPI client %d raised error:\n%s\n", wi, *buf);
-    else if (mpistatus.MPI_TAG != INFERNAL_INITIALREADY_TAG) mpi_failure("Unexpected tag %d from %d\n", mpistatus.MPI_TAG, wi);
+    else                                                     mpi_failure("Unexpected tag %d from %d\n", mpistatus.MPI_TAG, wi);
 
-    if (have_work) {
+    if (si < sq_block->count) {
       sq = sq_block->list + si;
       if (cm_dsq_MPISend(sq->dsq, sq->L, sq_block->first_seqidx + si, wi, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, buf, nalloc) != eslOK) mpi_failure("problem sending dsq to worker %d", wi);
       nworking++;
       si++;
-      if (si == sq_block->count) have_work = FALSE;
     }
+    else idle[nidle++] = wi;
   }
-  /* end of block: a NULL dsq to each worker */
-  for (wi = 1; wi < nproc; wi++)
-    if (cm_dsq_MPISend(NULL, -1, -1, wi, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, buf, nalloc) != eslOK) mpi_failure("MPI send failed");
+  *ret_nidle = nidle;
   return;
 
  ERROR:
@@ -3116,7 +3144,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   if((status = initialize_cm(go, cfg, errbuf, cm)) != eslOK) mpi_failure(errbuf);
 
   /* --hmm mode: HMM-only alignment worker. Receives dsqs from the master
-   * block by block, as the CM-mode worker below does, aligns each with
+   * (see hmm_mpi_align_block()), aligns each with
    * hmm_align_one() (the same code as the serial and threaded paths), and
    * sends the trace and score-table values back.
    */
@@ -3128,34 +3156,26 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
     char         wname[64];
 
     if ((ha = hmm_aligner_Create(go, cm)) == NULL) mpi_failure("out of memory");
-    blocks_remain_in_file = TRUE;
-    while(blocks_remain_in_file) {
-      status = eslOK;
-      MPI_Send(&status, 1, MPI_INT, 0, INFERNAL_INITIALREADY_TAG, MPI_COMM_WORLD);
+    /* one start-up message, then sequences until a NULL dsq; there are no
+     * block boundaries in HMM-only mode (see hmm_mpi_align_block()) */
+    status = eslOK;
+    MPI_Send(&status, 1, MPI_INT, 0, INFERNAL_INITIALREADY_TAG, MPI_COMM_WORLD);
+    while (1) {
       status = cm_dsq_MPIRecv(0, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size, &dsq, &L, &idx);
-      if     (status == eslOK  && dsq    == NULL)   mpi_failure("problem receiving 1st dsq");
+      if     (status == eslOK  && dsq    == NULL)   mpi_failure("problem receiving dsq");
       else if(status == eslEOD && dsq    != NULL)   mpi_failure("problem receiving termination signal");
-      else if(status != eslOK  && status != eslEOD) mpi_failure("problem receiving 1st dsq");
-      if(dsq == NULL) { blocks_remain_in_file = FALSE; seqs_remain_in_block = FALSE; }
-      else            { blocks_remain_in_file = TRUE;  seqs_remain_in_block = TRUE;  }
+      else if(status != eslOK  && status != eslEOD) mpi_failure("problem receiving dsq");
+      if (dsq == NULL) break;
 
-      while(seqs_remain_in_block) {
-        /* the worker gets no names; error messages name the sequence by its number in the input */
-        snprintf(wname, sizeof(wname), "#%" PRId64, idx+1);
-        if ((sq = esl_sq_CreateDigitalFrom(cfg->abc, wname, dsq, L, NULL, NULL, NULL)) == NULL) mpi_failure("out of memory");
-        free(dsq);
-        if ((wtr = (ha->do_hmmvit ? p7_trace_Create() : p7_trace_CreateWithPP())) == NULL) mpi_failure("out of memory");
-        if ((status = hmm_align_one(ha, sq, wtr, hst, herrbuf)) != eslOK) mpi_failure("%s", herrbuf);
-        if (hmm_trace_MPISend(wtr, idx, hst, 0, INFERNAL_ALNDATA_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size) != eslOK) mpi_failure("out of memory");
-        p7_trace_Destroy(wtr);
-        esl_sq_Destroy(sq);
-
-        status = cm_dsq_MPIRecv(0, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size, &dsq, &L, &idx);
-        if     (status == eslOK  && dsq    == NULL)   mpi_failure("problem receiving dsq");
-        else if(status == eslEOD && dsq    != NULL)   mpi_failure("problem receiving termination signal");
-        else if(status != eslOK  && status != eslEOD) mpi_failure("problem receiving dsq");
-        if(dsq == NULL) seqs_remain_in_block = FALSE;
-      }
+      /* the worker gets no names; error messages name the sequence by its number in the input */
+      snprintf(wname, sizeof(wname), "#%" PRId64, idx+1);
+      if ((sq = esl_sq_CreateDigitalFrom(cfg->abc, wname, dsq, L, NULL, NULL, NULL)) == NULL) mpi_failure("out of memory");
+      free(dsq);
+      if ((wtr = (ha->do_hmmvit ? p7_trace_Create() : p7_trace_CreateWithPP())) == NULL) mpi_failure("out of memory");
+      if ((status = hmm_align_one(ha, sq, wtr, hst, herrbuf)) != eslOK) mpi_failure("%s", herrbuf);
+      if (hmm_trace_MPISend(wtr, idx, hst, 0, INFERNAL_ALNDATA_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size) != eslOK) mpi_failure("out of memory");
+      p7_trace_Destroy(wtr);
+      esl_sq_Destroy(sq);
     }
     hmm_aligner_Destroy(ha);
     FreeCM(cm);
