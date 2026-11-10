@@ -272,8 +272,10 @@ static ESL_OPTIONS options[] = {
    * the CM file is ignored. cmbuild writes F1F2F3CUT only with --fil-pcut
    * (brief 26_0821-160); a CM without it searches with the default
    * thresholds. With --use-fil-pcut, default cap is 10 per stage
-   * (validated as the strict-improvement Pareto point on rmark4). */
-  { "--use-fil-pcut", eslARG_NONE, FALSE, NULL, NULL,    NULL, NULL, "--max,--nohmm", "use per-CM F1/F2/F3 P-value cutoffs (F1F2F3CUT, from cmbuild --fil-pcut)", 106 },
+   * (validated as the strict-improvement Pareto point on rmark4).
+   * cmscan refuses --use-fil-pcut (see process_commandline()); the option
+   * stays in the table so the refusal can say why. */
+  { "--use-fil-pcut", eslARG_NONE, FALSE, NULL, NULL,    NULL, NULL, "--max,--nohmm", "not supported by cmscan (use cmsearch --use-fil-pcut)",                    106 },
   { "--pcut-F1cap", eslARG_REAL, "10.0", NULL, "x>=1.0", NULL, "--use-fil-pcut", NULL, "with --use-fil-pcut: max F1 tightening factor",                          106 },
   { "--pcut-F2cap", eslARG_REAL, "10.0", NULL, "x>=1.0", NULL, "--use-fil-pcut", NULL, "with --use-fil-pcut: max F2 tightening factor",                          106 },
   { "--pcut-F3cap", eslARG_REAL, "10.0", NULL, "x>=1.0", NULL, "--use-fil-pcut", NULL, "with --use-fil-pcut: max F3 tightening factor",                          106 },
@@ -2150,6 +2152,18 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
   if (strcmp(*ret_cmfile, "-") == 0) { esl_fprintf(stderr, "cmscan cannot read <cm database> from stdin stream, because it must have cmpress'ed auxfiles\n"); goto ERROR; }
 
   /* Check for incompatible option combinations I don't know how to disallow with esl_getopts */
+
+  /* --use-fil-pcut is supported by cmsearch only. cmscan reads each CM
+   * lazily, after that model's F1-F3 filters have run, and
+   * cm_pli_NewModel() sets the per-CM thresholds only when the CM is
+   * read, so each model would be filtered with the thresholds of the
+   * previous CM read. Supporting it would require storing the cutoffs in
+   * the cmpress'ed files (brief 26_0821-191).
+   */
+  if (esl_opt_GetBoolean(go, "--use-fil-pcut")) {
+    esl_fprintf(stderr, "Error: --use-fil-pcut is supported by cmsearch only, not cmscan\n");
+    exit(1);
+  }
 
   /* --beta only makes sense with --qdb, --nohmm or --max */
   if (esl_opt_IsUsed(go, "--beta") && (! esl_opt_GetBoolean(go, "--qdb")) && 

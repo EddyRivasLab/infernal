@@ -212,6 +212,8 @@
 1  exercise    scan/help/1    @src/cmscan@ -h
 1  exercise    scan/help/2    @src/cmscan@ --devhelp
 1  exercise    scan/tC        @src/cmscan@ -Z 1000 %TRNA.C.CM% !testsuite/emitted-tRNA.fa!
+# --use-fil-pcut is cmsearch-only; cmscan refuses it
+1  fail        scan/t.pcut    @src/cmscan@ --use-fil-pcut -Z 1000 %TRNA.C.CM% !testsuite/emitted-tRNA.fa!
 1  prep        cleanup/tC     rm -f %TRNA.C.CM%.*
 1  exercise    scan/vC        @src/cmscan@ -Z 1000 %VAULT.C.CM% !testsuite/emitted-tRNA.fa!
 1  prep        cleanup/vC     rm -f %VAULT.C.CM%.*
