@@ -164,6 +164,65 @@ nonull3_noss_dlam(int mode, double gc, double lc)
   return c[0] + c[1]*gc + c[2]*gc*lc + c[3]*gc*lc*lc;
 }
 
+/* ====================== short structured CMs (clen < 40) ======================
+ * brief 26_0823-003 (decided in its walkthrough; implemented in brief 26_0823-006):
+ * below clen 40 the C0 ridges extrapolate far outside their training range, so
+ * structured CMs (is_noss == 0) with clen < SHORTCM_CLEN_MAX use dedicated
+ * predictors instead, overriding every other route (ridges, the AT-rich route,
+ * and the clen < g_smallcm_clen_max local lambda constant):
+ *   local  (ECMLC, ECMLI): "B2", per mode three 4-feature ridges (log lambda,
+ *          mu_extrap, log K) on [log_clen, ic_mean, pct_matp, corrected gc_emit],
+ *          trained on a synthetic short-CM corpus (STR, clen 10-59, n = 834,
+ *          alpha 0.01). Source: brief003_run/synth/B_fits.json key "B2".
+ *   glocal (ECMGC, ECMGI): "B1i", constants = medians of Rfam cmcalibrate fits
+ *          of structured CMs with clen 40-59 (n = 288).
+ * mu_orig is not predicted by either; it is set to mu_extrap + ln(1/t_eff)/lambda
+ * with the STR null3-off corrector's per-mode t_eff, so the corrector's
+ * mu_extrap_off = mu_orig - ln(1/t_eff)/lambda_off is anchored on this on-set
+ * (and gives off == on when the correction is zero).
+ * Not applied in ere mode (--ere/--enone builds), which has no short-CM fit.
+ */
+#define SHORTCM_CLEN_MAX 40
+
+/* B2 ridge: pred = y(intercept + sum_i coef[i] * (x[i] - mean[i]) / std[i]),
+ * x = {log_clen, ic_mean, pct_matp, gc}; y = exp for lambda and K, identity for mu_extrap. */
+typedef struct {
+  double mean[4], std[4];
+  double lam_coef[4], lam_icpt;
+  double mue_coef[4], mue_icpt;
+  double K_coef[4],   K_icpt;
+} ShortCM_B2;
+
+static const ShortCM_B2 shortcm_b2[2] = {
+  /* ECMLC */
+  { { 3.2288107446570735, 1.5487258887642716, 0.26860340020173828, 0.47967229616306994 },
+    { 0.4883236134141668, 0.40941135154148395, 0.079511693182393955, 0.11528485899332196 },
+    { -0.016480936216292662, -0.018447131953848426, 0.016891946127968935, 0.024554044801536432 }, -0.48329675002496719,
+    { -1.2498559808824907, -1.0612246847436579, 1.0236282072976022, -0.28562316408150329 },     -5.0732860911270983,
+    { 0.0070360131654227057, 0.21897552872991821, -0.16259394382194206, 0.018897565780306665 }, -1.1318270050448711 },
+  /* ECMLI */
+  { { 3.2288107446570735, 1.5487258887642716, 0.26860340020173828, 0.47967229616306994 },
+    { 0.4883236134141668, 0.40941135154148395, 0.079511693182393955, 0.11528485899332196 },
+    { -0.048101339442464766, -0.041748455131675834, 0.021217420354261909, 0.024575078767813733 }, -0.47100286306224198,
+    { -1.2625310722761922, -1.3827445113060239, 1.0023313372257605, -0.30593634494513083 },       -3.8419955635491609,
+    { -0.027734861184254694, 0.24559987204234396, -0.13777146614087421, 0.014611185232112132 },   -1.3460028864209403 },
+};
+
+/* B1i glocal constants {lambda, mu_extrap, K} (brief001_run/whatif/rfam_smallcm_constants.txt). */
+static const double shortcm_b1i[2][3] = {
+  /* ECMGC */ { 0.4264, -17.373, 0.1089  },
+  /* ECMGI */ { 0.4547, -12.757, 0.07205 },
+};
+
+static double
+shortcm_b2_eval(const double *coef, double icpt, const ShortCM_B2 *b, const double *x)
+{
+  double s = icpt;
+  int    i;
+  for (i = 0; i < 4; i++) s += coef[i] * (x[i] - b->mean[i]) / b->std[i];
+  return s;
+}
+
 /* =========================================================================
  * Data structures
  */
@@ -1690,6 +1749,8 @@ cm_FastCalibrate(CM_t *cm)
   int    atrich_route = (!is_noss &&
                          (bucket == BUCKET_TINY || bucket == BUCKET_SMALL) &&
                          atrich_gc >= 0.0 && atrich_gc <= ATRICH_GC_GATE);
+  /* Short structured CMs: B2/B1i override (default path only; see shortcm_b2[]). */
+  int    shortcm_route = (!is_noss && !g_fastcal_ere_mode && cm->clen < SHORTCM_CLEN_MAX);
   {
     /* Optional validation dump (n_cons must == clen; gc must match Python). */
     const char *gc_dump = getenv("FASTCAL_GC_DUMP");
@@ -1896,6 +1957,24 @@ cm_FastCalibrate(CM_t *cm)
       } else {
         K_pred = predict_K(mode, is_noss, bucket, feats);
       }
+      /* Short structured CMs (clen < SHORTCM_CLEN_MAX): B2 (local) / B1i
+       * (glocal) override everything above; mu_orig is derived from them
+       * (see the comment at shortcm_b2[]). Not in ere mode. */
+      if (shortcm_route) {
+        if (mode == MODE_ECMLC || mode == MODE_ECMLI) {
+          const ShortCM_B2 *b = &shortcm_b2[mode == MODE_ECMLC ? 0 : 1];
+          double x[4] = { feats[FAST_CAL_FEAT_log_clen], feats[FAST_CAL_FEAT_ic_mean],
+                          feats[FAST_CAL_FEAT_pct_matp], atrich_gc };
+          lam    = exp(shortcm_b2_eval(b->lam_coef, b->lam_icpt, b, x));
+          mu_e   =     shortcm_b2_eval(b->mue_coef, b->mue_icpt, b, x);
+          K_pred = exp(shortcm_b2_eval(b->K_coef,   b->K_icpt,   b, x));
+        } else {
+          const double *c = shortcm_b1i[mode == MODE_ECMGC ? 0 : 1];
+          lam = c[0]; mu_e = c[1]; K_pred = c[2];
+        }
+        mu_o = mu_e + log(1.0 / nonull3_teff[mode]) / lam;
+      }
+
       int    nrh    = (int) round(K_pred * 1.6e6);
       if (nrh < 1) nrh = 1;
 
@@ -1903,7 +1982,7 @@ cm_FastCalibrate(CM_t *cm)
       SetExpInfo(cm->expA[i], lam, mu_o, 1.6e6, nrh, 0.01);
       /* Override mu_extrap with the directly-predicted value
        * (SetExpInfo would recompute it from mu_orig/lambda/tailp). */
-      if (r_mue->nfeat > 0)
+      if (r_mue->nfeat > 0 || shortcm_route)
         cm->expA[i]->mu_extrap = mu_e;
     }
 
