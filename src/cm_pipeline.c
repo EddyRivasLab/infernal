@@ -6442,8 +6442,12 @@ pli_scan_mode_read_cm(CM_PIPELINE *pli, off_t cm_offset, float *p7_evparam, int 
   }
 #endif
   cm_file_Position(pli->cmfp, cm_offset);
-  /* read_fp7=TRUE: needed for --msvband / --vitband which call p7_ProfileConfig(cm->fp7,...) in dispatch */
-  if((status = cm_file_Read(pli->cmfp, TRUE, &(pli->abc), &cm)) != eslOK) ESL_FAIL(status, pli->errbuf, "%s", pli->cmfp->errbuf);
+  /* Read the filter HMM (cm->fp7) only for --msvband / --vitband, which
+   * call p7_ProfileConfig(cm->fp7,...) in envelope band derivation. No
+   * other scan path uses cm->fp7 (search alignment never sets
+   * CM_ALIGN_P7BANDED), and reading it costs time and memory per CM read
+   * (brief 26_0821-191). */
+  if((status = cm_file_Read(pli->cmfp, (pli->do_msvband || pli->do_vitband), &(pli->abc), &cm)) != eslOK) ESL_FAIL(status, pli->errbuf, "%s", pli->cmfp->errbuf);
 #ifdef HMMER_THREADS
   if (pli->cmfp->syncRead) { 
     if (pthread_mutex_unlock (&pli->cmfp->readMutex) != 0) ESL_EXCEPTION(eslESYS, "mutex unlock failed");
