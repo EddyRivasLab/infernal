@@ -1936,6 +1936,10 @@ hmm_output_block(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, ESL_SQ **sq
   if ((status = p7_tracealign_Seqs(sqA, trA, ntot, hmm->M, p7_ALL_CONSENSUS_COLS, hmm, &msa)) != eslOK)
     hmm_fatal("p7_tracealign_Seqs() failed");
 
+  /* "author" (#=GF AU) line, as CM mode's Parsetrees2Alignment() writes it */
+  ESL_ALLOC(msa->au, sizeof(char) * (strlen(INFERNAL_VERSION) + 10));
+  snprintf(msa->au, strlen(INFERNAL_VERSION) + 10, "Infernal %s", INFERNAL_VERSION);
+
   /* SS_cons: the CM's consensus structure on the consensus columns (the
    * p7 RF marks them, 1:1 with CM consensus positions), with the
    * pseudoknot letters overlaid as CM mode does (Parsetrees2Alignment(),
