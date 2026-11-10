@@ -1,7 +1,7 @@
 /* cm_p7_band_chk.c
  *
  * Checkpointed banded CP9 P7B Forward/Backward + band reduction, double
- * precision (brief 26_0430-150/153/154). Produces cp9b bands with
+ * precision (brief 26_0430-150/26_0430-153/26_0430-154). Produces cp9b bands with
  * O(sqrt(L)*avg_bw) working memory instead of full ncells-sized banded CP9
  * P7B matrices.
  *
@@ -16,7 +16,7 @@
  * banded-Backward EL fold that every live kernel in this file has, so
  * reviving it as-is reintroduces an inflated-posterior bug.
  *
- * Design (see project memory project_ckpt_dual_sweep):
+ * Design (briefs 26_0430-144/26_0430-146):
  *   Bands are derived via TWO opposite-direction cumulative dlogsum sweeps
  *   (MIN ascending i; MAX descending i). A single HMMER-style descending
  *   decode does not map. So:
@@ -27,7 +27,7 @@
  *        the boundary checkpoints, build posterior rows, accumulate min.
  *     4. MAX sweep: segments right->left; accumulate max.
  *   The float/truncated family below (brief 26_0430-150, promoted to double
- *   precision by brief 154) is a verbatim transcription of the
+ *   precision by brief 26_0430-154) is a verbatim transcription of the
  *   non-checkpointed float originals cp9_ForwardP7BF / cp9_BackwardP7BF /
  *   cp9_PredictStartAndEndPositionsP7BF (cm_p7_band.c), so checkpointed bands
  *   match that non-checkpointed path modulo the double promotion. The
@@ -67,7 +67,7 @@
  * so that the checkpointed float bands are BYTE-IDENTICAL to the
  * non-checkpointed float truncated path. Two float-specific structural
  * features that the int path lacks and MUST be reproduced:
- *   (a) cp9_ForwardP7BF has the brief-134 BM-coverage supplementary pass
+ *   (a) cp9_ForwardP7BF has the brief 26_0430-134 BM-coverage supplementary pass
  *       (begin + EL-from-into-M for the full row band minus the match range);
  *       it writes mmx/elmx cells the posterior reads.
  *   (b) the erow EL-from-M+1 accumulation is NOT gated on INBAND(i,M).
@@ -76,7 +76,7 @@
  * Function/struct suffix F. Substitutions vs the originals:
  *   mmx[i]->mc, mmx[i-1]->mp, mmx[i+1]->mn (and i/d/el likewise).
  *
- * BRIEF 154: this FLOAT-suffix family is now DOUBLE precision (cells +
+ * BRIEF 26_0430-154: this FLOAT-suffix family is now DOUBLE precision (cells +
  * accumulation + checkpoint storage end-to-end). The non-checkpointed
  * cp9_ForwardP7BF/cp9_BackwardP7BF (cm_p7_band.c) stay float; the structural
  * 1:1 correspondence with those float originals is preserved so they can be
@@ -94,7 +94,7 @@
  * float's 15.7 nats to CP9_DLOGSUM_CUTOFF (36.7 nats). Rests on the brief
  * 26_0430-153/154 finding that logsum *discretization* error was never the source
  * of the genome-scale float32 collapse (float32 *storage* accumulation was); the
- * matrix storage stays double (brief 154), only the per-call transcendental is
+ * matrix storage stays double (brief 26_0430-154), only the per-call transcendental is
  * replaced by an ~5-10 cy table lookup. Validated in brief 26_0430-193 Task 1:
  * byte-identical alignments to the exact path at genome scale (HSV L=146678, MPXV
  * L=197226) and dengue/SARS kmerchain; the only divergence is within-noise low-PP
@@ -125,9 +125,9 @@ cp9_chk_dlogsum_lut_init(void)
 }
 
 /* Double-precision log-sum for the checkpointed double-trunc CP9 F/B kernels
- * (brief 26_0430-153/154/193). -inf-guarded. LUT.
+ * (brief 26_0430-153/26_0430-154/26_0430-193). -inf-guarded. LUT.
  *
- * BASE 2 (briefs 26_0821-024/025/026). Every value this combines is a
+ * BASE 2 (briefs 26_0821-024/26_0821-025/26_0821-026). Every value this combines is a
  * Scorify()d score, i.e. BITS -- Infernal has used bits, not nats, since 2007
  * (see the EPN note in logsum.c). This was transcribed from the int kernels
  * with ILogsum -> p7_FLogsum, which silently changed the base while the values
@@ -177,7 +177,7 @@ cp9_chk_fwd_row0F(CP9_t *cp9, int *kmin, int *kmax, int M,
 }
 
 /* Forward row i (1..L). Verbatim from cp9_ForwardP7BF main loop body, INCLUDING
- * the brief-134 BM-coverage supplementary pass. Cur planes mc/ic/dc/ec (offset
+ * the brief 26_0430-134 BM-coverage supplementary pass. Cur planes mc/ic/dc/ec (offset
  * 0 = kmin[i]); prev planes mp/ip/dp/ep (offset 0 = kmin[i-1]). */
 static void
 cp9_chk_fwd_rowF(CP9_t *cp9, ESL_DSQ *dsq, int i, int *kmin, int *kmax, int M,
@@ -1636,7 +1636,7 @@ cp9_PredictStartAndEndFromPoccF(double *pocc_arr, CP9Bands_t *cp9b, int i0, int 
  * tail. Assumes cp9b->pn_{min,max}_{m,i,d} (1..L coords) and <pocc_arr> are
  * already populated for the desired ratchet step, and that the caller has
  * already set cm->tau, cp9b->thresh1/thresh2, cp9b->tau. Shifts bands to
- * i0..j0, predicts sp/ep (+ brief-149 glocal floor) & marginal candidates
+ * i0..j0, predicts sp/ep (+ brief 26_0430-149 glocal floor) & marginal candidates
  * (trunc) or sets non-trunc valid arrays, then HMM2ij -> GrowHD -> ij2d.
  */
 static int
@@ -1701,7 +1701,7 @@ cp9_FinishBandsFromPnPoccF_chk(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *c
      * every downstream node's reachability), leaving only the degenerate
      * local-begin+EL escape at node 1 as the sole valid parse -- silently
      * discarding a real, correctly-banded parse elsewhere in the tree
-     * (confirmed by direct trace on the brief-201 dengue LC436672.1/
+     * (confirmed by direct trace on the brief 26_0430-201 dengue LC436672.1/
      * OR029744.1 reproducers: consensus columns 1-18 were entirely
      * unreachable while columns 19+ carried a normal, tight, correct band).
      * Fix at the source: for a locally-configured CM (matching the brutal
@@ -1776,7 +1776,7 @@ cp9_FinishBandsFromPnPoccF_chk(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *c
 
   if(do_trunc && (! (cm->flags & CMH_LOCAL_BEGIN))) {
     /* brief 26_0430-185 (mirrors cm_p7_band.c's cp9_FBMatrices2BandsF, non-ckpt twin):
-     * the brief-149 sp1/ep1 floor above forces Jvalid[v] = TRUE for essentially
+     * the brief 26_0430-149 sp1/ep1 floor above forces Jvalid[v] = TRUE for essentially
      * every state without widening the real per-state (j,d) bands computed by
      * ij2d_bands() just above, from the un-floored 1-tau threshold signal. On a
      * sequence with a genuinely, biologically missing region this leaves
@@ -1853,7 +1853,7 @@ cp9_FBMatrices2BandsP7BF_chk(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *dsq, C
  *   Phase 1 -- evaluate step 0 (the current cm->tau/thresh1/thresh2) via the
  *     single-call cp9_FBMatrices2BandsP7BF_chk. For the common 0-bump case this
  *     returns here, byte-identical to the old loop's first iteration, with ZERO
- *     extra memory/compute (critical: keeps the brief-165 genome capstone path
+ *     extra memory/compute (critical: keeps the brief 26_0430-165 genome capstone path
  *     and its 2-3 GB memory recipe unchanged).
  *
  *   Phase 2 -- if step 0 doesn't fit, enumerate the remaining ratchet grid

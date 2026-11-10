@@ -15,7 +15,7 @@
 #   - Every OTHER stem that has broken 'x' pairs KEEPS them as 'x' (no over-fire):
 #     stems A, C, D collectively retain 6 'x' pairs here, none re-labeled 'o'.
 #   - '='/'$' (maintained/covarying) pairs are never touched.
-# These exact per-stem counts were independently derived by hand in brief 027
+# These exact per-stem counts were independently derived by hand in brief 26_0617-027
 # (summary_027), so this is a strong known-answer check, not just "some 'o' appeared".
 #
 # Fixtures (checked in, self-contained): testsuite/tmRNA-pknot.cm (a calibrated
@@ -90,7 +90,7 @@ for (my $i = 0; $i < length($rawCS); $i++) {
     }
 }
 
-# ---- Assertions (the exact known answer from brief 027) --------------------
+# ---- Assertions (the exact known answer from brief 26_0617-027) --------------------
 
 # (1) EXACTLY 5 pairs recovered to 'o'.
 if ($n_o_pairs != 5) {

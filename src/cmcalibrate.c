@@ -454,7 +454,7 @@ main(int argc, char **argv)
 
       /* Store the freshly calibrated stats into the slot that matches this
        * run's null3 setting, PRESERVING the other slot if the input CM carried
-       * it (store-both, briefs 053/069). Pass-2 cm_file_Read() above already
+       * it (store-both, briefs 26_0422-053/26_0422-069). Pass-2 cm_file_Read() above already
        * repopulated cm->expA (on) and/or cm->expA_nonull3 (off) from the input
        * file; we overwrite only our own slot. The off-set lives behind the v1c
        * magic, set automatically by the writer when CMH_EXPTAIL_NONULL3_STATS

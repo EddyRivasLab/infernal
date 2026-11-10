@@ -3223,7 +3223,7 @@ cm_CheckptOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_
  * Brief 26_0610-078 R1: checkpointed, bifurcation (k*)-DISCOVERING
  * CYK max-DP, GLOBAL/non-truncated/no-EL/no-local-begin only.
  *
- * Small-scale proof of the core NEW piece brief 076 (design pass) grounded:
+ * Small-scale proof of the core NEW piece brief 26_0610-076 (design pass) grounded:
  * a B_st combine that SEARCHES k on already-resident checkpoint decks,
  * instead of reading a pre-supplied kpin[v] like ckpt_optacc_deck's B_st
  * branch does.  Transcribes ckpt_optacc_deck's checkpointing SHAPE (deck
@@ -3596,7 +3596,7 @@ cm_CheckptCYKAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
   Parsetree_t *tr = NULL;
   ckpt_cyk_ysh_ctx fctx;
 
-  /* Brief 26_0610-084 (R1-L): the brief-078 global-only fail-fast gate is
+  /* Brief 26_0610-084 (R1-L): the brief 26_0610-078 global-only fail-fast gate is
    * removed -- local (EL + local begin) is now validated byte-exact vs
    * cm_AlignHB(do_optacc=FALSE) across 5S/RNaseP/hairpin(bifs=0) in both
    * configs, incl. genuine internal local-begin entries on fragment seqs. */

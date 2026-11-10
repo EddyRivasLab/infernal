@@ -9,7 +9,7 @@
 #     that hid the round-trip bug found in review of the first implementation);
 #   - the per-seq PS line and BOTH #=GC family lines survive the low-memory /
 #     multi-block (merge) output path (bp_cons / bp_cov via cross-block
-#     accumulation, briefs 020 / 022).
+#     accumulation, briefs 26_0617-020/26_0617-022).
 #
 # Exercises a model that carries BOTH nested and pseudoknot pairs (PK-HAV) and a
 # pure-nested model (tRNA), so all of v / ? / : / + / = / $ / x can appear.
@@ -137,7 +137,7 @@ assert_count("$tmppfx.def.sto", qr/^#=GC\s+bp_cov\b/,   0, "subtest 5: no bp_cov
 ######################################################################
 # Subtest 6: multi-block (merge) path. Emit > 10000 seqs so cmalign routes
 # output through the temporary merge file. The per-seq PS line must survive the
-# regurgitation and re-read; #=GC bp_cons is now EMITTED there too (brief 020),
+# regurgitation and re-read; #=GC bp_cons is now EMITTED there too (brief 26_0617-020),
 # computed by cross-block accumulation: it must be present, dense (no embedded
 # blanks), carry a conservation digit, and re-read cleanly. A tiny model is built
 # just for this volume test (keeps the 10001-seq alignment cheap).
@@ -169,7 +169,7 @@ reread_ok("$tmppfx.big.sto", "$tmppfx.big.sto.rr", "subtest 6 (multi-block, merg
 unlink "$tmppfx.big.sto.rr";
 
 ######################################################################
-# Subtest 7 (brief 023, Part A): partial-span. Fragmentary targets that cover
+# Subtest 7 (brief 26_0617-023, Part A): partial-span. Fragmentary targets that cover
 # only PART of the model, aligned glocally (-g) with truncation allowed, give
 # parses that span only a sub-range of the consensus. (This subtest used
 # -g --sub --notrunc until --sub was removed, brief 26_0821-173.) The
@@ -197,13 +197,13 @@ ps_marks_include("$tmppfx.sub.sto", qr/v/,     "subtest 7: half-present nested '
 reread_ok("$tmppfx.sub.sto", "$tmppfx.sub.rr", "subtest 7 (-g partial-span)");
 
 ######################################################################
-# Subtest 8 (brief 023, Part B): truncated-half '?' fidelity on truncated cmalign
+# Subtest 8 (brief 26_0617-023, Part B): truncated-half '?' fidelity on truncated cmalign
 # parses. With --miss, cmalign marks a truncated 5'/3' flank with missing-data
 # '~'; a base pair straddling the truncation boundary then has one present half
 # and one '~' half. The truncated half must be classified '?' (not 'v', not a
 # placeholder, not a spurious '=/$/x'):
 #   - NESTED pairs: the present half -> '?' (mode-L/R rule, already correct);
-#   - PKNOT pairs: the present half -> '?' too (brief 023 fix in
+#   - PKNOT pairs: the present half -> '?' too (brief 26_0617-023 fix in
 #     annotate_pknot_pairs_str: a '~' half is "truncated", NOT "broken 'x'").
 # So under --miss a '?' must appear AT A PKNOT-LETTER column of SS_cons -- the
 # direct regression guard for the fix (pre-fix that column showed 'x').
@@ -397,7 +397,7 @@ sub write_halves {
 }
 
 # At least one #=GR PS value carries char <mark> at a column where #=GC SS_cons
-# holds a pseudoknot letter (A-Z / a-z). Used to assert the brief-023 fix: a
+# holds a pseudoknot letter (A-Z / a-z). Used to assert the brief 26_0617-023 fix: a
 # truncated half of a PKNOT pair is marked '?' there (pre-fix it was 'x').
 sub ps_mark_at_pknot_col {
     my ($file, $mark, $where) = @_;

@@ -1327,7 +1327,7 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
        * would re-warn per query; cmscan also calls this per CM in the DB, which
        * would spam per-CM. The static dedups across all CMs, queries, and
        * worker threads to one line per invocation (a benign race between two
-       * threads only changes which CM name is recorded). See brief 053
+       * threads only changes which CM name is recorded). See brief 26_0422-053
        * addendum D. Recorded here, and printed in the stdout report by the
        * program via cm_pli_ReportNoNull3Fallback(), not to stderr
        * (brief 26_0821-135). */
@@ -4991,7 +4991,7 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
    * be included in the redefined envelope, any that doesn't will not
    * be.
    */
-  ExpInfo_t **fcyk_expA = cm_pli_ExpInfoA(pli, cm); /* on-set, or off-set under --nonull3 (briefs 053/069) */
+  ExpInfo_t **fcyk_expA = cm_pli_ExpInfoA(pli, cm); /* on-set, or off-set under --nonull3 (briefs 26_0422-053/26_0422-069) */
   cyk_env_cutoff = fcyk_expA[pli->fcyk_cm_exp_mode]->mu_extrap + (log(pli->F6env) / (-1 * fcyk_expA[pli->fcyk_cm_exp_mode]->lambda));
 
 #if eslDEBUGLEVEL >= 2
@@ -5264,7 +5264,7 @@ pli_cyk_seq_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, CM_t **o
   save_tau        = cm->tau;
   cm->tau         = pli->fcyk_tau;
   qdbidx          = (cm->search_opts & CM_SEARCH_NONBANDED) ? SMX_NOQDB : SMX_QDB1_TIGHT;
-  ExpInfo_t **fcyk_expA = cm_pli_ExpInfoA(pli, cm); /* on-set, or off-set under --nonull3 (briefs 053/069) */
+  ExpInfo_t **fcyk_expA = cm_pli_ExpInfoA(pli, cm); /* on-set, or off-set under --nonull3 (briefs 26_0422-053/26_0422-069) */
   cutoff          = fcyk_expA[pli->fcyk_cm_exp_mode]->mu_extrap + (log(pli->F6) / (-1 * fcyk_expA[pli->fcyk_cm_exp_mode]->lambda));
   sq_hitlist      = cm_tophits_Create();
   status = pli_dispatch_cm_search(pli, cm, sq->dsq, 1, sq->n, sq_hitlist, cutoff, 0., qdbidx, &sc, NULL, NULL);

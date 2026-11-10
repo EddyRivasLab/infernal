@@ -3646,10 +3646,10 @@ cm_CheckptTrAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limi
  * Brief 26_0610-078 R2: checkpointed, COMBINED-MODE (J/L/R/T)
  * bifurcation (k*)-DISCOVERING truncated CYK max-DP, structured (bps>0).
  * GLOBAL/non-truncated-local/no-EL only (same scope decision as R1; see
- * brief 078's summary "flagged for Eric" section).
+ * brief 26_0610-078's summary "flagged for Eric" section).
  *
  * Replaces cm_alndata.c's do_trckpt_r4 ncand-loop (which calls
- * TrCYKDivideAndConquerHB once per root-valid mode, brief 076's measured
+ * TrCYKDivideAndConquerHB once per root-valid mode, brief 26_0610-076's measured
  * 6.6x-21.6x D&C penalty) with ONE combined sweep that resolves the mode
  * AND discovers every bifurcation k* (pin), extending R1's k-search
  * (cm_dpalign.c's ckpt_cyk_bsearch/cm_CheckptCYKAlignHB) to the
@@ -3746,7 +3746,7 @@ ckpt_trcyk_deck(TR_CKPT_CTX *cx, int v,
    * an FLogsum accumulation base) and shadow tagged USED_EL so the transition loops
    * below can override both value and shadow if a real child beats it (mirrors
    * cm_TrCYKInsideAlignHB's HB EL reinit, ~6872-6926, which does the same comparison
-   * against a materialized EL deck at v=cm->M -- brief 060's "EL info is 1-D,
+   * against a materialized EL deck at v=cm->M -- brief 26_0610-060's "EL info is 1-D,
    * on-the-fly ramp, FREE" finding lets us recompute the ramp value directly instead,
    * exactly as the checkpointed Inside engine already does).  Placed BEFORE the
    * per-state recurrence so a real child transition can beat (and shadow-overwrite)
@@ -4497,7 +4497,7 @@ ckpt_trcyk_traceback(CM_t *cm, char *errbuf, int L, char resolved_mode, int b,
  *
  *           Replaces cm_alndata.c's do_trckpt_r4 ncand-loop (which pays
  *           TrCYKDivideAndConquerHB's D&C penalty once per root-valid mode,
- *           brief 076's measured 6.6x-21.6x) with ONE combined sweep.
+ *           brief 26_0610-076's measured 6.6x-21.6x) with ONE combined sweep.
  *
  *           STEP CYK: checkpointed combined-mode CYK max-DP (descending
  *                     sweep, J/L/R/T decks, chain-root retention identical
@@ -5553,7 +5553,7 @@ trckpt_tr_optacc_traceback(CM_t *cm, char *errbuf, int L, char preset_mode, int 
          * of j (here yy band=[56,56] while j=113, split k=57 -> left ends at
          * 56) is perfectly legal and IS filled by the deck, but the spurious
          * guard skipped its re-derivation -> false "B state not pinned".  With
-         * tight kmerchain-derived bands (brief 094's ar45-sample26_full) this
+         * tight kmerchain-derived bands (brief 26_0610-094's ar45-sample26_full) this
          * geometry is common; CP9/direct-p7ibv bands were wide enough that
          * j happened to fall in yy's band too, hiding the bug until now. */
         int zz = cm->cnum[v], yy = cm->cfirst[v];
@@ -6151,7 +6151,7 @@ cm_CheckptTrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float siz
  * not their sum.  bps=0 (do_trckpt, cm_CheckptTrAlignHB) replays that
  * single combined-pass function directly.
  *
- * NOTE (scoped assumption, flagged for brief 226): the CYK-trunc and
+ * NOTE (scoped assumption, flagged for brief 26_0430-226): the CYK-trunc and
  * OptAcc-trunc passes' retention rule (roots never freed via an is_root
  * guard + Delta-window seeds + block-recompute TB) was confirmed
  * structurally identical to the Post-trunc pass (which this file reads in
@@ -6195,14 +6195,14 @@ mxest_tr_modes(CM_t *cm, CP9Bands_t *cp9b, int v, int fill_L, int fill_R)
  * duplicated-per-file convention this file already follows for mxest_shb_
  * and mxest_tr_deck_nc rather than mxest_deck_nc). The non-trunc --ckpt estimator
  * already models this banded EL cost via mxest_el_nc(); this file's trunc
- * estimator never did (brief 225's own flagged, scoped-out gap; confirmed as
- * the dominant cause of the trunc-local under-estimate found in brief 226's
+ * estimator never did (brief 26_0430-225's own flagged, scoped-out gap; confirmed as
+ * the dominant cause of the trunc-local under-estimate found in brief 26_0430-226's
  * validation -- present in every trunc-local bps>0 family tested, absent in
  * trunc-global for the same CMs/sequences where CMH_LOCAL_END is off).
  * Modeled once per mode-plane (J/L/R), added as a conservative peak-additive
  * term below rather than precisely interleaved into each pass's alloc/free
  * timeline (that would need a full read of cm_CheckptTr{CYK,OptAcc}AlignHB's
- * EL handling, which brief 225 explicitly did NOT do -- grep-confirmed
+ * EL handling, which brief 26_0430-225 explicitly did NOT do -- grep-confirmed
  * structural parity only). Being additive-not-interleaved makes this a safe
  * upper bound, not a byte-exact replay. */
 static int64_t

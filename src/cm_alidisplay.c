@@ -46,7 +46,7 @@ static float post_code_to_avg_pp(char postcode);
 /* MM_SUBPAIR / MM_SUBSINGLET glyphs are defined in infernal.h (shared with cmalign). */
 
 /* Parameters for the register-shift-recoverable overlay (cm_pknot_MarkShiftRecoverable()).
- * These reproduce brief 013's slip_metric.py defaults verbatim (test-013/slip_metric.py):
+ * These reproduce slip_metric.py defaults of brief 26_0617-013 verbatim:
  *   K:    scan gapless-space open-side shifts k = -K..+K.
  *   T_LO: a stem is a candidate only if its in-register WC count slidWC(0) <= T_LO.
  *   T_hi: computed per stem as E-1 (E = # complete pknot pairs in the stem); the winning
@@ -1395,7 +1395,7 @@ cmp_int_incr(const void *a, const void *b)
  *            cmsearch reports as its best alignment -- it is purely a "there is a
  *            nearby alternate registration a human might want to look at" hint.
  *
- *            The check is brief 013's slidWC(k) metric (test-013/slip_metric.py),
+ *            The check is brief 26_0617-013's slidWC(k) metric (its slip_metric.py),
  *            ported here verbatim rather than re-derived:
  *              - RES = gapless, uppercased residue string of the hit; pref[i] =
  *                number of residue chars [A-Za-z] strictly before display column i
@@ -1410,7 +1410,7 @@ cmp_int_incr(const void *a, const void *b)
  *                K = PKNOT_SHIFT_K), keeps the close side in register, and counts
  *                canonical pairs (bp_is_canonical(), whose WC/GU set is identical
  *                to slip_metric.py's is_wc, DNA T equivalents included).
- *              - A stem qualifies (RECOVER-SLIP) exactly on brief 013's thresholds:
+ *              - A stem qualifies (RECOVER-SLIP) exactly on brief 26_0617-013's thresholds:
  *                slidWC(0) is not already >= T_hi (else MAINTAINED), slidWC(0) <=
  *                T_LO, and the best k!=0 reaches slidWC(k) >= T_hi, where
  *                T_hi = E-1 (E = # complete pairs in the stem). Tie among winning
@@ -1418,7 +1418,7 @@ cmp_int_incr(const void *a, const void *b)
  *                Python max() first-wins iteration).
  *              - Only the individual currently-'x' pairs that actually flip to WC
  *                under the winning shift become 'o' -- NOT a blanket mark on every
- *                x in a recovering stem (brief 027: 5 of stem B's 7 x's flip under
+ *                x in a recovering stem (brief 26_0617-027: 5 of stem B's 7 x's flip under
  *                k=-1, not all 7). Pairs already =/$ are never touched, even if the
  *                winning shift would "break" them.
  *
@@ -1495,7 +1495,7 @@ cm_pknot_MarkShiftRecoverable(const char *ss, const char *aseq, char *out, int N
   }
 
   /* Process each stem (letter) independently: a per-STEM uniform register shift,
-   * never per-pair (brief 013 measured and rejected per-pair checks as too noisy). */
+   * never per-pair (brief 26_0617-013 measured and rejected per-pair checks as too noisy). */
   for (idx = 0; idx < 26; idx++) {
     int E = npair[idx];
     int T_hi, s0, bestk, bestv, anyx;
@@ -1533,7 +1533,7 @@ cm_pknot_MarkShiftRecoverable(const char *ss, const char *aseq, char *out, int N
       else if (cnt > bestv) { bestv = cnt; bestk = k; }
     }
 
-    /* brief 013 classifier (verbatim): RECOVER-SLIP iff slidWC(0) is not already
+    /* brief 26_0617-013 classifier (verbatim): RECOVER-SLIP iff slidWC(0) is not already
      * >= T_hi (else MAINTAINED), slidWC(0) <= T_LO, and the best shift reaches
      * T_hi. T_hi = E-1. */
     T_hi = E - 1;

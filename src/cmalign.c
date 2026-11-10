@@ -253,7 +253,7 @@ static char banner[] = "align sequences to a CM";
  * are mutually exclusive CLI options -- see the "reqs"/"incompat" fields on
  * the --p7kmerchain option line).
  * ibv_delta/ibv_base_slab are passed in already resolved: ibv_base_slab to
- * the brief-017 memory knee, exactly as the --hmm --p7ibv call sites resolve
+ * the brief 26_0526-017 memory knee, exactly as the --hmm --p7ibv call sites resolve
  * it (the caller may not have `go`, e.g. the threaded worker). ibv_delta is
  * cm->p7_ibv_delta (struct default 3000), deliberately NOT --p7ibv-delta's
  * own CLI default (20000, what the direct --hmm --p7ibv call sites use) --
@@ -1665,7 +1665,7 @@ hmm_alignment(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 						  do_trunc, /* brief 26_0628-038: track CM_ALIGN_TRUNC like cm_alndata.c:558 */
 						  &i2k, &kmin, &kmax, &ncells,
 						  NULL, NULL,
-						  NULL, NULL)) != eslOK) /* 2026-07-11 (brief 190 follow-up): bd split not wired for this --hmm path, out of scope */
+						  NULL, NULL)) != eslOK) /* 2026-07-11 (brief 26_0430-190 follow-up): bd split not wired for this --hmm path, out of scope */
 		cm_Fail("p7_Seq2BandsKmerChain() failed for sequence %s: %s", sq->name, errbuf);
 	    }
 	    if (local_nodepad) free(local_nodepad);

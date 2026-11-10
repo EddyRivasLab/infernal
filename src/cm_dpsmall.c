@@ -857,7 +857,7 @@ CYKDemands(CM_t *cm, int L, int *dmin, int *dmax, int be_quiet)
  *           w..y, which spans exactly one CM node's states (at most
  *           MAXCONNECT of them, by definition); +1 covers a possible
  *           EL deck from a local-end split.  Measured margins
- *           (26_0821-015, scratch_brief015/): 1.46x-1.73x safe on
+ *           (brief 26_0821-015): 1.46x-1.73x safe on
  *           every fixture tested (0, 1, 2, and 71-bifurcation
  *           topologies) -- a safe bound, not an exact model.
  *
@@ -7491,7 +7491,7 @@ tr_inside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
  *           wedge/generic splitters carry L/R EL candidates, and the best_v=-1 EL
  *           traceback routes through tr_v_splitter_hb->tr_vinsideT_hb in the winning
  *           parent mode (already EL+mode aware). RESULT: sample5_3ptr now byte-exact vs
- *           the oracle (153-node parse; the brief-088 proof betaL[420][j][d+1]+endsc[420]+
+ *           the oracle (153-node parse; the brief 26_0610-088 proof betaL[420][j][d+1]+endsc[420]+
  *           el_selfsc*d+esc = -6.18375 is exactly what this deck now supplies). NOTE:
  *           sample9_5ptr is NOT this gap -- it is a separate PRE-EXISTING inside-begin
  *           inflation (D&C inside-L[606]=-13.436 vs oracle Ldp[606]=-15.175), unchanged
@@ -7934,7 +7934,7 @@ tr_outside_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
 	/* brief 26_0610-101: band-limit the v->EL feed to v's OWN banded footprint.
 	 * The old loop swept the full 0..W x 0..jp triangle (O(W^2)) for EVERY state v
 	 * with a local end -- the dominant cost of local-mode D&C at genome scale
-	 * (~88-98% of all EL-deck work, brief 26_0610-099/100/101). But a cell (j,d) can
+	 * (~88-98% of all EL-deck work, brief 26_0610-099/26_0610-100/26_0610-101). But a cell (j,d) can
 	 * only update beta[cm->M] when v's read cell -- shifted by the per-type (elsj,elsd)
 	 * below -- is IN v's band; every out-of-band read hit `!hb_inband -> continue`
 	 * and did nothing. So we iterate ONLY v's band rows (elJ = read row) and their
@@ -9912,7 +9912,7 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
  * own cm_TrCYKOutsideAlignHB beta): tr_outside_hb()'s pure-J outside propagation
  * (and its traceback twin, tr_vinside_hb's pure-J recurrence) was NOT gated on
  * cp9b->Jvalid[v] -- unlike the truncated-begin injection, the marginal->J
- * cross-terms (brief 070), and the L/R planes, which all already were. So a
+ * cross-terms (brief 26_0610-070), and the L/R planes, which all already were. So a
  * truncated-begin penalty could chain a run of (good) emissions THROUGH a state
  * whose node structurally cannot appear in a pure-J parse (Jvalid[v]==FALSE; the
  * oracle never even allocates its J deck), inflating tr_generic_splitter_hb's
@@ -9923,13 +9923,12 @@ tr_generic_splitter_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
  * tr_outside_hb (~line 7363) plus the Jvalid[v] mask on tr_vinside_hb's pure-J
  * plane. Validated byte-exact vs the oracle (argmax ncand-loop) across a
  * 1000-seq tRNA local panel + 5S + a bps=0 matl300 panel; global (-g) unaffected
- * (Jvalid all-TRUE there -> the gate is a no-op). NOTE (081/086): a blanket
+ * (Jvalid all-TRUE there -> the gate is a no-op). NOTE (briefs 26_0610-081/26_0610-086): a blanket
  * removal of the injection is NOT the fix -- it regresses legitimate wedge-entry
  * candidates (e.g. the same case's forced-J optimum, 6.5 bits at entry state
- * v=12). See subagent-summaries/081_2026-07-11_* and 086_2026-07-13_* in the
- * 26_0610 notebook dir. (Separately, forcing a NON-optimal preset_mode can still
+ * v=12). See briefs 26_0610-081/26_0610-086. (Separately, forcing a NON-optimal preset_mode can still
  * "leak" the J winner via the all-J-split candidate not being gated on
- * r_allow_J -- a pre-existing, out-of-086-scope issue that does not affect the
+ * r_allow_J -- a pre-existing issue, out of brief 26_0610-086's scope, that does not affect the
  * argmax ncand-loop production/fallback path.)
  */
 float
@@ -10004,10 +10003,10 @@ TrCYKDivideAndConquerHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, in
  * so this is >= the true cost for that bifurcation); take the max over all
  * bifurcations.  This is the right kind of estimate for an --mxsize gate
  * (which must not under-promise), but is expected to overestimate,
- * possibly by a lot, on deeply unbalanced trees -- brief 226's job is to
+ * possibly by a lot, on deeply unbalanced trees -- brief 26_0430-226's job is to
  * measure the actual overestimation factor with the CYKDeckTrack* byte tracker.
  *
- * KNOWN GAP (verified, not assumed -- flagged for brief 226): beta[v] (the
+ * KNOWN GAP (verified, not assumed -- flagged for brief 26_0430-226): beta[v] (the
  * bifurcation-state Outside deck, cm_dpsmall.c:4719/4737) is allocated by
  * outside_hb() and is NEVER FREED anywhere in generic_splitter_hb() (grep-
  * confirmed: only `alpha` gets a free_banded_hb_vjd_matrix() call, at
@@ -10050,7 +10049,7 @@ mxest_dnc_range_nc(CP9Bands_t *cp9b, int lo, int hi)
 /* Brief 26_0430-228: banded upper bound on outside_hb()'s single EL deck
  * (state cm->M), replacing the pre-227 full-triangle size_vjd_deck(L,1,L)
  * term now that outside_hb_el_dmax()/alloc_el_banded_vjd_deck() (cm_dpsmall.c
- * :5329/5375, brief 227) band the real engine's EL allocation to eldmax[]
+ * :5329/5375, brief 26_0430-227) band the real engine's EL allocation to eldmax[]
  * rows.  Calling outside_hb_el_dmax() with (vroot=0,vend=cm->M-1,i0=1,j0=L)
  * -- the same (vroot,vend,i0,j0) CYKDivideAndConquerHB()'s top-level call
  * uses (cm_dpsmall.c:544-566: z=cm->M-1, i0/j0 passed straight through,
@@ -10134,7 +10133,7 @@ cm_DnCAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, float *ret_vjdmb, float *
   int v, w, y, wend, yend;
   int64_t best_vjd_nc = 0, best_sh_bytes = 0;
   /* brief 26_0430-228: outside_hb()'s EL deck (state cm->M) is now BANDED
-   * (brief 227: outside_hb_el_dmax()/alloc_el_banded_vjd_deck(), cm_dpsmall.c
+   * (brief 26_0430-227: outside_hb_el_dmax()/alloc_el_banded_vjd_deck(), cm_dpsmall.c
    * :5329/5375) rather than the old full-triangle alloc_vjd_deck() this
    * comment used to describe -- see mxest_dnc_el_mb() above for the banded
    * upper-bound replacement (was size_vjd_deck(L,1,L) pre-228). */
@@ -10213,7 +10212,7 @@ cm_TrDnCAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, char preset_mode, float
   int v, w, y, wend, yend;
   int64_t best_vjd_nc = 0, best_sh_bytes = 0;
   /* brief 26_0430-228: tr_outside_hb() now allocates one BANDED EL deck per
-   * active plane (J always, L/R per fill_L/fill_R -- brief 227:
+   * active plane (J always, L/R per fill_L/fill_R -- brief 26_0430-227:
    * tr_outside_hb_el_dmax()/alloc_el_banded_vjd_deck(), cm_dpsmall.c
    * :5443/7617-7636) rather than the old full-triangle decks this comment
    * used to describe -- see mxest_dnc_tr_el_mb() above for the banded

@@ -1909,7 +1909,7 @@ typedef struct cm_s {
                                  * default FALSE (use --p7ibv fallback) */
   int     p7_kmerchain_fallback_ibv; /* brief 26_0430-260: if TRUE, revert the kmerchain chain=NONE fallback to
                                  * the --p7ibv D&C deriver (the prior shipped default, brief 26_0628-047) instead
-                                 * of native CP9 HMM banding, which is now the default (brief 26_0430-256/260)
+                                 * of native CP9 HMM banding, which is now the default (brief 26_0430-256/26_0430-260)
                                  * (--p7kmerchain-fbibv); default FALSE (use native CP9 fallback) */
   int     p7_use_ibv;          /* if TRUE, use F+B direct-band band derivation (--p7ibv, brief 26_0430-120) */
   int     p7_ibv_delta;        /* IBV Delta threshold in milli-bits; default 3000 (--p7ibv-delta)   */
