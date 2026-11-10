@@ -1001,6 +1001,9 @@ cm_pipeline_MPISend(CM_PIPELINE *pli, int dest, int tag, MPI_Comm comm, char **b
   int   status;
   int   sz, n, pos;
   int   pass_idx; 
+  int   fb_flag;                         /* TRUE if this process recorded a --nonull3 fallback */
+  char *fb_cmname = NULL;                /* that CM's name */
+  char  fb_name[CM_NONULL3_FB_NAMELEN];  /* fixed-length copy of it, for packing */
 
   CM_PIPELINE bogus;
 
@@ -1064,6 +1067,8 @@ cm_pipeline_MPISend(CM_PIPELINE *pli, int dest, int tag, MPI_Comm comm, char **b
     if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* n_aln_hb         */
     if (MPI_Pack_size(1, MPI_LONG_LONG_INT, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* n_aln_dccyk      */
   }
+  if (MPI_Pack_size(1,                     MPI_INT,  comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* nonull3 fallback flag */
+  if (MPI_Pack_size(CM_NONULL3_FB_NAMELEN, MPI_CHAR, comm, &sz) != 0) { ESL_XEXCEPTION(eslESYS, "pack size failed"); } n += sz; /* nonull3 fallback CM name */
   /* Make sure the buffer is allocated appropriately */
   if (*buf == NULL || n > *nalloc) {
     void *tmp;
@@ -1152,6 +1157,14 @@ cm_pipeline_MPISend(CM_PIPELINE *pli, int dest, int tag, MPI_Comm comm, char **b
     if (MPI_Pack(&(A[p].n_aln_hb),          1, MPI_LONG_LONG_INT, *buf, n, &pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); 
     if (MPI_Pack(&(A[p].n_aln_dccyk),       1, MPI_LONG_LONG_INT, *buf, n, &pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed"); 
   }
+  /* The process-global --nonull3 fallback record (not a pipeline field):
+   * in MPI cmscan only the workers read CMs, so the master learns of a
+   * fallback this way (brief 26_0821-191). */
+  fb_flag = cm_pli_GetNoNull3Fallback(&fb_cmname);
+  memset(fb_name, 0, sizeof(fb_name));
+  if (fb_flag) snprintf(fb_name, sizeof(fb_name), "%s", fb_cmname);
+  if (MPI_Pack(&fb_flag, 1,                     MPI_INT,  *buf, n, &pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed");
+  if (MPI_Pack(fb_name,  CM_NONULL3_FB_NAMELEN, MPI_CHAR, *buf, n, &pos, comm) != 0) ESL_XEXCEPTION(eslESYS, "pack failed");
 
   /* Send the packed pipeline to destination  */
   MPI_Send(*buf, n, MPI_PACKED, dest, tag, comm);
@@ -1194,6 +1207,8 @@ cm_pipeline_MPIRecv(int source, int tag, MPI_Comm comm, char **buf, int *nalloc,
   int          n;
   int          pos;
   int          pass_idx;
+  int          fb_flag;                         /* TRUE if the sender recorded a --nonull3 fallback */
+  char         fb_name[CM_NONULL3_FB_NAMELEN];  /* that CM's name */
   MPI_Status   mpistatus;
 
   /* Probe first, because we need to know if our buffer is big enough.
@@ -1269,6 +1284,11 @@ cm_pipeline_MPIRecv(int source, int tag, MPI_Comm comm, char **buf, int *nalloc,
     if (MPI_Unpack(*buf, n, &pos, &(A[p].n_aln_hb),          1, MPI_LONG_LONG_INT, comm) != 0) ESL_XEXCEPTION(eslESYS, "unpack failed"); 
     if (MPI_Unpack(*buf, n, &pos, &(A[p].n_aln_dccyk),       1, MPI_LONG_LONG_INT, comm) != 0) ESL_XEXCEPTION(eslESYS, "unpack failed"); 
   }
+  /* the sender's --nonull3 fallback record; see cm_pipeline_MPISend() */
+  if (MPI_Unpack(*buf, n, &pos, &fb_flag, 1,                     MPI_INT,  comm) != 0) ESL_XEXCEPTION(eslESYS, "unpack failed");
+  if (MPI_Unpack(*buf, n, &pos, fb_name,  CM_NONULL3_FB_NAMELEN, MPI_CHAR, comm) != 0) ESL_XEXCEPTION(eslESYS, "unpack failed");
+  fb_name[CM_NONULL3_FB_NAMELEN-1] = '\0';
+  if (fb_flag) cm_pli_SetNoNull3Fallback(fb_name);
   *ret_pli = pli;
   return eslOK;
 

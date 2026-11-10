@@ -33,7 +33,7 @@
  * program run. 0: hasn't happened; 1: happened, not yet reported;
  * 2: reported. nonull3_fb_cmname is the first such CM's name. */
 static int  nonull3_fb_state = 0;
-static char nonull3_fb_cmname[256];
+static char nonull3_fb_cmname[CM_NONULL3_FB_NAMELEN];
 
 static int  pli_p7_filter          (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_SCOREDATA *msvdata, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, float **ret_wb, int **ret_wnmerged, int *ret_nwin);
 static int  pli_p7_env_def         (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int *wnmerged, int nwin, P7_HMM **opt_hmm, P7_PROFILE **opt_gm,
@@ -1418,6 +1418,51 @@ cm_pli_ReportNoNull3Fallback(FILE *ofp)
     fprintf(ofp, "# WARNING: --nonull3, but CM %s has no --nonull3 E-value stats; using default (null3-on) stats (E-values may be inflated for low-GC/AT-rich models; to fix, rebuild with cmbuild or run cmcalibrate --nonull3; reported once per run)\n",
             nonull3_fb_cmname);
     nonull3_fb_state = 2;
+  }
+  return eslOK;
+}
+
+/* Function:  cm_pli_GetNoNull3Fallback()
+ * Incept:    EPN, Tue Nov 10 2026 (w/Claude)
+ *
+ * Purpose:   Return TRUE if this process has recorded a --nonull3
+ *            fallback to the default (null3-on) E-value statistics
+ *            (see cm_pli_NewModel()), reported or not, else FALSE.
+ *            If TRUE and <opt_cmname> is non-NULL, set <*opt_cmname>
+ *            to the name of the first such CM (static storage; caller
+ *            must not free it).
+ *
+ *            In MPI cmscan the workers read the CMs, not the master,
+ *            so cm_pipeline_MPISend() sends this to the master, and
+ *            cm_pipeline_MPIRecv() records it there with
+ *            cm_pli_SetNoNull3Fallback() (brief 26_0821-191).
+ *
+ * Returns:   TRUE or FALSE.
+ */
+int
+cm_pli_GetNoNull3Fallback(char **opt_cmname)
+{
+  if(nonull3_fb_state == 0) return FALSE;
+  if(opt_cmname != NULL) *opt_cmname = nonull3_fb_cmname;
+  return TRUE;
+}
+
+/* Function:  cm_pli_SetNoNull3Fallback()
+ * Incept:    EPN, Tue Nov 10 2026 (w/Claude)
+ *
+ * Purpose:   Record a --nonull3 fallback for CM <cmname> that another
+ *            process (an MPI worker) found, unless this process has
+ *            already recorded one, so that cm_pli_ReportNoNull3Fallback()
+ *            reports it once.
+ *
+ * Returns:   <eslOK>.
+ */
+int
+cm_pli_SetNoNull3Fallback(const char *cmname)
+{
+  if(nonull3_fb_state == 0) {
+    snprintf(nonull3_fb_cmname, sizeof(nonull3_fb_cmname), "%s", cmname);
+    nonull3_fb_state = 1;
   }
   return eslOK;
 }
