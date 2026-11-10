@@ -253,6 +253,9 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->stg_time_F7_aln      = 0.0;
   pli->last_dispatch_cp9bands = 0.0;
   pli->last_dispatch_dp       = 0.0;
+  /* stage timing is reported only with --devdiag, so only time stages then */
+  pli->stg_w = NULL;
+  if (cm_StageVerbose() && (pli->stg_w = esl_stopwatch_Create()) == NULL) goto ERROR;
   pli->p7gm = NULL;
   pli->p7bg = NULL;
 
@@ -1006,6 +1009,7 @@ cm_pipeline_Destroy(CM_PIPELINE *pli, CM_t *cm)
   if (pli->p7_cm_nodepad)  free(pli->p7_cm_nodepad);
   if (pli->cyk_envtree) FreeParsetree(pli->cyk_envtree);
   if (pli->last_dispatch_tr) FreeParsetree(pli->last_dispatch_tr);
+  if (pli->stg_w) esl_stopwatch_Destroy(pli->stg_w);
   if (pli->cyk_envtreeA) {
     int ii;
     for (ii = 0; ii < pli->cyk_envtreeA_n; ii++) if (pli->cyk_envtreeA[ii]) FreeParsetree(pli->cyk_envtreeA[ii]);
@@ -1992,13 +1996,9 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
 #if eslDEBUGLEVEL >= 2
 	printf("#DEBUG:\n#DEBUG: PIPELINE calling p7_filter() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
 #endif
-	{ ESL_STOPWATCH *w_f1f3 = esl_stopwatch_Create();
-	  esl_stopwatch_Start(w_f1f3);
-	  if((status = pli_p7_filter(pli, om, bg, p7_evparam, msvdata, sq2search, &ws, &we, &wb, &wnmerged, &nwin)) != eslOK) { esl_stopwatch_Destroy(w_f1f3); return status; }
-	  esl_stopwatch_Stop(w_f1f3);
-	  pli->stg_time_F1F3 += w_f1f3->elapsed;
-	  esl_stopwatch_Destroy(w_f1f3);
-	}
+	if(pli->stg_w) esl_stopwatch_Start(pli->stg_w);
+	if((status = pli_p7_filter(pli, om, bg, p7_evparam, msvdata, sq2search, &ws, &we, &wb, &wnmerged, &nwin)) != eslOK) return status;
+	if(pli->stg_w) { esl_stopwatch_Stop(pli->stg_w); pli->stg_time_F1F3 += pli->stg_w->elapsed; }
 	if(p == PLI_PASS_STD_ANY) nwin_pass_std_any = nwin;
 	if(pli->do_time_F1 || pli->do_time_F2 || pli->do_time_F3) return status;
         
@@ -2082,8 +2082,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
   /* Second loop over each pipeline pass:
    * Complete all CM-based calculations.
    */
-  { ESL_STOPWATCH *w_f6 = esl_stopwatch_Create();
-    esl_stopwatch_Start(w_f6);
+  if(pli->stg_w) esl_stopwatch_Start(pli->stg_w);
   /* Store p7 objects for use by pli_dispatch_cm_search() when --msvband or --vitband */
   if((pli->do_msvband || pli->do_vitband) && opt_gm != NULL) pli->p7gm = *opt_gm;
   if(pli->do_msvband || pli->do_vitband)                     pli->p7bg = bg;
@@ -2236,10 +2235,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
     if(ee != NULL) { free(ee); ee   = NULL; }
     nenv = 0;
   } /* end of 'for(p = PLI_PASS_STD_ANY; p <= PLI_NPASSES; p++)', second loop over pipeline passes */
-    esl_stopwatch_Stop(w_f6);
-    pli->stg_time_F6 += w_f6->elapsed;
-    esl_stopwatch_Destroy(w_f6);
-  }
+  if(pli->stg_w) { esl_stopwatch_Stop(pli->stg_w); pli->stg_time_F6 += pli->stg_w->elapsed; }
 
   for(p = 0; p < NPLI_PASSES; p++) {
     if(p7esAA && p7esAA[p]) free(p7esAA[p]);

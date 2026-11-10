@@ -2371,6 +2371,7 @@ typedef struct cm_pipeline_s {
   double        stg_time_F7_aln;      /* alignment (pli_align_hit) in F7          */
   double        last_dispatch_cp9bands; /* temp: cp9 band time from last dispatch */
   double        last_dispatch_dp;       /* temp: DP time from last dispatch       */
+  ESL_STOPWATCH *stg_w;                 /* times F1-F3 and F6+ for stg_time_*; NULL unless cm_StageVerbose() (--devdiag) */
 
   /* P7 objects for msvband CP9 acceleration (set in cm_Pipeline, used in pli_dispatch_cm_search) */
   P7_PROFILE   *p7gm;          /* generic profile for p7_Seq2Bands (not owned, don't free) */
