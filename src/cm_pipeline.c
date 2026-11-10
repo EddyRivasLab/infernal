@@ -1179,7 +1179,7 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
 
   /* check contract */
   if(pli->mode == CM_SEARCH_SEQS) { /* case 1 */
-    if(modmode != CM_NEWMODEL_CM) 
+    if(modmode != CM_NEWMODEL_CM)              ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, SEARCH mode and modmode is not CM_NEWMODEL_CM"); 
     if(cm == NULL)                             ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, SEARCH mode and CM is NULL"); 
     if(cm->clen != cm_clen)                    ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, cm->clen != cm_clen"); 
     if(cm->W    != cm_W)                       ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, cm->W != cm_W"); 
