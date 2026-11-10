@@ -3173,8 +3173,6 @@ build_node_subtree_spans(CM_t *cm, int use_consensus_rank,
 {
   int   n_nodes = cm->nodes;
   int   i, nd;
-  int  *stk       = NULL;      /* stack of node indices */
-  int   stk_top   = -1;
   int  *dfs_order = NULL;      /* node labels in DFS pre-order, needed for Pass 2 */
   int   status;
 
@@ -3269,15 +3267,13 @@ build_node_subtree_spans(CM_t *cm, int use_consensus_rank,
         rank_lookup[unique_col[i]] = i + 1;   /* 1-indexed rank */
     }
 
-  /* ---- allocate stack and DFS order array -------------------------------- */
-  ESL_ALLOC(stk,       sizeof(int) * (n_nodes + 1));
+  /* ---- allocate DFS order array ------------------------------------------ */
   ESL_ALLOC(dfs_order, sizeof(int) * n_nodes);
 
   /* Build DFS pre-order: sort nodes by cm->nodemap[nd] (first state index).
    * Infernal node labels are NOT in DFS file-order for nested BIFs: BEGL
    * subtrees get lower labels but appear AFTER BEGR subtrees in the file.
-   * The parent-stack algorithm requires DFS pre-order to assign correct parents.
-   * dfs_order is also needed in Pass 2 (reverse DFS = correct post-order).
+   * dfs_order is needed in Pass 2 (reverse DFS = correct post-order).
    */
   {
     int  j2, tmp2;
@@ -3297,9 +3293,16 @@ build_node_subtree_spans(CM_t *cm, int use_consensus_rank,
       {
         nd = dfs_order[i];   /* node label in DFS pre-order */
 
-        /* record parent from top of stack */
-        if (stk_top >= 0)
-          parent[nd] = stk[stk_top];
+        /* Parent node = the node owning the last parent state of this node's
+         * first state, read from the CM state graph. (An earlier version kept
+         * a parent stack, which left a finished BIF on top and mis-parented the
+         * following BEGR; with no 5' flank this made extra nodes appear to
+         * span the whole model. Fixed in brief 26_0823-006, found in brief
+         * 26_0823-005.) */
+        {
+          int v0 = cm->nodemap[nd];
+          parent[nd] = (cm->pnum[v0] > 0) ? cm->ndidx[cm->plast[v0]] : -1;
+        }
 
         /* initialize own subtree span from this node's lpos/rpos */
         int l, r;
@@ -3349,35 +3352,6 @@ build_node_subtree_spans(CM_t *cm, int use_consensus_rank,
 
         subtree_l[nd] = l;
         subtree_r[nd] = r;
-
-        /* stack management: push nd (node label) so parent[] gets node labels */
-        switch (cm->ndtype[nd])
-          {
-          case ROOT_nd:
-          case MATL_nd:
-          case MATR_nd:
-          case MATP_nd:
-          case BIF_nd:
-          case BEGL_nd:
-          case BEGR_nd:
-            stk[++stk_top] = nd;
-            break;
-          case END_nd:
-            /* pop back to most recent BEGL/BEGR (or ROOT) */
-            while (stk_top >= 0 &&
-                   cm->ndtype[stk[stk_top]] != BEGL_nd &&
-                   cm->ndtype[stk[stk_top]] != BEGR_nd &&
-                   cm->ndtype[stk[stk_top]] != ROOT_nd)
-              stk_top--;
-            /* if top is BEGL or BEGR, pop it too */
-            if (stk_top >= 0 &&
-                (cm->ndtype[stk[stk_top]] == BEGL_nd ||
-                 cm->ndtype[stk[stk_top]] == BEGR_nd))
-              stk_top--;
-            break;
-          default:
-            break;
-          }
       }
   }  /* end Pass 1 block */
 
@@ -3401,7 +3375,6 @@ build_node_subtree_spans(CM_t *cm, int use_consensus_rank,
         subtree_r[p] = ri;
     }
 
-  free(stk);
   free(dfs_order);
   if (ret_rank_lookup) { *ret_rank_lookup = rank_lookup; *ret_rank_ncols = rank_ncols; }
   else if (rank_lookup) free(rank_lookup);
@@ -3409,7 +3382,6 @@ build_node_subtree_spans(CM_t *cm, int use_consensus_rank,
   return eslOK;
 
  ERROR:
-  if (stk)         free(stk);
   if (dfs_order)   free(dfs_order);
   if (rank_lookup) free(rank_lookup);
   if (unique_col)  free(unique_col);
