@@ -198,7 +198,12 @@ enum {
      * stable. Sourced from cm->eff_nseq (float32 EFFN header value). */
     FAST_CAL_FEAT_effn,                    /* 69 */
 
-    FAST_CAL_NFEAT = 70,                 /* sentinel; total feature count */
+    /* Corrected consensus-emission GC fraction (cm_fastcal_gc_emit()), as a
+     * ridge feature. Used by the 0-bp (NOSS) cells refit in brief
+     * 26_0823-004 and installed in brief 26_0823-006. */
+    FAST_CAL_FEAT_gc,                      /* 70 */
+
+    FAST_CAL_NFEAT = 71,                 /* sentinel; total feature count */
     FAST_CAL_NFEAT_PHASE2 = 20          /* Phase 2 backward-compat alias */
 };
 

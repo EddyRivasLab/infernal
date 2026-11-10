@@ -826,6 +826,17 @@ parse_K_ridge_inline(ESL_JSON *pi, ESL_BUFFER *bf, int ridge_obj, FastCalRidge *
  * which was dead: v5.5 STR K loads first in load_models() for all 5 buckets. */
 
 
+/* in_fill_buckets(): TRUE if bucket b is one of fill_buckets[0..n-1]. */
+static int
+in_fill_buckets(int b, const int *fill_buckets, int n_fill_buckets)
+{
+  int i;
+  for (i = 0; i < n_fill_buckets; i++)
+    if (fill_buckets[i] == b) return TRUE;
+  return FALSE;
+}
+
+
 /* =========================================================================
  * parse_noss_hybrid_cell()
  *   Parse a single (target, mode) cell from the NOSS hybrid JSON
@@ -866,11 +877,10 @@ parse_K_ridge_inline(ESL_JSON *pi, ESL_BUFFER *bf, int ridge_obj, FastCalRidge *
  *     y_transform is applied to every per-bucket ridge.
  *
  *   <fill_buckets> is an array of BUCKET_* indices to populate (the
- *   caller decides whether to fill all 5 slots — base cells — or only
- *   the override slots LARGE/HUGE). For B_v42 cells, the per-bucket
- *   buckets in JSON are matched explicitly; <fill_buckets> is the
- *   override set if non-NULL (otherwise tiny/small/medlarge are taken
- *   from JSON, large/huge from medlarge replication).
+ *   caller decides whether to fill all 5 slots, only tiny/small/medlarge,
+ *   or only LARGE/HUGE). For B_v42 cells, the per-bucket JSON buckets and
+ *   the medlarge replication into large/huge fill only the slots listed in
+ *   <fill_buckets>.
  */
 static int
 parse_noss_hybrid_cell(ESL_JSON *pi, ESL_BUFFER *bf, int cell_obj, int mode,
@@ -921,23 +931,23 @@ parse_noss_hybrid_cell(ESL_JSON *pi, ESL_BUFFER *bf, int cell_obj, int mode,
       if (buckets_idx < 0) { status = eslFAIL; goto CLEANUP; }
       if (pi->tok[buckets_idx].type != eslJSON_OBJECT) { status = eslFAIL; goto CLEANUP; }
 
-      int medlarge_filled = 0;
       int bi;
       for (bi = 0; bk_map[bi].name != NULL; bi++)
         {
           int b = bk_map[bi].idx;
           int bk_obj = json_find_key(pi, bf, buckets_idx, bk_map[bi].name);
           if (bk_obj < 0) continue;
+          if (! in_fill_buckets(b, fill_buckets, n_fill_buckets)) continue;
           if (dest[b][mode].defined) continue;   /* don't overwrite */
           status = parse_ridge_from_obj(pi, bf, bk_obj, fnames, nfeat, &dest[b][mode]);
           if (status != eslOK) goto CLEANUP;
           /* Cell-level y_transform overrides per-bucket default. */
           dest[b][mode].y_transform = cell_yt;
-          if (b == BUCKET_MEDLARGE) medlarge_filled = 1;
         }
 
-      /* Replicate medlarge into large/huge (clen>700 selection rule for B_v42). */
-      if (medlarge_filled)
+      /* Replicate medlarge into large/huge (clen>700 selection rule for B_v42),
+       * for whichever of those two slots this call fills. */
+      if (json_find_key(pi, bf, buckets_idx, "medlarge") >= 0)
         {
           int targets[2] = { BUCKET_LARGE, BUCKET_HUGE };
           int ti;
@@ -945,6 +955,7 @@ parse_noss_hybrid_cell(ESL_JSON *pi, ESL_BUFFER *bf, int cell_obj, int mode,
           for (ti = 0; ti < 2; ti++)
             {
               int b = targets[ti];
+              if (! in_fill_buckets(b, fill_buckets, n_fill_buckets)) continue;
               if (dest[b][mode].defined) continue;
               status = parse_ridge_from_obj(pi, bf, ml_obj, fnames, nfeat, &dest[b][mode]);
               if (status != eslOK) goto CLEANUP;
@@ -1018,8 +1029,8 @@ parse_noss_hybrid_cell(ESL_JSON *pi, ESL_BUFFER *bf, int cell_obj, int mode,
  *   For a given top-level group (e.g., "base" or "largehuge_override") and
  *   target name (e.g., "lambda"), iterate over modes and dispatch to
  *   parse_noss_hybrid_cell. <fill_buckets>/<n_fill_buckets> control which
- *   bucket slots a flat cell is replicated into. For B_v42 cells, the
- *   buckets come from the JSON, regardless of <fill_buckets>.
+ *   bucket slots are filled (flat cells are replicated into them; B_v42
+ *   cells fill the listed slots from their JSON buckets).
  */
 static int
 parse_noss_hybrid_target(ESL_JSON *pi, ESL_BUFFER *bf, int group_obj,
@@ -1067,25 +1078,36 @@ parse_noss_hybrid(ESL_JSON *pi, ESL_BUFFER *bf)
   int status;
   int root_idx = 0;
 
-  /* base.{lambda,mu_extrap,mu_orig,K} → all 5 bucket slots. */
+  /* base.{lambda,mu_extrap,mu_orig,K} → all 5 bucket slots, or, if the JSON
+   * has a "base_clen_ge700" group, → tiny/small/medlarge only, with
+   * base_clen_ge700 filling the large/huge slots (clen >= 700). brief
+   * 26_0823-006: the base cells refit in brief 26_0823-004 were fit below
+   * clen 700 and are unsafe above it, so 0-bp CMs with clen >= 700 keep the
+   * previous (R0) cells, which the JSON carries as base_clen_ge700. */
   static const int all_buckets[N_BUCKETS] = {
     BUCKET_TINY, BUCKET_SMALL, BUCKET_MEDLARGE, BUCKET_LARGE, BUCKET_HUGE
   };
-  int base_obj = json_find_key(pi, bf, root_idx, "base");
+  static const int lt700_buckets[3] = { BUCKET_TINY, BUCKET_SMALL, BUCKET_MEDLARGE };
+  static const int ge700_buckets[2] = { BUCKET_LARGE, BUCKET_HUGE };
+  static const char *targets[4] = { "lambda", "mu_extrap", "mu_orig", "K" };
+  FastCalRidge (*dests[4])[N_MODES] = {
+    g_models.noss_lambda, g_models.noss_mu_extrap, g_models.noss_mu_orig, g_models.noss_K
+  };
+  int t;
+  int base_obj  = json_find_key(pi, bf, root_idx, "base");
+  int ge700_obj = json_find_key(pi, bf, root_idx, "base_clen_ge700");
   if (base_obj < 0) return eslFAIL;
 
-  status = parse_noss_hybrid_target(pi, bf, base_obj, "lambda",
-                                    g_models.noss_lambda, all_buckets, N_BUCKETS);
-  if (status != eslOK) return status;
-  status = parse_noss_hybrid_target(pi, bf, base_obj, "mu_extrap",
-                                    g_models.noss_mu_extrap, all_buckets, N_BUCKETS);
-  if (status != eslOK) return status;
-  status = parse_noss_hybrid_target(pi, bf, base_obj, "mu_orig",
-                                    g_models.noss_mu_orig, all_buckets, N_BUCKETS);
-  if (status != eslOK) return status;
-  status = parse_noss_hybrid_target(pi, bf, base_obj, "K",
-                                    g_models.noss_K, all_buckets, N_BUCKETS);
-  if (status != eslOK) return status;
+  for (t = 0; t < 4; t++)
+    {
+      if (ge700_obj >= 0) {
+        status = parse_noss_hybrid_target(pi, bf, base_obj,  targets[t], dests[t], lt700_buckets, 3);
+        if (status != eslOK) return status;
+        status = parse_noss_hybrid_target(pi, bf, ge700_obj, targets[t], dests[t], ge700_buckets, 2);
+      } else
+        status = parse_noss_hybrid_target(pi, bf, base_obj,  targets[t], dests[t], all_buckets, N_BUCKETS);
+      if (status != eslOK) return status;
+    }
 
   /* largehuge_override.{lambda,K}[ECMGC,ECMGI] → HUGE slot only
    * (selection_rule.override_clen_threshold == 1500 == BUCKET_HUGE floor).
@@ -1190,6 +1212,55 @@ load_ere_bin(const unsigned char *json, unsigned int json_len, int bucket,
   esl_json_Destroy(pi);
   esl_buffer_Close(bf);
   return status;
+}
+
+
+/* =========================================================================
+ * check_feature_names()
+ *   Verify that every feature name in every loaded ridge (STR, NOSS,
+ *   AT-rich and ere) is known to cm_FastCalibrate_FeatureIndex(). An
+ *   unknown name means the embedded model data and the feature extractor
+ *   disagree, which is a build defect: fail loudly instead of predicting
+ *   with that term silently dropped (brief 26_0823-006).
+ */
+static void
+check_ridge_table(FastCalRidge (*tab)[N_MODES], int nb, const char *what)
+{
+  int b, m, i;
+  for (b = 0; b < nb; b++)
+    for (m = 0; m < N_MODES; m++)
+      {
+        const FastCalRidge *r = &tab[b][m];
+        if (! r->defined) continue;
+        for (i = 0; i < r->nfeat; i++)
+          if (cm_FastCalibrate_FeatureIndex(r->fnames[i]) < 0)
+            cm_Fail("fast calibration model data: %s ridge (bucket %d, mode %d) uses unknown feature '%s'",
+                    what, b, m, r->fnames[i]);
+      }
+}
+
+static int
+check_feature_names(void)
+{
+  check_ridge_table(g_models.str_lambda,         N_BUCKETS,        "structured lambda");
+  check_ridge_table(g_models.str_mu_extrap,      N_BUCKETS,        "structured mu_extrap");
+  check_ridge_table(g_models.str_mu_orig,        N_BUCKETS,        "structured mu_orig");
+  check_ridge_table(g_models.str_K,              N_BUCKETS,        "structured K");
+  check_ridge_table(g_models.noss_lambda,        N_BUCKETS,        "0-bp lambda");
+  check_ridge_table(g_models.noss_mu_extrap,     N_BUCKETS,        "0-bp mu_extrap");
+  check_ridge_table(g_models.noss_mu_orig,       N_BUCKETS,        "0-bp mu_orig");
+  check_ridge_table(g_models.noss_K,             N_BUCKETS,        "0-bp K");
+  check_ridge_table(g_models.atrich_lambda,      N_ATRICH_BUCKETS, "AT-rich lambda");
+  check_ridge_table(g_models.atrich_mu_extrap,   N_ATRICH_BUCKETS, "AT-rich mu_extrap");
+  check_ridge_table(g_models.ere_str_lambda,     N_BUCKETS,        "ere structured lambda");
+  check_ridge_table(g_models.ere_str_mu_extrap,  N_BUCKETS,        "ere structured mu_extrap");
+  check_ridge_table(g_models.ere_str_mu_orig,    N_BUCKETS,        "ere structured mu_orig");
+  check_ridge_table(g_models.ere_str_K,          N_BUCKETS,        "ere structured K");
+  check_ridge_table(g_models.ere_noss_lambda,    N_BUCKETS,        "ere 0-bp lambda");
+  check_ridge_table(g_models.ere_noss_mu_extrap, N_BUCKETS,        "ere 0-bp mu_extrap");
+  check_ridge_table(g_models.ere_noss_mu_orig,   N_BUCKETS,        "ere 0-bp mu_orig");
+  check_ridge_table(g_models.ere_noss_K,         N_BUCKETS,        "ere 0-bp K");
+  return eslOK;
 }
 
 
@@ -1509,6 +1580,11 @@ load_models(void)
   LOAD_ERE(small_noss,   BUCKET_SMALL,    noss);
 #undef LOAD_ERE
 
+  /* Every feature name in every loaded ridge must be one the extractor
+   * computes: ridge_predict() cannot score an unknown name, and silently
+   * skipping it would give wrong predictions. */
+  if ((status = check_feature_names()) != eslOK) return status;
+
   /* Record the embedded version hash */
   strncpy(g_models.models_version, fast_cal_models_version, 64);
   g_models.models_version[64] = '\0';
@@ -1553,7 +1629,7 @@ ridge_predict(const FastCalRidge *r, const double *feats_full)
     {
       int    idx  = cm_FastCalibrate_FeatureIndex(r->fnames[i]);
       double z;
-      if (idx < 0) continue;  /* unknown feature name — skip */
+      if (idx < 0) continue;  /* can't happen: load_models() rejects unknown feature names */
       z    = (feats_full[idx] - r->mean[i]) / r->std[i];
       sum += z * r->coef[i];
     }
@@ -1871,9 +1947,14 @@ cm_FastCalibrate(CM_t *cm)
        * badly below its clen-40 training floor. lambda is near-universal
        * (~0.62 in cmcal ECMLI for clen<=60), so for local modes at
        * clen < g_smallcm_clen_max replace the predicted lambda with a
-       * constant (arms C62=0.62, Cln2=0.6931). Glocal modes untouched. */
+       * constant (arms C62=0.62, Cln2=0.6931). Glocal modes untouched.
+       * Not for 0-bp (NOSS) models on the default path (brief 26_0823-004:
+       * their local lambda rises with gc, 0.42 -> 0.68, and the refit NOSS
+       * cells predict it); the ere path is unchanged. Structured clen < 40
+       * CMs are overridden again below (shortcm_route). */
       if (g_smallcm_lambda > 0.0 && cm->clen < g_smallcm_clen_max &&
-          (mode == MODE_ECMLC || mode == MODE_ECMLI))
+          (mode == MODE_ECMLC || mode == MODE_ECMLI) &&
+          (! is_noss || g_fastcal_ere_mode))
           lam = g_smallcm_lambda;
 
       /* Brief 46 NOSS glocal-lambda positive floor:
@@ -2710,6 +2791,8 @@ static const char *fast_cal_feature_names[] = {
     "expected_null3_frag_var",       /* 68 */
     /* Brief 46: NOSS hybrid predictor (effective sequence number) */
     "effn",                          /* 69 */
+    /* Corrected gc_emit (0-bp/NOSS cells, brief 26_0823-006) */
+    "gc",                            /* 70 */
     NULL
 };
 
@@ -2762,6 +2845,18 @@ static int
 extract_effn(CM_t *cm, double *feats)
 {
   feats[FAST_CAL_FEAT_effn] = (double) cm->eff_nseq;
+  return eslOK;
+}
+
+/* extract_gc()
+ * Store the corrected consensus-emission GC fraction (cm_fastcal_gc_emit())
+ * as feature "gc". The 0-bp (NOSS) cells refit in brief 26_0823-004 use it;
+ * -1.0 if the CM has no consensus emission mass.
+ */
+static int
+extract_gc(CM_t *cm, double *feats)
+{
+  feats[FAST_CAL_FEAT_gc] = cm_fastcal_gc_emit(cm, NULL);
   return eslOK;
 }
 
@@ -5015,6 +5110,10 @@ cm_FastCalibrate_ExtractFeatures(CM_t *cm, double *feats)
   STAGE_BEGIN();
   if ((status = extract_effn(cm, feats))              != eslOK) { STAGE_CLEANUP(); return status; }
   STAGE_END("extract_effn");
+
+  STAGE_BEGIN();
+  if ((status = extract_gc(cm, feats))                != eslOK) { STAGE_CLEANUP(); return status; }
+  STAGE_END("extract_gc");
 
   STAGE_BEGIN();
   if ((status = extract_noss_fraglen_fast(cm, feats)) != eslOK) { STAGE_CLEANUP(); return status; }
