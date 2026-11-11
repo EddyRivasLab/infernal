@@ -7844,6 +7844,38 @@ p7b_pp_Create(P7_GBANDS *bnd)
   return NULL;
 }
 
+/* Function: cm_p7_ViterbiMxMb()
+ * Incept:   EPN, Wed Nov 11 2026 (w/Claude)
+ *
+ * Purpose:  Return the size in Mb of the cells of a full generic p7
+ *           Viterbi matrix (p7_gmx_Create(M, L)) for a model of <M>
+ *           nodes and a sequence of length <L>. cmalign's HMM-only
+ *           alignment and the CM path's p7 Viterbi band re-derivation
+ *           (cm_alndata.c) check it against --mxsize before they
+ *           allocate the matrix (brief 26_0821-193).
+ */
+double
+cm_p7_ViterbiMxMb(int M, int64_t L)
+{
+  return (double) sizeof(float) * (double) (M + 1) * (double) (L + 1) * (double) p7G_NSCELLS / (1024. * 1024.);
+}
+
+/* Function: cm_MxsizeRecommend()
+ * Incept:   EPN, Wed Nov 11 2026 (w/Claude)
+ *
+ * Purpose:  Return the --mxsize value to recommend when a matrix of
+ *           <needed_Mb> Mb exceeds the limit: <needed_Mb> rounded up to
+ *           the next multiple of 1024 (limits are checked as
+ *           needed > --mxsize, so a multiple of 1024 needs no more).
+ *           Used by both p7 Viterbi matrix checks, so that they
+ *           recommend the same value (brief 26_0821-193).
+ */
+int
+cm_MxsizeRecommend(double needed_Mb)
+{
+  return (int) (ceil(needed_Mb / 1024.) * 1024.);
+}
+
 /* Function: p7_CheckptBandedOAMemNeeded()
  * Incept:   brief 26_0430-266
  *

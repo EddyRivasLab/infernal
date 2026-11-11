@@ -1818,11 +1818,12 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
       if (status != eslOK && cm->p7_use_ibv && !ibv_fallback_used) {
 	/* brief 26_0821-192: the Viterbi re-derivation below allocates a full
 	 * (M+1) x (L+1) p7 matrix. Check it against --mxsize first, as the
-	 * CP9 band calculation does (plain_cp9_engine()). */
-	float fbvit_Mb = (float) ((double) sizeof(float) * (double) (cm->fp7->M + 1) * (double) (sq->L + 1) * (double) p7G_NSCELLS / (1024. * 1024.));
+	 * CP9 band calculation does (plain_cp9_engine()). Size and recommended
+	 * --mxsize are shared with cmalign's HMM-only alignment (brief 26_0821-193). */
+	double fbvit_Mb = cm_p7_ViterbiMxMb(cm->fp7->M, sq->L);
 	if (fbvit_Mb > mxsize)
 	  ESL_XFAIL(eslERANGE, errbuf, "HMM band calculation needs %.0f Mb > %.0f Mb limit.\nUse --mxsize %d.",
-		    fbvit_Mb, mxsize, (int) (floor(fbvit_Mb / 1024.) + 1.) * 1024);
+		    fbvit_Mb, mxsize, cm_MxsizeRecommend(fbvit_Mb));
 	ibv_fallback_used = TRUE;
 	errbuf[0] = '\0';
 	status    = eslOK;

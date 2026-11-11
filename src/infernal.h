@@ -3583,6 +3583,8 @@ extern int          cm_p7_GFBDecodeBandedDouble(const ESL_DSQ *dsq, int L, const
 extern void         cm_p7_decstats_Init(CM_P7_DECSTATS *st);                                                                     /* brief 26_0821-141 */
 extern P7_GMXB     *p7b_pp_Create(P7_GBANDS *bnd);                                                                             /* brief 26_0526-017: compact 2-cell resident pp */
 extern int          cm_p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int ckpt_mode, double *ret_bytes);                      /* brief 26_0430-266: post-band do_bandedoa mem preflight; ckpt_mode = P7B_OAMEM_* */
+extern double       cm_p7_ViterbiMxMb(int M, int64_t L);                                                                        /* brief 26_0821-193 */
+extern int          cm_MxsizeRecommend(double needed_Mb);                                                                       /* brief 26_0821-193 */
 extern int          cm_p7_GCheckptFBDecodeOA_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GBANDS *bnd,
                                                  P7_TRACE *tr, float *ret_fwdsc, float *ret_oasc, CM_P7_DECSTATS *opt_st);     /* brief 26_0628-081: double-checkpointed, no resident posterior */
 extern int          cm_p7_domaindef_GlocalByPosteriorHeuristics_Banded(const ESL_SQ *sq, P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_DOMAINDEF *ddef, int do_aln);

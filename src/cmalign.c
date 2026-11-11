@@ -1566,24 +1566,18 @@ hmm_aligner_Destroy(HMM_ALIGNER *ha)
   free(ha);
 }
 
-/* hmm_viterbi_mb()
- * DP memory (Mb) of a full p7 Viterbi matrix for an <M> x <L> problem.
- */
-static double
-hmm_viterbi_mb(int M, int L)
-{
-  return (double) sizeof(float) * (double)(M + 1) * (double)(L + 1) * (double) p7G_NSCELLS / (1024.0 * 1024.0);
-}
-
 /* hmm_mxsize_check()
  * eslERANGE, with the --mxsize message in <errbuf>, if <needed_mb> > <mxsize>.
+ * The full p7 Viterbi matrix's size is cm_p7_ViterbiMxMb(), and the
+ * recommended --mxsize cm_MxsizeRecommend(), shared with cm_alndata.c
+ * (brief 26_0821-193).
  */
 static int
 hmm_mxsize_check(double needed_mb, double mxsize, char *errbuf)
 {
   if (needed_mb > mxsize)
     return hmm_fail(errbuf, eslERANGE, "HMM-only alignment mx needs %.2f Mb > %.2f Mb limit. Use --mxsize %d.",
-                    needed_mb, mxsize, (int)(ceil(needed_mb / 1024.0) * 1024.0));
+                    needed_mb, mxsize, cm_MxsizeRecommend(needed_mb));
   return eslOK;
 }
 
@@ -1674,7 +1668,7 @@ hmm_align_one(HMM_ALIGNER *ha, const ESL_SQ *sq, P7_TRACE *tr, float *st, char *
    * skip the full matrix (their derivers avoid it); they are covered by the post-band
    * preflight instead, and kmerchain's Viterbi safety net by its own check below. */
   if (ha->do_hmmvit || ha->do_hmmnoband || (! ha->do_p7ibv && ! cm->p7_use_kmerchain)) {
-    mb = ha->do_hmmnoband ? hmm_unbanded_oa_mb(hmm->M, L) : hmm_viterbi_mb(hmm->M, L); /* brief 26_0821-163: double OA */
+    mb = ha->do_hmmnoband ? hmm_unbanded_oa_mb(hmm->M, L) : cm_p7_ViterbiMxMb(hmm->M, L); /* brief 26_0821-163: double OA */
     if ((status = hmm_mxsize_check(mb, ha->mxsize, errbuf)) != eslOK) goto ERROR;
   }
 
@@ -1759,7 +1753,7 @@ hmm_align_one(HMM_ALIGNER *ha, const ESL_SQ *sq, P7_TRACE *tr, float *st, char *
          * preflight above does for the plain path (brief 26_0821-192). */
         int tpos;
         band_src = "default p7 Viterbi-trace"; band_is_ibv = FALSE;
-        if (did_kmer && (status = hmm_mxsize_check(hmm_viterbi_mb(hmm->M, L), ha->mxsize, errbuf)) != eslOK) goto ERROR;
+        if (did_kmer && (status = hmm_mxsize_check(cm_p7_ViterbiMxMb(hmm->M, L), ha->mxsize, errbuf)) != eslOK) goto ERROR;
         free(i2k);  i2k  = NULL;
         free(kmin); kmin = NULL;
         free(kmax); kmax = NULL;
