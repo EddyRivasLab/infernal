@@ -111,6 +111,7 @@ typedef struct hmm_aligner_s {
   int         do_hmmvit;     /* TRUE for --hmmvit: Viterbi trace */
   int         do_hmmnoband;  /* TRUE for --hmmnoband: unbanded optimal accuracy */
   int         do_p7ibv;      /* TRUE for --p7ibv: banded OA in IBV D&C bands */
+  int         do_padplus;    /* TRUE if --p7padplus was given: Viterbi-trace bands are padded as --p7band pads them */
   int         do_trunc;      /* TRUE if CM_ALIGN_TRUNC: Tgm profile and truncation-aware band derivers */
   int         ibv_delta;     /* --p7ibv-delta, milli-bits */
   int         ibv_base_slab; /* IBV D&C base-case slab (brief 26_0526-017 knee unless --p7ibv-base-slab) */
@@ -965,6 +966,40 @@ use_glocal_config(const ESL_GETOPTS *go)
  * 
  * A master can only return if it's successful. All errors are handled immediately and fatally with cm_Fail().
  */
+/* p7padplus_errmsg()
+ * Incept: EPN, Wed Nov 11 2026 (w/Claude)
+ *
+ * The error message if --p7padplus was given where it has no effect,
+ * else NULL. Call after maybe_hmm_autoswitch() and
+ * maybe_kmerchain_default(), which may set --hmm, --p7band, --p7ibv or
+ * --p7kmerchain. --p7padplus pads p7 bands from a trace or from k-mer
+ * chain pins: CM alignment with --p7band, and HMM-only alignment's
+ * Viterbi-trace and --p7kmerchain bands. --p7ibv bands are not padded
+ * (they are set by --p7ibv-delta), and --hmmvit and --hmmnoband use no
+ * bands (brief 26_0821-193). Before, this was checked before the CM was
+ * read, so --p7padplus was refused on a 0-basepair CM switched to
+ * HMM-only alignment, and on a CM that kmerchain bands were chosen for
+ * by default, and was accepted, and ignored, with --hmm --p7ibv.
+ */
+static const char *
+p7padplus_errmsg(const ESL_GETOPTS *go)
+{
+  static char msg[256];
+  const char *opt = NULL;
+
+  if (! esl_opt_IsUsed(go, "--p7padplus") || esl_opt_GetBoolean(go, "--p7band")) return NULL;
+  if (! esl_opt_GetBoolean(go, "--hmm")) return "--p7padplus requires --p7band or --hmm";
+  if      (esl_opt_GetBoolean(go, "--hmmvit"))    opt = hmm_mapped_cyk       ? "--cyk"       : "--hmmvit";
+  else if (esl_opt_GetBoolean(go, "--hmmnoband")) opt = hmm_mapped_nonbanded ? "--nonbanded" : "--hmmnoband";
+  if (opt != NULL) {
+    snprintf(msg, sizeof(msg), "--p7padplus has no effect on HMM-only alignment with %s, which uses no bands; remove --p7padplus.", opt);
+    return msg;
+  }
+  if (esl_opt_GetBoolean(go, "--p7ibv"))
+    return "--p7padplus has no effect on --p7ibv bands, which are not padded (HMM-only alignment's default for a 0-basepair CM of up to 4000 columns); remove --p7padplus, or use --hmm --p7kmerchain.";
+  return NULL;
+}
+
 /* oneblock_errmsg()
  * Incept: EPN, Wed Nov 11 2026 (w/Claude)
  *
@@ -1096,6 +1131,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   maybe_hmm_autoswitch(go, cm);
   if(hmm_autoswitched && hmm_cm_only_option(go) != NULL) cm_Fail(HMM_AUTOSWITCH_OPT_FMT, hmm_cm_only_option(go), cm->name);
   maybe_kmerchain_default(go, cm);
+  if(p7padplus_errmsg(go) != NULL) cm_Fail("%s", p7padplus_errmsg(go));
 
   if(cfg->ofp != stdout) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm, ncpus);
 
@@ -1593,6 +1629,7 @@ hmm_aligner_Create(const ESL_GETOPTS *go, CM_t *cm)
    * of a full p7_GViterbi + trace, skipping the O(M*L) P7_GMX allocation.
    * CLI validation guarantees --p7ibv only reaches here in banded-OA mode. */
   ha->do_p7ibv      = (cm->p7_use_ibv && ! ha->do_hmmvit && ! ha->do_hmmnoband) ? TRUE : FALSE;
+  ha->do_padplus    = esl_opt_IsUsed(go, "--p7padplus") ? TRUE : FALSE;
   /* brief 26_0430-182: mirror p7_ibv.c:1793's expression exactly -- the same test
    * used to calibrate p7bpad/node-pad at align-time. Drives both the Tgm
    * profile config and the IBV deriver's do_trunc arg. */
@@ -1836,7 +1873,7 @@ hmm_align_one(HMM_ALIGNER *ha, const ESL_SQ *sq, P7_TRACE *tr, float *st, char *
          * kmerchain->vitband fallback shape). The safety net needs a full
          * Viterbi matrix, so check it against --mxsize first, as the
          * preflight above does for the plain path (brief 26_0821-192). */
-        int tpos;
+        int tpos, k;
         band_src = "default p7 Viterbi-trace"; band_is_ibv = FALSE;
         if (did_kmer && (status = hmm_mxsize_check(cm_p7_ViterbiMxMb(hmm->M, L), ha->mxsize, errbuf)) != eslOK) goto ERROR;
         free(i2k);  i2k  = NULL;
@@ -1855,7 +1892,18 @@ hmm_align_one(HMM_ALIGNER *ha, const ESL_SQ *sq, P7_TRACE *tr, float *st, char *
               i2k[i] = k;
           }
         }
-        if ((status = p7_pins2bands(i2k, derrbuf, L, hmm->M, pad, &kmin, &kmax, &ncells)) != eslOK)
+        /* brief 26_0821-193: the band's pad is 30 by default. With
+         * --p7padplus <n> it is what --p7band's Viterbi-trace band uses
+         * (p7_Seq2BandsVit() in cm_alndata.c): each node's pad from the CM
+         * plus <n> (cm->p7bpad), or <n> alone if the CM has none. */
+        if (ha->do_padplus && (cm->flags & CMH_P7NODEPAD)) {
+          ESL_ALLOC(nodepad, sizeof(int) * (hmm->M + 1));
+          for (k = 0; k <= hmm->M; k++) nodepad[k] = cm->p7_cm_nodepad[k] + cm->p7bpad;
+          status = p7_pins2bands_nodepad(i2k, derrbuf, L, hmm->M, nodepad, 0, 0.75, &kmin, &kmax, &ncells);
+          free(nodepad); nodepad = NULL;
+        }
+        else status = p7_pins2bands(i2k, derrbuf, L, hmm->M, ha->do_padplus ? cm->p7bpad : pad, &kmin, &kmax, &ncells);
+        if (status != eslOK)
           { status = hmm_fail(errbuf, status, "p7_pins2bands() failed for sequence %s: %s", sq->name, derrbuf); goto ERROR; }
       }
     }
@@ -3179,6 +3227,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   maybe_hmm_autoswitch(go, cm);
   if(hmm_autoswitched && hmm_cm_only_option(go) != NULL) mpi_failure(HMM_AUTOSWITCH_OPT_FMT, hmm_cm_only_option(go), cm->name);
   maybe_kmerchain_default(go, cm);
+  if(p7padplus_errmsg(go) != NULL) mpi_failure("%s", p7padplus_errmsg(go));
 
   nworkers  = cfg->nproc - 1;
   if(cfg->ofp != stdout) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm, nworkers+1);
@@ -3686,12 +3735,8 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
     goto ERROR;
   }
 
-  /* --p7padplus pads the p7 bands, which only --p7band and --hmm use. */
-  if(esl_opt_IsUsed(go, "--p7padplus") &&
-     (! esl_opt_GetBoolean(go, "--p7band")) && (! esl_opt_GetBoolean(go, "--hmm"))) {
-    puts("\nERROR: --p7padplus requires --p7band or --hmm\n");
-    goto ERROR;
-  }
+  /* --p7padplus is checked after the CM is read, in p7padplus_errmsg(),
+   * since a 0-basepair CM can switch to HMM-only alignment (brief 26_0821-193) */
 
   /* brief 26_0628-032: --p7kmerchain only derives bands; it needs an
    * anchor mode to use them: --p7band (CM-side) or --hmm (HMM-only banded OA),
