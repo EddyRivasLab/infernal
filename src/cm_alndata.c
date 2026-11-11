@@ -1821,9 +1821,18 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	 * CP9 band calculation does (plain_cp9_engine()). Size and recommended
 	 * --mxsize are shared with cmalign's HMM-only alignment (brief 26_0821-193). */
 	double fbvit_Mb = cm_p7_ViterbiMxMb(cm->fp7->M, sq->L);
-	if (fbvit_Mb > mxsize)
-	  ESL_XFAIL(eslERANGE, errbuf, "HMM band calculation needs %.0f Mb > %.0f Mb limit.\nUse --mxsize %d.",
-		    fbvit_Mb, mxsize, cm_MxsizeRecommend(fbvit_Mb));
+	if (fbvit_Mb > mxsize) {
+	  /* brief 26_0821-193: too big, so skip the re-derivation, and return
+	   * the CM alignment's own status and message. The callers retry in
+	   * non-truncated mode only on eslEAMBIGUOUS (no valid parsetree),
+	   * which an eslERANGE here used to replace. The message says why the
+	   * retry was skipped, if there is room for it. */
+	  size_t n = strlen(errbuf);
+	  if (n + 1 < eslERRBUFSIZE)
+	    snprintf(errbuf + n, eslERRBUFSIZE - n, " (p7 Viterbi band retry skipped: needs %.0f Mb > %.0f Mb; use --mxsize %d)",
+		     fbvit_Mb, mxsize, cm_MxsizeRecommend(fbvit_Mb));
+	  goto ERROR;
+	}
 	ibv_fallback_used = TRUE;
 	errbuf[0] = '\0';
 	status    = eslOK;
