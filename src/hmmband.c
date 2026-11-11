@@ -5732,8 +5732,6 @@ cp9_MarginalCandidatesFromStartEndPositions(CM_t *cm, CP9Bands_t *cp9b, int pass
  *
  * Currently not compiled (#if 0'ed out) but saved for ref: 
  * ijBandedTraceInfoDump()
- * ijdBandedTraceInfoDump()
- * debug_print_hd_bands()
  * debug_print_ij_bands()
  * debug_print_parsetree_and_ij_bands()
  *		     
@@ -5741,10 +5739,6 @@ cp9_MarginalCandidatesFromStartEndPositions(CM_t *cm, CP9Bands_t *cp9b, int pass
 #if 0 
 static void         ijBandedTraceInfoDump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax, 
 					  int *jmin, int *jmax, int debug_level);
-static void         ijdBandedTraceInfoDump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax, 
-					   int *jmin, int *jmax, int **hdmin, int **hdmax, 
-					   int debug_level);
-static void         debug_print_hd_bands(CM_t *cm, int **hdmin, int **hdmax, int *jmin, int *jmax);
 static void         debug_print_parsetree_and_ij_bands(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ *dsq, CP9Bands_t *cp9b);
 static void         cp9_RelaxRootBandsForSearch(CM_t *cm, int i0, int j0, int *imin, int *imax, int *jmin, int *jmax);
 #endif
@@ -5980,163 +5974,6 @@ ijBandedTraceInfoDump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax,
   return;
 }
 
-
-/* EPN 11.03.05
- * Function: ijdBandedTraceInfoDump()
- *
- * Purpose:  Experimental HMMERNAL function used in development.
- *           This function determines how close the
- *           trace was to the bands for i and j and d at each state in the trace,
- *           and prints out that information in differing levels
- *           of verbosity depending on an input parameter 
- *           (debug_level).
- * 
- * Args:    cm       - the CM (useful for determining which states are E states)
- *          tr       - the parsetree (trace)
- *          imin     - minimum i bound for each state v; [0..v..M-1]
- *          imax     - maximum i bound for each state v; [0..v..M-1]
- *          jmin     - minimum j bound for each state v; [0..v..M-1]
- *          jmax     - maximum j bound for each state v; [0..v..M-1]
- *          hdmin    - minimum d bound for each state v and offset j;
- *                     [0..v..M-1][0..(jmax[v]-jmin[v])]
- *          hdmax    - maximum d bound for each state v and offset j; 
- *                     [0..v..M-1][0..(jmax[v]-jmin[v])]
- *          debug_level - level of verbosity
- * Returns: (void) 
- */
-
-void
-ijdBandedTraceInfoDump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax, 
-		       int *jmin, int *jmax, int **hdmin, int **hdmax, int debug_level)
-{
-  int v, i, j, d, tpos;
-  int imindiff;            /* i - imin[v] */
-  int imaxdiff;            /* imax[v] - i */
-  int jmindiff;            /* j - jmin[v] */
-  int jmaxdiff;            /* jmax[v] - j */
-  int hdmindiff;           /* d - hdmin[v][j] */
-  int hdmaxdiff;           /* hdmax[v][j] - d */
-
-  int imin_out;
-  int imax_out;
-  int jmin_out;
-  int jmax_out;
-  int hdmin_out;
-  int hdmax_out;
-  int local_used;
-
-  imin_out = 0;
-  imax_out = 0;
-  jmin_out = 0;
-  jmax_out = 0;
-  hdmin_out = 0;
-  hdmax_out = 0;
-  local_used = 0;
-
-  debug_level = 2;
-
-  for (tpos = 0; tpos < tr->n; tpos++)
-    {
-      v  = tr->state[tpos];
-      i = tr->emitl[tpos];
-      j = tr->emitr[tpos];
-      d = j-i+1;
-      if(cm->sttype[v] == EL_st) /*END LOCAL state*/
-	{
-	  if(debug_level > 1)
-	    {
-	      printf("v: %4d NA   %-2s (  NA) | d: %4d | i: %4d | in: NA    | ix: NA   | NA  | NA  |\n", v, Statetype(cm->sttype[v]), d, i);
-	      printf("                                 | j: %4d | jn: NA   | jx: NA  | NA  | NA  |\n", j);
-	      printf("                                 | d: %4d | dn: NA   | dx: NA   | NA  | NA  |\n", d);
-	      
-	      local_used++;
-	    }
-	}
-      else
-	{
-	  imindiff = i-imin[v];
-	  imaxdiff = imax[v]-i;
-	  jmindiff = j-jmin[v];
-	  jmaxdiff = jmax[v]-j;
-	  if(j >= jmin[v] && j <= jmax[v])
-	    {
-	      hdmindiff = d - hdmin[v][j-jmin[v]];
-	      hdmaxdiff = hdmax[v][j-jmin[v]] - d;
-	    }  
-	  else
-	    {
-	      hdmindiff = -1000;
-	      hdmaxdiff = -1000;
-	    }
-	  if(imindiff < 0)
-	    imin_out++;
-	  if(imaxdiff < 0)
-	    imax_out++;
-	  if(jmindiff < 0)
-	    jmin_out++;
-	  if(jmaxdiff < 0)
-	    jmax_out++;
-	  if(hdmindiff < 0)
-	    hdmin_out++;
-	  if(hdmaxdiff < 0)
-	    hdmax_out++;
-	  
-	  if(debug_level > 1 || ((imindiff < 0) || (imaxdiff < 0) || (jmindiff < 0) || (jmaxdiff < 0) || 
-				 (hdmindiff < 0) || (hdmaxdiff < 0)))
-	    {
-	      printf("v: %4d %-4s %-2s (%4d) | d: %4d | i: %4d | in: %4d | ix: %4d | %3d | %3d |\n", v, Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]), cm->ndidx[v], d, i, imin[v], imax[v], imindiff, imaxdiff);
-	      printf("                                 | j: %4d | jn: %4d | jx: %4d | %3d | %3d |\n", j, jmin[v], jmax[v], jmindiff, jmaxdiff);
-	      if(j >= jmin[v] && j <= jmax[v])
-		{
-		  printf("                                 | d: %4d | dn: %4d | dx: %4d | %3d | %3d |\n", d, hdmin[v][j-jmin[v]], hdmax[v][j-jmin[v]], hdmindiff, hdmaxdiff);
-		}	  
-	      else
-		{
-		  printf("                                 | d: %4d | dn: jout | dx: jout | %3d | %3d |\n", d, hdmindiff, hdmaxdiff);
-		}
-	    }
-	}
-    }
-  printf("\nimin out  : %d\n", imin_out);
-  printf("imax out  : %d\n", imax_out);
-  printf("jmin out  : %d\n", jmin_out);
-  printf("jmax out  : %d\n", jmax_out);
-  printf("hdmin out : %d\n", hdmin_out);
-  printf("hdmax out : %d\n", hdmax_out);
-  printf("local used: %d\n", local_used);
-  
-  if((imin_out + imax_out + jmin_out + jmax_out) > 0)
-    {
-      printf("ERROR, some of the i and j bands are going to prevent optimal alignment. Sorry.\n");
-    }
-
-  return;
-}
-
-/* EPN 01.18.06
- * Function: debug_print_hd_bands
- *
- * Purpose:  Print out the v and j dependent hd bands.
- */
-void
-debug_print_hd_bands(CM_t *cm, int **hdmin, int **hdmax, int *jmin, int *jmax)
-{
-  int v, j;
-
-  printf("\nPrinting hd bands :\n");
-  printf("****************\n");
-  for(v = 0; v < cm->M; v++)
-   {
-     for(j = jmin[v]; j <= jmax[v]; j++) 
-       {
-	 printf("band v:%d j:%d n:%d %-4s %-2s min:%d max:%d\n", v, j, cm->ndidx[v], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]), hdmin[v][j-jmin[v]], hdmax[v][j-jmin[v]]);
-       }
-     printf("\n");
-   }
-  printf("****************\n\n");
-
-  return;
-}
 
 /* Function: debug_print_parsetree_and_ij_bands()
  * Date:     EPN, Sun Jan 27 16:38:14 2008
