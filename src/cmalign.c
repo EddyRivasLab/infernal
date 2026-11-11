@@ -1148,7 +1148,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   }
 #endif
 
-  infocnt = (ncpus == 0) ? 1 : ncpus;
+  infocnt = ESL_MAX(1, ncpus); /* ncpus >= 0: 1 if 0, else ncpus */
   ESL_ALLOC(info, sizeof(WORKER_INFO) * infocnt);
 
   for (k = 0; k < infocnt; ++k)    {
