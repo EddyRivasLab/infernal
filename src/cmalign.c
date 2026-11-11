@@ -464,7 +464,25 @@ static void hmm_pipeline_thread(void *arg);
 static int  mpi_master   (ESL_GETOPTS *go, struct cfg_s *cfg);
 static int  mpi_worker   (ESL_GETOPTS *go, struct cfg_s *cfg);
 static void mpi_failure  (char *format, ...);
-static void hmm_mpi_align_block(ESL_SQ_BLOCK *sq_block, P7_TRACE **trA, float *stA, char **buf, int *nalloc, int *idle, int *ret_nidle, int *ready_seen);
+/* the MPI master's state of its workers (see mpi_align_block()) */
+typedef struct mpi_workers_s {
+  int   nproc;       /* number of MPI processes, master included */
+  int  *idle;        /* [0..nidle-1] workers free between blocks */
+  int   nidle;
+  int  *ready_seen;  /* [1..nproc-1] TRUE once that worker's ready message is received */
+  char *buf;         /* the master's MPI buffer */
+  int   nalloc;      /* its allocated size */
+} MPI_WORKERS;
+/* where hmm_mpi_recv_result() puts a block's HMM-only results */
+typedef struct {
+  P7_TRACE **trA;
+  float     *stA;
+} HMM_MPI_RESULTS;
+static MPI_WORKERS *mpi_workers_Create(int nproc);
+static void mpi_workers_Destroy(MPI_WORKERS *mw);
+static void mpi_workers_Stop(MPI_WORKERS *mw);
+static void mpi_align_block(MPI_WORKERS *mw, ESL_SQ_BLOCK *sq_block, void (*recv_result)(char *buf, int n, ESL_SQ_BLOCK *sq_block, int wi, void *arg), void *arg);
+static void hmm_mpi_recv_result(char *buf, int n, ESL_SQ_BLOCK *sq_block, int wi, void *arg);
 #define INFERNAL_ERROR_TAG          1
 #define INFERNAL_DSQ_TAG            2
 #define INFERNAL_INITIALREADY_TAG   3
@@ -2192,11 +2210,8 @@ hmm_master(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int ncpus, int nproc)
   int            any_pp          = FALSE;
   char          *ppcons          = NULL;  /* merged PP_cons, [0..M-1] */
 #ifdef HAVE_MPI
-  char          *mpibuf          = NULL;
-  int            mpibuf_size     = 0;
-  int           *mpi_idle        = NULL;  /* MPI workers free between blocks */
-  int            mpi_nidle       = 0;
-  int           *mpi_ready_seen  = NULL;  /* [wi] TRUE once worker wi's start-up message is received */
+  MPI_WORKERS   *mw              = NULL;  /* the MPI master's workers */
+  HMM_MPI_RESULTS mpires;
 #endif
 #ifdef HMMER_THREADS
   ESL_THREADS    *threadObj      = NULL;
@@ -2242,11 +2257,7 @@ hmm_master(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int ncpus, int nproc)
   }
 
 #ifdef HAVE_MPI
-  if (nproc > 0) {
-    ESL_ALLOC(mpi_idle,       sizeof(int) * nproc);
-    ESL_ALLOC(mpi_ready_seen, sizeof(int) * nproc);
-    esl_vec_ISet(mpi_ready_seen, nproc, FALSE);
-  }
+  if (nproc > 0) mw = mpi_workers_Create(nproc);
 #endif
   ESL_ALLOC(pp_totp, sizeof(double) * (cm->mlp7->M + 1));
   ESL_ALLOC(pp_nuse, sizeof(int)    * (cm->mlp7->M + 1));
@@ -2289,7 +2300,9 @@ hmm_master(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int ncpus, int nproc)
     /* align the sequences in the block */
     if (nproc > 0) {
 #ifdef HAVE_MPI
-      hmm_mpi_align_block(sq_block, trA + nmap_cur, stA, &mpibuf, &mpibuf_size, mpi_idle, &mpi_nidle, mpi_ready_seen);
+      mpires.trA = trA + nmap_cur;
+      mpires.stA = stA;
+      mpi_align_block(mw, sq_block, hmm_mpi_recv_result, &mpires);
 #endif
     }
 #ifdef HMMER_THREADS
@@ -2336,17 +2349,8 @@ hmm_master(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int ncpus, int nproc)
   else if (sstatus != eslEOF)     hmm_fatal("Unexpected error while reading sequence file");
 
 #ifdef HAVE_MPI
-  /* done with all blocks: every worker is free now. Receive the start-up
-   * message of any worker that never got a sequence, so no message is
-   * left unreceived at MPI_Finalize(), then stop each worker. */
-  if (nproc > 0) {
-    int        wi, wstatus;
-    MPI_Status mpistatus;
-    for (wi = 1; wi < nproc; wi++) {
-      if (! mpi_ready_seen[wi]) MPI_Recv(&wstatus, 1, MPI_INT, wi, INFERNAL_INITIALREADY_TAG, MPI_COMM_WORLD, &mpistatus);
-      if (cm_dsq_MPISend(NULL, NULL, -1, -1, wi, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size) != eslOK) mpi_failure("MPI send failed");
-    }
-  }
+  /* done with all blocks: stop the workers (see mpi_workers_Stop()) */
+  if (nproc > 0) mpi_workers_Stop(mw);
 #endif
 
   /* if nec, merge the blocks in the tmpfile */
@@ -2377,9 +2381,7 @@ hmm_master(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int ncpus, int nproc)
   }
 #endif
 #ifdef HAVE_MPI
-  if (mpibuf         != NULL) free(mpibuf);
-  if (mpi_idle       != NULL) free(mpi_idle);
-  if (mpi_ready_seen != NULL) free(mpi_ready_seen);
+  mpi_workers_Destroy(mw);
 #endif
   hmm_aligner_Destroy(ha);
   free(pp_totp);
@@ -2824,81 +2826,192 @@ hmm_trace_MPISend(P7_TRACE *tr, int64_t idx, const float *st, int dest, int tag,
   return eslEMEM;
 }
 
-/* hmm_mpi_align_block()
- * Incept: EPN, Tue Nov 10 2026 (w/Claude)
+/* MPI_WORKERS and the master's side of HMM-only alignment's MPI
+ * protocol (brief 26_0821-192; made shareable in brief 26_0821-193):
  *
- * HMM-only alignment's MPI master side for one block of sequences:
- * send each sequence to the next free worker, and receive each trace
- * into <trA>[i] and its score-table values into <stA> + i*HMMST_N, i =
- * the sequence's index in the block. <*buf>/<*nalloc> is the master's
- * MPI buffer.
+ *   - Each worker sends one INFERNAL_INITIALREADY_TAG message when it
+ *     has set up, then aligns each sequence the master sends it and
+ *     sends back the result (INFERNAL_ALNDATA_TAG), until it receives
+ *     a NULL dsq, which means the end of the input.
+ *   - mpi_align_block() sends a block's sequences to the workers, one
+ *     at a time, and receives the results. There is no end-of-block
+ *     signal: the workers that are free at the end of a block stay in
+ *     <idle> for the next one, and <ready_seen>[wi] records that worker
+ *     wi's ready message has been received.
+ *   - mpi_workers_Stop(), after the last block, receives the ready
+ *     message of every worker that never got a sequence, and sends
+ *     each worker the NULL dsq. A worker that failed during set-up
+ *     sent an error message instead (and waits to be killed): that
+ *     aborts the run with its message.
  *
- * Unlike CM mode, there is no end-of-block signal: an HMM-only worker
- * keeps no per-block state, and in CM mode's protocol a worker that got
- * no sequence in a block takes that signal for the end of the input and
- * quits. Instead the workers that are free at the end of a block are
- * kept in <idle> (<*ret_nidle> of them) for the next one, and
- * <ready_seen>[wi] records that worker <wi>'s one start-up "ready"
- * message has been received; hmm_master() stops all workers after the
- * last block (brief 26_0821-192).
+ * CM mode's mpi_master() still sends every worker a NULL dsq at the
+ * end of each block, and each worker a ready message at the start of
+ * each.
+ */
+
+/* mpi_workers_Create()
+ * Incept: EPN, Wed Nov 11 2026 (w/Claude)
+ */
+static MPI_WORKERS *
+mpi_workers_Create(int nproc)
+{
+  MPI_WORKERS *mw = NULL;
+  int          status;
+
+  ESL_ALLOC(mw, sizeof(MPI_WORKERS));
+  mw->nproc      = nproc;
+  mw->idle       = NULL;
+  mw->ready_seen = NULL;
+  mw->nidle      = 0;
+  mw->buf        = NULL;
+  mw->nalloc     = 0;
+  ESL_ALLOC(mw->idle,       sizeof(int) * nproc);
+  ESL_ALLOC(mw->ready_seen, sizeof(int) * nproc);
+  esl_vec_ISet(mw->ready_seen, nproc, FALSE);
+  return mw;
+
+ ERROR:
+  mpi_failure("out of memory");
+  return NULL; /* NOTREACHED */
+}
+
+/* mpi_workers_Destroy()
+ * Incept: EPN, Wed Nov 11 2026 (w/Claude)
  */
 static void
-hmm_mpi_align_block(ESL_SQ_BLOCK *sq_block, P7_TRACE **trA, float *stA, char **buf, int *nalloc, int *idle, int *ret_nidle, int *ready_seen)
+mpi_workers_Destroy(MPI_WORKERS *mw)
 {
-  MPI_Status  mpistatus;
-  int         buf_size, pos, wi;
-  int         nidle     = *ret_nidle;
-  int         nworking  = 0;
-  int         si        = 0;
-  int64_t     recv_idx;
-  P7_TRACE   *recv_tr;
-  float       recv_st[HMMST_N];
-  ESL_SQ     *sq;
-  void       *tmp;
-  int         status;
+  if (mw == NULL) return;
+  free(mw->idle);
+  free(mw->ready_seen);
+  free(mw->buf);
+  free(mw);
+}
+
+/* mpi_recv_any()
+ * Incept: EPN, Wed Nov 11 2026 (w/Claude)
+ *
+ * Receive the next message from worker <source> (or MPI_ANY_SOURCE),
+ * of any tag, into <mw->buf>, NUL-terminated so that an error message
+ * (sent without its '\0' by mpi_failure()) can be printed. Returns the
+ * message's size in <*ret_n>, its tag in <*ret_tag> and its sender in
+ * <*ret_wi>. An error message from a worker aborts the run with it.
+ */
+static void
+mpi_recv_any(MPI_WORKERS *mw, int source, int *ret_n, int *ret_tag, int *ret_wi)
+{
+  MPI_Status mpistatus;
+  int        n, wi, tag;
+  void      *tmp;
+  int        status;
+
+  if (MPI_Probe(source, MPI_ANY_TAG, MPI_COMM_WORLD, &mpistatus) != 0) mpi_failure("MPI error receiving a message");
+  if (MPI_Get_count(&mpistatus, MPI_PACKED, &n)                   != 0) mpi_failure("MPI get count failed");
+  if (mw->buf == NULL || n + 1 > mw->nalloc) { ESL_RALLOC(mw->buf, tmp, sizeof(char) * (n + 1)); mw->nalloc = n + 1; }
+  wi  = mpistatus.MPI_SOURCE;
+  tag = mpistatus.MPI_TAG;
+  MPI_Recv(mw->buf, n, MPI_PACKED, wi, tag, MPI_COMM_WORLD, &mpistatus);
+  mw->buf[n] = '\0';
+  if (tag == INFERNAL_ERROR_TAG) mpi_failure("MPI client %d raised error:\n%s\n", wi, mw->buf);
+  *ret_n   = n;
+  *ret_tag = tag;
+  *ret_wi  = wi;
+  return;
+
+ ERROR:
+  mpi_failure("out of memory");
+}
+
+/* mpi_align_block()
+ * Incept: EPN, Wed Nov 11 2026 (w/Claude)
+ *
+ * The MPI master's side of aligning one block of sequences: send each
+ * sequence (with its name, so that a worker's messages name it as a
+ * serial run does) to the next free worker, and pass each result
+ * message to <recv_result>(<mw->buf>, its size, <sq_block>, worker,
+ * <arg>), which unpacks and stores it, or fails. Returns once every
+ * sequence's result is in; the free workers are kept in <mw> for the
+ * next block. See MPI_WORKERS for the protocol.
+ */
+static void
+mpi_align_block(MPI_WORKERS *mw, ESL_SQ_BLOCK *sq_block, void (*recv_result)(char *buf, int n, ESL_SQ_BLOCK *sq_block, int wi, void *arg), void *arg)
+{
+  ESL_SQ *sq;
+  int     nworking = 0;
+  int     si       = 0;
+  int     n, tag, wi;
 
   /* first the workers left free by the previous block */
-  while (nidle > 0 && si < sq_block->count) {
-    wi = idle[--nidle];
+  while (mw->nidle > 0 && si < sq_block->count) {
+    wi = mw->idle[--mw->nidle];
     sq = sq_block->list + si;
-    if (cm_dsq_MPISend(sq->name, sq->dsq, sq->L, sq_block->first_seqidx + si, wi, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, buf, nalloc) != eslOK) mpi_failure("problem sending dsq to worker %d", wi);
+    if (cm_dsq_MPISend(sq->name, sq->dsq, sq->L, sq_block->first_seqidx + si, wi, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mw->buf, &mw->nalloc) != eslOK) mpi_failure("problem sending dsq to worker %d", wi);
     nworking++;
     si++;
   }
 
   while (si < sq_block->count || nworking > 0) {
-    if (MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &mpistatus) != 0) mpi_failure("MPI error receiving message");
-    if (MPI_Get_count(&mpistatus, MPI_PACKED, &buf_size)                   != 0) mpi_failure("MPI get count failed");
-    if (*buf == NULL || buf_size > *nalloc) { ESL_RALLOC(*buf, tmp, sizeof(char) * buf_size); *nalloc = buf_size; }
-    wi = mpistatus.MPI_SOURCE;
-    MPI_Recv(*buf, buf_size, MPI_PACKED, wi, mpistatus.MPI_TAG, MPI_COMM_WORLD, &mpistatus);
-
-    if (mpistatus.MPI_TAG == INFERNAL_ALNDATA_TAG) {
-      pos = 0;
-      if (hmm_trace_MPIUnpack(*buf, buf_size, &pos, MPI_COMM_WORLD, &recv_tr, &recv_idx, recv_st) != eslOK) mpi_failure("problem unpacking trace from worker %d", wi);
-      recv_idx -= sq_block->first_seqidx;
-      if (recv_idx < 0 || recv_idx >= sq_block->count) mpi_failure("worker %d sent a trace for a sequence not in this block", wi);
-      trA[recv_idx] = recv_tr;
-      esl_vec_FCopy(recv_st, HMMST_N, stA + (size_t) recv_idx * HMMST_N);
-      nworking--;
-    }
-    else if (mpistatus.MPI_TAG == INFERNAL_INITIALREADY_TAG) ready_seen[wi] = TRUE;
-    else if (mpistatus.MPI_TAG == INFERNAL_ERROR_TAG)        mpi_failure("MPI client %d raised error:\n%s\n", wi, *buf);
-    else                                                     mpi_failure("Unexpected tag %d from %d\n", mpistatus.MPI_TAG, wi);
+    mpi_recv_any(mw, MPI_ANY_SOURCE, &n, &tag, &wi);
+    if      (tag == INFERNAL_ALNDATA_TAG)      { recv_result(mw->buf, n, sq_block, wi, arg); nworking--; }
+    else if (tag == INFERNAL_INITIALREADY_TAG) mw->ready_seen[wi] = TRUE;
+    else                                       mpi_failure("Unexpected tag %d from %d\n", tag, wi);
 
     if (si < sq_block->count) {
       sq = sq_block->list + si;
-      if (cm_dsq_MPISend(sq->name, sq->dsq, sq->L, sq_block->first_seqidx + si, wi, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, buf, nalloc) != eslOK) mpi_failure("problem sending dsq to worker %d", wi);
+      if (cm_dsq_MPISend(sq->name, sq->dsq, sq->L, sq_block->first_seqidx + si, wi, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mw->buf, &mw->nalloc) != eslOK) mpi_failure("problem sending dsq to worker %d", wi);
       nworking++;
       si++;
     }
-    else idle[nidle++] = wi;
+    else mw->idle[mw->nidle++] = wi;
   }
-  *ret_nidle = nidle;
-  return;
+}
 
- ERROR:
-  mpi_failure("out of memory");
+/* mpi_workers_Stop()
+ * Incept: EPN, Wed Nov 11 2026 (w/Claude)
+ *
+ * After the last block: every worker is free. Receive the ready message
+ * of each worker that never got a sequence, so that no message is left
+ * unreceived at MPI_Finalize(), then send each worker the NULL dsq that
+ * stops it. A worker that failed during set-up sent an error message
+ * instead of its ready message: mpi_recv_any() aborts with it, where
+ * waiting for the ready message would hang (brief 26_0821-193).
+ */
+static void
+mpi_workers_Stop(MPI_WORKERS *mw)
+{
+  int wi, n, tag, src;
+
+  for (wi = 1; wi < mw->nproc; wi++) {
+    if (! mw->ready_seen[wi]) {
+      mpi_recv_any(mw, wi, &n, &tag, &src);
+      if (tag != INFERNAL_INITIALREADY_TAG) mpi_failure("Unexpected tag %d from %d\n", tag, src);
+      mw->ready_seen[wi] = TRUE;
+    }
+    if (cm_dsq_MPISend(NULL, NULL, -1, -1, wi, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mw->buf, &mw->nalloc) != eslOK) mpi_failure("MPI send failed");
+  }
+}
+
+/* hmm_mpi_recv_result()
+ * Incept: EPN, Tue Nov 10 2026 (w/Claude)
+ *
+ * mpi_align_block()'s <recv_result> for HMM-only alignment: unpack a
+ * worker's trace into <arg>'s trA[i] and its score-table values into
+ * stA + i*HMMST_N, i = the sequence's index in <sq_block>.
+ */
+static void
+hmm_mpi_recv_result(char *buf, int n, ESL_SQ_BLOCK *sq_block, int wi, void *arg)
+{
+  HMM_MPI_RESULTS *res = (HMM_MPI_RESULTS *) arg;
+  int              pos = 0;
+  int64_t          recv_idx = -1;
+  P7_TRACE        *recv_tr  = NULL;
+  float            recv_st[HMMST_N];
+
+  if (hmm_trace_MPIUnpack(buf, n, &pos, MPI_COMM_WORLD, &recv_tr, &recv_idx, recv_st) != eslOK) mpi_failure("problem unpacking trace from worker %d", wi);
+  recv_idx -= sq_block->first_seqidx;
+  if (recv_idx < 0 || recv_idx >= sq_block->count) mpi_failure("worker %d sent a trace for a sequence not in this block", wi);
+  res->trA[recv_idx] = recv_tr;
+  esl_vec_FCopy(recv_st, HMMST_N, res->stA + (size_t) recv_idx * HMMST_N);
 }
 
 /* mpi_master()
