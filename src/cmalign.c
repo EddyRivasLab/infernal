@@ -119,14 +119,41 @@ typedef struct hmm_aligner_s {
 
 #define ACCOPTS      "--hbanded,--nonbanded,--p7band"         /* Exclusive choice for acceleration or not */
 #define ALGOPTS      "--cyk,--optacc,--sample"               /* Exclusive choice for algorithm */
-/* Options that need CM alignment, so HMM-only alignment can't honor them:
- * errors with --hmm. The CM methods (--small, --sample, --hbanded,
- * --p7band, --ckpt; see hmm_cm_method_option()), and the CM-only output
- * and tuning options of hmm_cm_only_option(), which are also errors when
- * a 0-basepair CM is switched to HMM-only alignment by default. --cyk and
- * --nonbanded have HMM-only meanings (hmm_map_method_options()) (brief
- * 26_0821-192). */
-#define HMMINCOMPAT  "--small,--sample,--hbanded,--p7band,--ckpt,--tfile,--elfile,--bpstatus,--bpcons,--bpcov,--tau,--fixedtau,--maxtau,--no-mxesc,--no-mxesc-fixedtau,--ckpt-cykbands"
+/* Options that need CM alignment, so HMM-only alignment can't honor them
+ * (brief 26_0821-192). One table (brief 26_0821-193) drives all three
+ * uses: Easel's incompatibilities of --hmm (hmm_incompat_list(), set in
+ * process_commandline()), and hmm_cm_method_option() and
+ * hmm_cm_only_option(), which apply them to a 0-basepair CM switched to
+ * HMM-only alignment by default:
+ *   HMMOPT_CM_METHOD: a CM alignment method with no HMM-only counterpart;
+ *     keeps a 0-basepair CM on CM alignment (--hbanded only if typed, as
+ *     it is on by default).
+ *   HMMOPT_CM_ONLY: output from a CM parse tree or the CM's structure,
+ *     and tuning of the CM's bands and engines; an error.
+ * --cyk and --nonbanded have HMM-only meanings (hmm_map_method_options()).
+ * The order of each kind is the order in which they are reported.
+ */
+#define HMMOPT_CM_METHOD 0
+#define HMMOPT_CM_ONLY   1
+static const struct { char *name; int kind; } hmm_cm_opts[] = {
+  { "--sample",            HMMOPT_CM_METHOD },
+  { "--small",             HMMOPT_CM_METHOD },
+  { "--ckpt",              HMMOPT_CM_METHOD },
+  { "--p7band",            HMMOPT_CM_METHOD },
+  { "--hbanded",           HMMOPT_CM_METHOD },
+  { "--tfile",             HMMOPT_CM_ONLY   },
+  { "--elfile",            HMMOPT_CM_ONLY   },
+  { "--bpstatus",          HMMOPT_CM_ONLY   },
+  { "--bpcons",            HMMOPT_CM_ONLY   },
+  { "--bpcov",             HMMOPT_CM_ONLY   },
+  { "--tau",               HMMOPT_CM_ONLY   },
+  { "--fixedtau",          HMMOPT_CM_ONLY   },
+  { "--maxtau",            HMMOPT_CM_ONLY   },
+  { "--no-mxesc",          HMMOPT_CM_ONLY   },
+  { "--no-mxesc-fixedtau", HMMOPT_CM_ONLY   },
+  { "--ckpt-cykbands",     HMMOPT_CM_ONLY   },
+  { NULL,                  0                }
+};
 #if defined (HMMER_THREADS) && defined (HAVE_MPI)
 #define CPUOPTS     "--mpi"
 #define MPIOPTS     "--cpu"
@@ -148,7 +175,7 @@ static ESL_OPTIONS options[] = {
   { "--sample",      eslARG_NONE,       FALSE, NULL,        NULL,    ALGOPTS,        NULL,     "--small", "sample alignment of each seq from posterior distribution",        2 },
   { "--seed",         eslARG_INT,       "181", NULL,      "n>=0",       NULL,  "--sample",          NULL, "w/--sample, set RNG seed to <n> (if 0: one-time arbitrary seed)", 2 },
   { "--notrunc",     eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,          NULL, "do not use truncated alignment algorithm",                        2 },
-  { "--hmm",         eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,  HMMINCOMPAT, "align with the p7 HMM only, no CM; -g acts only w/--notrunc",    2 },
+  { "--hmm",         eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,         NULL, "align with the p7 HMM only, no CM; -g acts only w/--notrunc",    2 },
   { "--hmmvit",      eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--hmm", "--hmmnoband", "w/--hmm, use Viterbi traces (faster, less accurate)",               2 },
   { "--hmmnoband",   eslARG_NONE,       FALSE, NULL,        NULL,       NULL,   "--hmm",   "--hmmvit", "w/--hmm, do not use p7 bands for OA alignment",                  2 },
   { "--nohmm",       eslARG_NONE,       FALSE, NULL,        NULL,       NULL,        NULL,        "--hmm", "align 0-basepair CMs with the CM, not the HMM (for CM-only opts)",  2 },
@@ -765,12 +792,15 @@ static const char *hmm_cm_only_option(const ESL_GETOPTS *go);
 static const char *
 hmm_cm_method_option(const ESL_GETOPTS *go)
 {
-  static char *opts[] = { "--sample", "--small", "--ckpt", "--p7band", NULL };
   int i;
 
-  for (i = 0; opts[i] != NULL; i++)
-    if (esl_opt_IsOn(go, opts[i])) return opts[i];
-  if (esl_opt_GetSetter(go, "--hbanded") != eslARG_SETBY_DEFAULT && esl_opt_GetBoolean(go, "--hbanded")) return "--hbanded";
+  for (i = 0; hmm_cm_opts[i].name != NULL; i++) {
+    if (hmm_cm_opts[i].kind != HMMOPT_CM_METHOD) continue;
+    if (strcmp(hmm_cm_opts[i].name, "--hbanded") == 0) {
+      if (esl_opt_GetSetter(go, "--hbanded") != eslARG_SETBY_DEFAULT && esl_opt_GetBoolean(go, "--hbanded")) return hmm_cm_opts[i].name;
+    }
+    else if (esl_opt_IsOn(go, hmm_cm_opts[i].name)) return hmm_cm_opts[i].name;
+  }
   return NULL;
 }
 
@@ -2015,19 +2045,38 @@ hmm_map_alignment(const ESL_GETOPTS *go, CM_t *cm, ESL_SQ ***ret_sq, P7_TRACE **
  * --no-mxesc, --no-mxesc-fixedtau, --ckpt-cykbands). HMM-only alignment
  * can't honor these, and the alignment method must not depend on them,
  * so they are errors in HMM-only mode instead of a silent switch back to
- * the CM or a silent no-op (brief 26_0821-192). Keep in sync with
- * HMMINCOMPAT, the Easel incompatibilities of an explicit --hmm.
+ * the CM or a silent no-op (brief 26_0821-192). They are the
+ * HMMOPT_CM_ONLY entries of hmm_cm_opts[], which also makes them Easel
+ * incompatibilities of an explicit --hmm (brief 26_0821-193).
  */
 static const char *
 hmm_cm_only_option(const ESL_GETOPTS *go)
 {
-  static char *opts[] = { "--tfile", "--elfile", "--bpstatus", "--bpcons", "--bpcov",
-                          "--tau", "--fixedtau", "--maxtau", "--no-mxesc", "--no-mxesc-fixedtau", "--ckpt-cykbands", NULL };
   int i;
 
-  for (i = 0; opts[i] != NULL; i++)
-    if (esl_opt_IsUsed(go, opts[i])) return opts[i];
+  for (i = 0; hmm_cm_opts[i].name != NULL; i++)
+    if (hmm_cm_opts[i].kind == HMMOPT_CM_ONLY && esl_opt_IsUsed(go, hmm_cm_opts[i].name)) return hmm_cm_opts[i].name;
   return NULL;
+}
+
+/* hmm_incompat_list()
+ * Incept: EPN, Wed Nov 11 2026 (w/Claude)
+ *
+ * The Easel incompatibility list of --hmm: every option of
+ * hmm_cm_opts[], comma-separated (brief 26_0821-193).
+ */
+static char *
+hmm_incompat_list(void)
+{
+  static char list[512];
+  int         i;
+
+  list[0] = '\0';
+  for (i = 0; hmm_cm_opts[i].name != NULL; i++) {
+    if (i > 0) strcat(list, ",");
+    strcat(list, hmm_cm_opts[i].name);
+  }
+  return list;
 }
 
 /* hmm_output_block()
@@ -3491,6 +3540,8 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
   int          infmt   = eslSQFILE_UNKNOWN;
   int          outfmt  = eslMSAFILE_STOCKHOLM;
 
+  /* --hmm's incompatibilities come from hmm_cm_opts[] (brief 26_0821-193) */
+  { int i; for (i = 0; options[i].name != NULL; i++) if (strcmp(options[i].name, "--hmm") == 0) options[i].incompat_opts = hmm_incompat_list(); }
   if ((go = esl_getopts_Create(options))     == NULL)     esl_fatal("Internal failure creating options object");
   if (esl_opt_ProcessEnvironment(go)         != eslOK)  { esl_fprintf(stderr, "Failed to process environment: %s\n", go->errbuf);  goto ERROR; } // ERROR block here puts additional useful
   if (esl_opt_ProcessCmdline(go, argc, argv) != eslOK)  { esl_fprintf(stderr, "Failed to parse command line: %s\n",  go->errbuf);  goto ERROR; } // user-directed cmdline usage stuff to stderr
