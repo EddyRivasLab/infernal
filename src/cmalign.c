@@ -52,8 +52,9 @@
 
 /* Max number of sequences per tmp alignment, if seq file exceeds
  * either of these, final output alignment will be in 1 line/seq Pfam
- * format. Max number of residues is CM_MAX_RESIDUE_COUNT from infernal.h
- * where it's currently defined as (1024 * 1024).
+ * format. Max number of residues is about eslSQFILE_BLOCK_MAXRES from
+ * esl_sqfile.h, currently (1024 * 1024): esl_sqfile_ReadBlock() stops
+ * after the sequence that reaches it.
  */
 #define CMALIGN_MAX_NSEQ  10000  /* 10k sequences, average parsetree is 25 bytes/position this means ~250Mb for all parsetrees */
 
@@ -909,6 +910,29 @@ use_glocal_config(const ESL_GETOPTS *go)
  * 
  * A master can only return if it's successful. All errors are handled immediately and fatally with cm_Fail().
  */
+/* oneblock_errmsg()
+ * Incept: EPN, Wed Nov 11 2026 (w/Claude)
+ *
+ * The error message for a sequence file that is more than one block
+ * (CMALIGN_MAX_NSEQ sequences or about eslSQFILE_BLOCK_MAXRES residues)
+ * when the output format needs the whole alignment in memory
+ * (cfg->do_oneblock: --ileaved or an --outformat other than Stockholm
+ * or Pfam). Names the option and what to do instead. Used by CM and
+ * HMM-only alignment, serial and MPI (brief 26_0821-193).
+ */
+static const char *
+oneblock_errmsg(const ESL_GETOPTS *go)
+{
+  static char msg[512];
+  char        opt[128];
+
+  if (esl_opt_GetBoolean(go, "--ileaved")) snprintf(opt, sizeof(opt), "--ileaved");
+  else                                     snprintf(opt, sizeof(opt), "--outformat %s", esl_opt_GetString(go, "--outformat"));
+  snprintf(msg, sizeof(msg), "the sequence file has more than %d sequences or about %d residues, too many for %s, which needs the whole alignment in memory. Remove %s to get Stockholm output with one line per sequence, and convert it afterwards with `easel reformat` if needed.",
+           CMALIGN_MAX_NSEQ, eslSQFILE_BLOCK_MAXRES, opt, opt);
+  return msg;
+}
+
 static void
 serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
 {
@@ -1094,8 +1118,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   }
 
   /* Our main loop will loop over reading a single large block
-   * (<sq_block>) of sequences, up to CM_MAX_RESIDUE_COUNT
-   * (100000) residues, and up to CMALIGN_MAX_NSEQ
+   * (<sq_block>) of sequences, up to about eslSQFILE_BLOCK_MAXRES
+   * (1024*1024=1048576) residues, and up to CMALIGN_MAX_NSEQ
    * sequences (10,000), but potentially less if we reach the end of
    * the sequence file first.
    */
@@ -1137,7 +1161,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       reached_eof = TRUE; /* nxt_sq_block will not have been filled */
       esl_sq_DestroyBlock(nxt_sq_block); 
     }
-    if((! reached_eof) && cfg->do_oneblock) esl_fatal("Error: the sequence file is too big (has > %d seqs or %d residues) for --ileaved or output\nformat other than Pfam. Use `easel reformat` to reformat alignment later.", CMALIGN_MAX_NSEQ, CM_MAX_RESIDUE_COUNT);
+    if((! reached_eof) && cfg->do_oneblock) cm_Fail("%s", oneblock_errmsg(go));
 
     /* align the sequences in the block */
 #ifdef HMMER_THREADS
@@ -2247,7 +2271,7 @@ hmm_master(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int ncpus, int nproc)
       esl_sq_DestroyBlock(nxt_sq_block);
       nxt_sq_block = NULL;
     }
-    if ((! reached_eof) && cfg->do_oneblock) esl_fatal("Error: the sequence file is too big (has > %d seqs or %d residues) for --ileaved or output\nformat other than Pfam. Use `easel reformat` to reformat alignment later.", CMALIGN_MAX_NSEQ, CM_MAX_RESIDUE_COUNT);
+    if ((! reached_eof) && cfg->do_oneblock) hmm_fatal("%s", oneblock_errmsg(go)); /* brief 26_0821-193: through mpi_failure() in an MPI master */
 
     nmap_cur = (nali == 0) ? nmap : 0;
     ntot     = nmap_cur + n;
@@ -3034,7 +3058,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       reached_eof = TRUE; /* nxt_sq_block will not have been filled */
       esl_sq_DestroyBlock(nxt_sq_block); 
     }
-    if((! reached_eof) && cfg->do_oneblock) esl_fatal("Error: the sequence file is too big (has > %d seqs or %d residues) for --ileaved or\noutput format other than Pfam. Use `easel reformat` to reformat alignment later.", CMALIGN_MAX_NSEQ, eslSQFILE_BLOCK_MAXRES);
+    if((! reached_eof) && cfg->do_oneblock) mpi_failure("%s", oneblock_errmsg(go)); /* brief 26_0821-193: abort the workers too */
 
     /* allocate an array for all CM_ALNDATA objects we'll receive from workers */
     nmap_cur = (nali == 0) ? nmap_data : 0;
