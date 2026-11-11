@@ -1106,16 +1106,8 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   }
 
 #ifdef HMMER_THREADS
-  /* initialize thread data */
   ncpus = ESL_MIN(esl_opt_GetInteger(go, "--cpu"), esl_threads_GetCPUCount());
-  if (ncpus > 0) {
-      threadObj = esl_threads_Create(&pipeline_thread);
-      queue = esl_workqueue_Create(ncpus * 2);
-  }
 #endif
-
-  infocnt = (ncpus == 0) ? 1 : ncpus;
-  ESL_ALLOC(info, sizeof(WORKER_INFO) * infocnt);
 
   /* Read one CM, and make sure there's only one. This fills cfg->abc. */
   status = cm_file_Read(cfg->cmfp, TRUE, &(cfg->abc), &cm);
@@ -1134,6 +1126,30 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   if(p7padplus_errmsg(go) != NULL) cm_Fail("%s", p7padplus_errmsg(go));
 
   if(cfg->ofp != stdout) output_header(stdout, go, cfg->cmfile, cfg->sqfile, cm, ncpus);
+
+  /* initialization */
+  nali = nseq_cur = nseq_aligned = 0;
+  if((status = initialize_cm(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
+
+  /* --hmm mode: HMM-only alignment, bypass normal CM alignment pipeline.
+   * hmm_master() sets up its own threads and handles all output, so
+   * branch before the CM path's set-up below (brief 26_0821-193). */
+  if(esl_opt_GetBoolean(go, "--hmm")) {
+    hmm_master(go, cfg, cm, ncpus, 0);
+    FreeCM(cm);
+    return;
+  }
+
+#ifdef HMMER_THREADS
+  /* initialize thread data */
+  if (ncpus > 0) {
+      threadObj = esl_threads_Create(&pipeline_thread);
+      queue = esl_workqueue_Create(ncpus * 2);
+  }
+#endif
+
+  infocnt = (ncpus == 0) ? 1 : ncpus;
+  ESL_ALLOC(info, sizeof(WORKER_INFO) * infocnt);
 
   for (k = 0; k < infocnt; ++k)    {
     info[k].cm          = NULL;
@@ -1157,45 +1173,13 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   }
 #endif
 
-  /* initialization */
-  nali = nseq_cur = nseq_aligned = 0;
-  if((status = initialize_cm(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
-
   /* do_failover must be read from the FLAG, not the --hbanded option boolean:
    * --p7band joined ACCOPTS and Easel unsets toggle-tied option booleans, so
    * the boolean no longer expresses "am I in HMM-banded mode".  This is set
    * HERE rather than with the rest of info[] above, because the flag is not
-   * raised until initialize_cm() on the line above. */
+   * raised until initialize_cm() above. */
   for (k = 0; k < infocnt; ++k)
     info[k].do_failover = ((cm->align_opts & CM_ALIGN_HBANDED) && (! esl_opt_GetBoolean(go, "--notrunc"))) ? TRUE : FALSE;
-
-  /* --hmm mode: HMM-only alignment, bypass normal CM alignment pipeline */
-  if(esl_opt_GetBoolean(go, "--hmm")) {
-    hmm_master(go, cfg, cm, ncpus, 0);
-    /* clean up and return; hmm_master() handles all output */
-    for(k = 0; k < infocnt; ++k) { 
-      if(info[k].w     != NULL) esl_stopwatch_Destroy(info[k].w);
-      if(info[k].w_tot != NULL) esl_stopwatch_Destroy(info[k].w_tot);
-    }
-    free(info);
-#ifdef HMMER_THREADS
-    if (ncpus > 0) {
-      esl_workqueue_Reset(queue); 
-      if(init_sqA != NULL) { 
-        for (k = 0; k < ncpus * 2; k++) { 
-          if(init_sqA[k] != NULL) esl_sq_Destroy(init_sqA[k]);
-        }
-        free(init_sqA);
-        init_sqA = NULL;
-      }
-      esl_workqueue_Destroy(queue);
-      esl_threads_Destroy(threadObj);
-    }
-    if(init_sqA != NULL) free(init_sqA);
-#endif
-    FreeCM(cm);
-    return;
-  }
 
   for (k = 0; k < infocnt; ++k) {
     if((status = cm_Clone(cm, errbuf, &(info[k].cm))) != eslOK) cm_Fail(errbuf);
