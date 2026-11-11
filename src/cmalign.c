@@ -483,6 +483,13 @@ static void mpi_workers_Destroy(MPI_WORKERS *mw);
 static void mpi_workers_Stop(MPI_WORKERS *mw);
 static void mpi_align_block(MPI_WORKERS *mw, ESL_SQ_BLOCK *sq_block, void (*recv_result)(char *buf, int n, ESL_SQ_BLOCK *sq_block, int wi, void *arg), void *arg);
 static void hmm_mpi_recv_result(char *buf, int n, ESL_SQ_BLOCK *sq_block, int wi, void *arg);
+/* where cm_mpi_recv_result() puts a block's CM alignment results */
+typedef struct {
+  CM_ALNDATA  **merged_dataA;
+  int           nmap_cur;
+  ESL_ALPHABET *abc;
+} CM_MPI_RESULTS;
+static void cm_mpi_recv_result(char *buf, int n, ESL_SQ_BLOCK *sq_block, int wi, void *arg);
 #define INFERNAL_ERROR_TAG          1
 #define INFERNAL_DSQ_TAG            2
 #define INFERNAL_INITIALREADY_TAG   3
@@ -2826,8 +2833,9 @@ hmm_trace_MPISend(P7_TRACE *tr, int64_t idx, const float *st, int dest, int tag,
   return eslEMEM;
 }
 
-/* MPI_WORKERS and the master's side of HMM-only alignment's MPI
- * protocol (brief 26_0821-192; made shareable in brief 26_0821-193):
+/* MPI_WORKERS and the master's side of the MPI protocol, for CM and
+ * HMM-only alignment alike (brief 26_0821-193; HMM-only alignment first
+ * used it in brief 26_0821-192):
  *
  *   - Each worker sends one INFERNAL_INITIALREADY_TAG message when it
  *     has set up, then aligns each sequence the master sends it and
@@ -2844,9 +2852,14 @@ hmm_trace_MPISend(P7_TRACE *tr, int64_t idx, const float *st, int dest, int tag,
  *     sent an error message instead (and waits to be killed): that
  *     aborts the run with its message.
  *
- * CM mode's mpi_master() still sends every worker a NULL dsq at the
- * end of each block, and each worker a ready message at the start of
- * each.
+ * Before, CM mode sent every worker a NULL dsq at the end of each
+ * block, and each worker sent a ready message at the start of each.
+ * A worker that got no sequence in a block took that NULL for the end
+ * of the input and quit; if its ready message was still unreceived,
+ * the master sent it a sequence in the next block and waited forever
+ * for the result. And each worker's last ready message was never
+ * received (Open MPI then prints "unexpected tag-receive descriptor"
+ * warnings). Infernal 1.1.5 has the same protocol.
  */
 
 /* mpi_workers_Create()
@@ -3014,6 +3027,29 @@ hmm_mpi_recv_result(char *buf, int n, ESL_SQ_BLOCK *sq_block, int wi, void *arg)
   esl_vec_FCopy(recv_st, HMMST_N, res->stA + (size_t) recv_idx * HMMST_N);
 }
 
+/* cm_mpi_recv_result()
+ * Incept: EPN, Wed Nov 11 2026 (w/Claude)
+ *
+ * mpi_align_block()'s <recv_result> for CM alignment: unpack a worker's
+ * CM_ALNDATA into <arg>'s merged_dataA[nmap_cur + i], i = the
+ * sequence's index in <sq_block>, and point its sq at that sequence
+ * (the worker sends everything but the sq).
+ */
+static void
+cm_mpi_recv_result(char *buf, int n, ESL_SQ_BLOCK *sq_block, int wi, void *arg)
+{
+  CM_MPI_RESULTS *res      = (CM_MPI_RESULTS *) arg;
+  CM_ALNDATA     *wkr_data = NULL;
+  int             pos      = 0;
+  int64_t         i;
+
+  if (cm_alndata_MPIUnpack(buf, n, &pos, MPI_COMM_WORLD, res->abc, &wkr_data) != eslOK) mpi_failure("problem with alignment results received from worker %d", wi);
+  i = wkr_data->idx - sq_block->first_seqidx;
+  if (i < 0 || i >= sq_block->count) mpi_failure("worker %d sent results for a sequence not in this block", wi);
+  res->merged_dataA[res->nmap_cur + i] = wkr_data;
+  wkr_data->sq = sq_block->list + i;
+}
+
 /* mpi_master()
  * The MPI version of cmalign.
  * Follows standard pattern for a master/worker load-balanced MPI program 
@@ -3045,7 +3081,6 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   char            errbuf[eslERRBUFSIZE]; /* for printing error messages */
   CM_t           *cm = NULL;             /* a CM */
   int             i;                     /* counter over parsetrees */
-  int             si;                    /* sequence index */
   int             nali;                  /* index of the (possibly temporary) alignment we are working on */
   int             nseq_cur;              /* number of sequences in current alignment */
   int             nseq_aligned;          /* number of sequences so far aligned */
@@ -3056,7 +3091,6 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   int      created_tmpfile = FALSE;  /* TRUE if we've created a tmp file for current CM */
   char tmpfile[32] = "esltmpXXXXXX"; /* name of the tmpfile */
   CM_ALNDATA **merged_dataA = NULL;  /* array of all CM_ALNDATA pointers for current alignment */
-  int          merged_data_idx = 0;  /* index in merged_dataA */
   int          nmerged;              /* size of merged_dataA */
 
   /* variables related to reading sequence blocks */
@@ -3073,17 +3107,9 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   char         *map_sscons = NULL; /* SS_cons from mapali, only used if --mapstr */
 
   /* variables related to MPI implementation */
-  MPI_Status       mpistatus;       /* the mpi status */
-  char            *mpibuf  = NULL;  /* buffer used to pack/unpack structures */
-  int              mpibuf_size = 0; /* current size of mpibuf_size */
-  int              buf_size;        /* size of received buffer */
-  int              pos;             /* for packing/unpacking an MPI buffer */
-  int              wi;              /* worker index that we're about to send to or receive from */
+  MPI_WORKERS     *mw = NULL;       /* the workers (see mpi_align_block()) */
+  CM_MPI_RESULTS   cmres;           /* where cm_mpi_recv_result() puts a block's results */
   int              nworkers;        /* number of workers */
-  int              nworking;        /* number of workers currently doing work */
-  int              have_work;       /* TRUE while work remains (sqs remain in sq_block) */
-  CM_ALNDATA      *wkr_data = NULL; /* data recieved from a worker */
-  ESL_SQ          *sq = NULL;       /* sequence to send to a worker */
 
   /* See 'General notes on {serial,mpi}_master()'s strategy' for details
    * on the code organization here. 
@@ -3135,6 +3161,8 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
    * the sequence file first.
    */
 
+  mw = mpi_workers_Create(cfg->nproc);
+
   /* Read the first block */
   sq_block = esl_sq_CreateDigitalBlock(CMALIGN_MAX_NSEQ, cfg->abc);
   sstatus = esl_sqfile_ReadBlock(cfg->sqfp, sq_block, -1, -1, /*max_init_window=*/FALSE, FALSE); /* FALSE says: read complete sequences */
@@ -3183,83 +3211,13 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       free(map_dataA); /* don't free the CM_ALNDATA objects, merged_dataA is pointing at them */
       map_dataA = NULL;
     }
-#if DEBUGMPI
-    printf("master about to enter main loop\n");
-#endif 
-
-    /* main send/recv loop: send sequences to workers and receive their results */
-    have_work = TRUE;
-    nworking  = 0;
-    si        = 0; /* sequence index */
-    while(have_work || nworking > 0) { 
-#if DEBUGMPI
-      printf("master waiting for a message from any worker\n");
-#endif	
-      /* wait for message (results, ready tag or error) from any worker */
-      if (MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &mpistatus) != 0) mpi_failure("MPI error %d receiving message from %d\n", mpistatus.MPI_SOURCE);
-      if (MPI_Get_count(&mpistatus, MPI_PACKED, &buf_size)                   != 0) mpi_failure("MPI get count failed");;
-      if (mpibuf == NULL || buf_size > mpibuf_size) {
-	ESL_REALLOC(mpibuf, sizeof(char) * buf_size);
-	mpibuf_size = buf_size; 
-      }
-      wi = mpistatus.MPI_SOURCE;
-      MPI_Recv(mpibuf, buf_size, MPI_PACKED, wi, mpistatus.MPI_TAG, MPI_COMM_WORLD, &mpistatus);
-      
-#if DEBUGMPI
-      printf("master received message from worker %d, tag %d\n", wi, mpistatus.MPI_TAG);
-#endif	
-      /* tag should be either:
-       * INFERNAL_INITIALREADY_TAG: worker just initialized, and is ready for work 
-       * INFERNAL_ALNDATA_TAG:      worker finished work, and sent us results 
-       * INFERNAL_ERROR_TAG:        worker sent us an error
-       */
-      if (mpistatus.MPI_TAG == INFERNAL_ALNDATA_TAG) { 
-	/* receive CM_ALNDATA result from worker, and point merged_dataA at it */
-	pos = 0;
-	status = cm_alndata_MPIUnpack(mpibuf, buf_size, &pos, MPI_COMM_WORLD, cfg->abc, &wkr_data);
-	if(status != eslOK) mpi_failure("problem with alignment results received from worker %d", wi);
-	merged_data_idx = wkr_data->idx - nseq_aligned + nmap_cur;
-	merged_dataA[merged_data_idx]     = wkr_data; /* wkr_data we received had everything we need except the sq */
-	merged_dataA[merged_data_idx]->sq = sq_block->list + (wkr_data->idx - sq_block->first_seqidx); /* point sq at appropriate sequence */
-	nworking--; /* one less worker is working now */
-#if DEBUGMPI
-	printf("received results from worker %d, %d workers now working\n", wi, nworking);
-#endif	
-      }
-      else if(mpistatus.MPI_TAG == INFERNAL_ERROR_TAG) { 
-	mpi_failure("MPI client %d raised error:\n%s\n", wi, mpibuf);
-      }
-      else if (mpistatus.MPI_TAG != INFERNAL_INITIALREADY_TAG) { 
-	mpi_failure("Unexpected tag %d from %d\n", mpistatus.MPI_TAG, wi);
-      }
-      
-      if(have_work) { /* send new sequence: si's dsq, L, and seqidx to the worker */
-	sq = sq_block->list + si;
-	status = cm_dsq_MPISend(sq->name, sq->dsq, sq->L, sq_block->first_seqidx + si, wi, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size);
-	if(status != eslOK) mpi_failure("problem sending dsq to worker %d", wi);
-	nworking++; /* one more worker is working now */
-	si++;       /* move onto next sequence */
-#if DEBUGMPI
-	printf("master sent dsq si: %d/%d to worker %d, %d workers now working\n", si, sq_block->count, wi, nworking);
-#endif
-	if(si == sq_block->count) { 
-	  have_work = FALSE;
-	  ESL_DPRINTF1(("#DEBUG: MPI master has sent all %d of its sequences\n", sq_block->count));
-#if DEBUGMPI
-	  printf("master is out of work\n");
-#endif 
-	}
-      }
-    }
-    if(nworking != 0) mpi_failure("%d workers still working when all should be idle", nworking);
-
-    /* we're done with sq_block, tell the workers by sending a NULL dsq */
-#if DEBUGMPI
-    printf("master sending NULL dsq to all workers signaling we're done with the file\n");
-#endif
-    for (wi = 1; wi < cfg->nproc; wi++) {
-      if((status = cm_dsq_MPISend(NULL, NULL, -1, -1, wi, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size)) != eslOK) mpi_failure(errbuf);
-    }
+    /* send the block's sequences to the workers and receive their
+     * results; no end-of-block signal (see mpi_align_block(); brief
+     * 26_0821-193) */
+    cmres.merged_dataA = merged_dataA;
+    cmres.nmap_cur     = nmap_cur;
+    cmres.abc          = cfg->abc;
+    mpi_align_block(mw, sq_block, cm_mpi_recv_result, &cmres);
 
     /* output alignment (if do_oneblock we died above if we didn't reach EOF yet) */
     use_tmpfile = (reached_eof && (! created_tmpfile)) ? FALSE : TRUE; /* output to tmpfile only if this is the first alignment and we've aligned all seqs */
@@ -3295,13 +3253,8 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     free(merged_dataA);
   } /* end of outer while loop 'while(sstatus == eslOK)' */
 
-  /* done with all sequences/blocks in the sequence file, tell the workers */
-#if DEBUGMPI
-  printf("master sending NULL dsq to all workers signaling we're done with the file\n");
-#endif
-  for (wi = 1; wi < cfg->nproc; wi++) {
-    if((status = cm_dsq_MPISend(NULL, NULL, -1, -1, wi, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size)) != eslOK) mpi_failure(errbuf);
-  }
+  /* done with all sequences/blocks in the sequence file, stop the workers */
+  mpi_workers_Stop(mw);
   
   if     (sstatus == eslEFORMAT) mpi_failure("Parse failed (sequence file %s):\n%s\n", cfg->sqfp->filename, esl_sqfile_GetErrorBuf(cfg->sqfp));
   else if(sstatus == eslEMEM)    mpi_failure("Out of memory");
@@ -3323,7 +3276,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   /* clean up */
   if(map_sscons != NULL) free(map_sscons);
   FreeCM(cm);
-  if(mpibuf != NULL) free(mpibuf);
+  mpi_workers_Destroy(mw);
 
   return eslOK;
   
@@ -3351,8 +3304,6 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   char           *mpibuf      = NULL;     /* buffer used to pack/unpack structures */
   int             mpibuf_size = 0;        /* size of the mpibuf                    */
   char           *sqname      = NULL;     /* sequence name, rec'd from master */
-  int             blocks_remain_in_file;  /* set to FALSE to break outer loop over blocks */
-  int             seqs_remain_in_block;   /* set to FALSE to break inner loop over seqs  */
 
   if ((status = init_shared_cfg(go, cfg, errbuf)) != eslOK) mpi_failure(errbuf);
   if(esl_opt_GetBoolean(go, "--sample")) mpi_failure("--sample does not work with in MPI mode (b/c results would not be exactly reproducible)");
@@ -3424,94 +3375,62 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
    * "am I in HMM-banded mode".  initialize_cm() above has already set the flag. */
   info.do_failover = ((cm->align_opts & CM_ALIGN_HBANDED) && (! esl_opt_GetBoolean(go, "--notrunc"))) ? TRUE : FALSE;
 
-  /* Main loop: actually two nested while loops, over sequence blocks
-   * (while(blocks_remain_in_file)) and over sequences within blocks
-   * (while(seqs_remain_in_block)). We exit each loop when the master
-   * tells us to, by sending a NULL dsq. If we receive a NULL dsq,
-   * we'll exit the inner loop over sequences, and if we immediately
-   * receive another NULL dsq we'll exit the outer loop over blocks.
+  /* Main loop: one ready message, then align each sequence the master
+   * sends until it sends a NULL dsq, the end of the input. There are no
+   * block boundaries here (see mpi_align_block(); brief 26_0821-193).
    */
-  blocks_remain_in_file = TRUE;
-  while(blocks_remain_in_file) {
-    /* inform the master that we're ready for our first seq of the block */
-    status = eslOK;
-    MPI_Send(&status, 1, MPI_INT, 0, INFERNAL_INITIALREADY_TAG, MPI_COMM_WORLD);
-
+  status = eslOK;
+  MPI_Send(&status, 1, MPI_INT, 0, INFERNAL_INITIALREADY_TAG, MPI_COMM_WORLD);
 #if DEBUGMPI
-    printf("worker %d sent initial ready tag to master, waiting for 1st dsq\n", cfg->my_rank);
+  printf("worker %d sent initial ready tag to master\n", cfg->my_rank);
 #endif 
 
-    /* receive first dsq in block, if it's NULL, we know we're out of blocks */
+  while (1) {
     status = cm_dsq_MPIRecv(0, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size, &dsq, &L, &idx, &sqname);
-    if     (status == eslOK  && dsq    == NULL)   mpi_failure("problem receiving 1st dsq");
+    if     (status == eslOK  && dsq    == NULL)   mpi_failure("problem receiving dsq");
     else if(status == eslEOD && dsq    != NULL)   mpi_failure("problem receiving termination signal");
-    else if(status != eslOK  && status != eslEOD) mpi_failure("problem receiving 1st dsq");
-
-    if(dsq == NULL) { /* master is telling us that we're finished with the sequence file */
-      blocks_remain_in_file = FALSE;
-      seqs_remain_in_block  = FALSE;
+    else if(status != eslOK  && status != eslEOD) mpi_failure("problem receiving dsq");
+    if (dsq == NULL) break; /* master is telling us that we're finished with the sequence file */
 #if DEBUGMPI
-      printf("worker %d received NULL 1st dsq from master, shutting down\n", cfg->my_rank);
+    printf("worker %d dsq %" PRId64 " of length %" PRId64 " received from master\n", cfg->my_rank, idx, L);
 #endif 
+
+    /* create a sequence object from dsq; the master sends the name, so
+     * that messages name the sequence as a serial run does */
+    if ((sq = esl_sq_CreateDigitalFrom(cfg->abc, (sqname != NULL) ? sqname : "unnamed", dsq, L, NULL, NULL, NULL)) == NULL) mpi_failure("out of memory");
+    free(dsq); /* esl_sq_CreateDigitalFrom() makes a copy of dsq */
+    free(sqname); sqname = NULL;
+      
+    /* align the sequence */
+    status = DispatchSqAlignment(info.cm, errbuf, sq, idx, info.mxsize, TRMODE_UNKNOWN, info.pass_idx, FALSE, /* FALSE: cm->cp9b not valid */
+                                 info.w, info.w_tot, NULL, &data);
+      
+    /* If alignment failed: potentially retry alignment in HMM banded
+     * std (non-truncated) mode. We will only possibly do this if our
+     * initial try was HMM banded truncated alignment (if not,
+     * info.do_failover will be FALSE).
+     */
+    if(status == eslEAMBIGUOUS && info.do_failover == TRUE) { 
+      assert(info.cm->align_opts & CM_ALIGN_TRUNC);
+      info.cm->align_opts &= ~CM_ALIGN_TRUNC; /* lower truncated alignment flag, just for this sequence */
+      status = DispatchSqAlignment(info.cm, errbuf, sq, idx, info.mxsize,
+                                   TRMODE_UNKNOWN, PLI_PASS_STD_ANY, FALSE, /* USE PLI_PASS_STD_ANY; FALSE: info->cm->cp9b not valid */
+                                   info.w, info.w_tot, NULL, &data);
+      info.cm->align_opts |= CM_ALIGN_TRUNC; /* reraise truncated alignment flag */
     }
-    else { /* dsq is valid */
-      blocks_remain_in_file = TRUE;
-      seqs_remain_in_block  = TRUE;
+    if(status != eslOK) { 
+      fprintf(stderr, "Problem during alignment of sequence %s\n", sq->name);
+      mpi_failure(errbuf);
     }
 
-    while(seqs_remain_in_block) { 
-#if DEBUGMPI
-      printf("worker %d dsq %" PRId64 " of length %" PRId64 " received from master\n", cfg->my_rank, idx, L);
-#endif 
-      /* create a sequence object from dsq */
-      /* the master sends the name, so that messages name the sequence as a serial run does (brief 26_0821-193) */
-      if ((sq = esl_sq_CreateDigitalFrom(cfg->abc, (sqname != NULL) ? sqname : "unnamed", dsq, L, NULL, NULL, NULL)) == NULL) mpi_failure("out of memory");
-      free(dsq); /* esl_sq_CreateDigitalFrom() makes a copy of dsq */
-      free(sqname); sqname = NULL;
-      
-      /* align the sequence */
-      status = DispatchSqAlignment(info.cm, errbuf, sq, idx, info.mxsize, TRMODE_UNKNOWN, info.pass_idx, FALSE, /* FALSE: cm->cp9b not valid */
-				   info.w, info.w_tot, NULL, &data);
-      
-      /* If alignment failed: potentially retry alignment in HMM banded
-       * std (non-truncated) mode. We will only possibly do this if our
-       * initial try was HMM banded truncated alignment (if not,
-       * info.do_failover will be FALSE).
-       */
-      if(status == eslEAMBIGUOUS && info.do_failover == TRUE) { 
-	assert(info.cm->align_opts & CM_ALIGN_TRUNC);
-	info.cm->align_opts &= ~CM_ALIGN_TRUNC; /* lower truncated alignment flag, just for this sequence */
-	status = DispatchSqAlignment(info.cm, errbuf, sq, idx, info.mxsize,
-				     TRMODE_UNKNOWN, PLI_PASS_STD_ANY, FALSE, /* USE PLI_PASS_STD_ANY; FALSE: info->cm->cp9b not valid */
-				     info.w, info.w_tot, NULL, &data);
-	info.cm->align_opts |= CM_ALIGN_TRUNC; /* reraise truncated alignment flag */
-      }
-      if(status != eslOK) { 
-        fprintf(stderr, "Problem during alignment of sequence %s\n", sq->name);
-        mpi_failure(errbuf);
-      }
+    /* pack up the data and send it back to the master (FALSE: don't send data->sq) */
+    status = cm_alndata_MPISend(data, FALSE, errbuf, 0, INFERNAL_ALNDATA_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size);
+    if(status != eslOK) mpi_failure(errbuf);
 
-      /* pack up the data and send it back to the master (FALSE: don't send data->sq) */
-      status = cm_alndata_MPISend(data, FALSE, errbuf, 0, INFERNAL_ALNDATA_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size);
-      if(status != eslOK) mpi_failure(errbuf);
-
-      /* clean up old sequence */
-      esl_sq_Destroy(sq);
-      cm_alndata_Destroy(data, FALSE); /* don't free data->sq, it was pointing at the sq we just free'd */
-      
-      /* receive next sequence from the master, if it's null that's our signal to stop with this block */
-      status = cm_dsq_MPIRecv(0, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size, &dsq, &L, &idx, &sqname);
-      if     (status == eslOK  && dsq    == NULL)   mpi_failure("problem receiving dsq");
-      else if(status == eslEOD && dsq    != NULL)   mpi_failure("problem receiving termination signal");
-      else if(status != eslOK  && status != eslEOD) mpi_failure("problem receiving dsq");
-      
-      if(dsq == NULL) seqs_remain_in_block = FALSE; /* we're done with this block */
-#if DEBUGMPI
-      if(dsq == NULL) printf("worker received NULL dsq from master, block is done");
-#endif
-      
-    } /* end of 'while(seqs_remain_in_block)' */
-  } /* end of 'while(blocks_remain_in_file)' */
+    /* clean up old sequence */
+    esl_sq_Destroy(sq);
+    cm_alndata_Destroy(data, FALSE); /* don't free data->sq, it was pointing at the sq we just free'd */
+  }
 
   if(info.cm    != NULL) FreeCM(info.cm);
   if(info.dataA != NULL) free(info.dataA);
