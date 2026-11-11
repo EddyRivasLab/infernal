@@ -475,6 +475,7 @@
 1  exercise  align:z/miss         @src/cmalign@  --miss      %ZBP.A.CM% !testsuite/se.fa!
 1  exercise  align:z/ifile        @src/cmalign@  --ifile  %TMP.FILE% %ZBP.A.CM% !testsuite/emitted-tRNA.fa!
 1  exercise  align:z/sfile        @src/cmalign@  --sfile  %TMP.FILE% %ZBP.A.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align:z/regress      @src/cmalign@  --ileaved --regress %TMP.FILE% %ZBP.A.CM% !testsuite/emitted-tRNA.fa!
 1  fail      align:z/tfile        @src/cmalign@  --tfile  %TMP.FILE% %ZBP.A.CM% !testsuite/emitted-tRNA.fa!
 1  exercise  align:z/cyk          @src/cmalign@  --cyk       %ZBP.A.CM% !testsuite/emitted-tRNA.fa!
 1  exercise  align:z/sample       @src/cmalign@  --sample --cpu 0 %ZBP.A.CM% !testsuite/emitted-tRNA.fa!

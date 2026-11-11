@@ -125,7 +125,7 @@ typedef struct hmm_aligner_s {
  * a 0-basepair CM is switched to HMM-only alignment by default. --cyk and
  * --nonbanded have HMM-only meanings (hmm_map_method_options()) (brief
  * 26_0821-192). */
-#define HMMINCOMPAT  "--small,--sample,--hbanded,--p7band,--ckpt,--tfile,--elfile,--regress,--bpstatus,--bpcons,--bpcov,--tau,--fixedtau,--maxtau,--no-mxesc,--no-mxesc-fixedtau,--ckpt-cykbands"
+#define HMMINCOMPAT  "--small,--sample,--hbanded,--p7band,--ckpt,--tfile,--elfile,--bpstatus,--bpcons,--bpcov,--tau,--fixedtau,--maxtau,--no-mxesc,--no-mxesc-fixedtau,--ckpt-cykbands"
 #if defined (HMMER_THREADS) && defined (HAVE_MPI)
 #define CPUOPTS     "--mpi"
 #define MPIOPTS     "--cpu"
@@ -1961,7 +1961,7 @@ hmm_map_alignment(const ESL_GETOPTS *go, CM_t *cm, ESL_SQ ***ret_sq, P7_TRACE **
  *
  * The name of the first option given in <go> that only CM alignment
  * uses, or NULL: output from a CM parse tree or the CM's structure
- * (--tfile, --elfile, --regress, --bpstatus, --bpcons, --bpcov) and
+ * (--tfile, --elfile, --bpstatus, --bpcons, --bpcov) and
  * tuning of the CM's bands and engines (--tau, --fixedtau, --maxtau,
  * --no-mxesc, --no-mxesc-fixedtau, --ckpt-cykbands). HMM-only alignment
  * can't honor these, and the alignment method must not depend on them,
@@ -1972,7 +1972,7 @@ hmm_map_alignment(const ESL_GETOPTS *go, CM_t *cm, ESL_SQ ***ret_sq, P7_TRACE **
 static const char *
 hmm_cm_only_option(const ESL_GETOPTS *go)
 {
-  static char *opts[] = { "--tfile", "--elfile", "--regress", "--bpstatus", "--bpcons", "--bpcov",
+  static char *opts[] = { "--tfile", "--elfile", "--bpstatus", "--bpcons", "--bpcov",
                           "--tau", "--fixedtau", "--maxtau", "--no-mxesc", "--no-mxesc-fixedtau", "--ckpt-cykbands", NULL };
   int i;
 
@@ -1995,8 +1995,8 @@ hmm_cm_only_option(const ESL_GETOPTS *go)
  * set) for the merged alignment's PP_cons.
  *
  * Output options: --matchonly, --noprob and --miss do what they do in
- * CM mode, as do --mapstr, --dnaout, --ifile and the score table (-o,
- * --sfile).
+ * CM mode, as do --mapstr, --dnaout, --ifile, --regress and the score
+ * table (-o, --sfile).
  */
 static void
 hmm_output_block(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, ESL_SQ **sqA, P7_TRACE **trA, int ntot, int nmap,
@@ -2099,6 +2099,15 @@ hmm_output_block(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, ESL_SQ **sq
 
   if ((status = esl_msafile_Write((use_tmpfile ? cfg->tmpfp : cfg->ofp), msa, (use_tmpfile ? eslMSAFILE_PFAM : cfg->outfmt))) != eslOK)
     hmm_fatal("Failed to write alignment");
+  /* --regress: the same alignment without the author line, as CM mode
+   * writes it. --regress requires --ileaved, so there is one block. */
+  if (cfg->rfp != NULL && ! use_tmpfile) {
+    char *au = msa->au;
+    msa->au = NULL;
+    status  = esl_msafile_Write(cfg->rfp, msa, cfg->outfmt);
+    msa->au = au;
+    if (status != eslOK) hmm_fatal("Failed to write --regress alignment");
+  }
 
   /* --ifile, from the p7 traces; the model line before the first block, "//" after the last (hmm_master()) */
   if (cfg->ifp != NULL) {

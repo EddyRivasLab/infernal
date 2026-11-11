@@ -314,6 +314,13 @@ optimally scoring (maximum likelihood) alignment of the sequence to
 the model, given the HMM bands (unless 
 .B --nonbanded
 is also enabled). 
+With HMM-only alignment
+.RB ( --hmm ,
+or the default for a model with zero basepairs),
+.B --cyk
+selects the HMM's Viterbi alignment, as
+.B --hmmvit
+does.
 
 .TP
 .B --sample
@@ -376,9 +383,10 @@ The output options
 .B --miss,
 .B --mapali,
 .B --mapstr,
-.B --ifile
-and
+.B --ifile,
 .B --sfile
+and
+.B --regress
 work as they do with CM alignment.
 .B --cyk
 selects the HMM's Viterbi alignment (as
@@ -403,7 +411,6 @@ Options that only CM alignment uses cannot be combined with
 CM output
 .RB ( --tfile,
 .B --elfile,
-.B --regress,
 .B --bpstatus,
 .B --bpcons,
 .BR --bpcov )
@@ -614,6 +621,13 @@ option is recommended in combination with this option, because
 standard alignment without HMM banding requires a lot of memory (see
 .B --small
 ).
+With HMM-only alignment
+.RB ( --hmm ,
+or the default for a model with zero basepairs),
+.B --nonbanded
+selects optimal accuracy alignment without bands, as
+.B --hmmnoband
+does.
 
 .TP
 .B --p7band
