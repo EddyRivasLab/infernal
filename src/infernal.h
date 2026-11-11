@@ -1909,7 +1909,7 @@ typedef struct cm_s {
                                  * default FALSE (use --p7ibv fallback) */
   int     p7_kmerchain_fallback_ibv; /* brief 26_0430-260: if TRUE, revert the kmerchain chain=NONE fallback to
                                  * the --p7ibv D&C deriver (the prior shipped default, brief 26_0628-047) instead
-                                 * of native CP9 HMM banding, which is now the default (brief 26_0430-256/260)
+                                 * of native CP9 HMM banding, which is now the default (brief 26_0430-256/26_0430-260)
                                  * (--p7kmerchain-fbibv); default FALSE (use native CP9 fallback) */
   int     p7_use_ibv;          /* if TRUE, use F+B direct-band band derivation (--p7ibv, brief 26_0430-120) */
   int     p7_ibv_delta;        /* IBV Delta threshold in milli-bits; default 3000 (--p7ibv-delta)   */
@@ -2371,6 +2371,7 @@ typedef struct cm_pipeline_s {
   double        stg_time_F7_aln;      /* alignment (pli_align_hit) in F7          */
   double        last_dispatch_cp9bands; /* temp: cp9 band time from last dispatch */
   double        last_dispatch_dp;       /* temp: DP time from last dispatch       */
+  ESL_STOPWATCH *stg_w;                 /* times F1-F3 and F6+ for stg_time_*; NULL unless cm_StageVerbose() (--devdiag) */
 
   /* P7 objects for msvband CP9 acceleration (set in cm_Pipeline, used in pli_dispatch_cm_search) */
   P7_PROFILE   *p7gm;          /* generic profile for p7_Seq2Bands (not owned, don't free) */
@@ -3401,7 +3402,11 @@ extern int   cm_pli_TargetIncludable  (CM_PIPELINE *pli, float score,     double
 extern ExpInfo_t **cm_pli_ExpInfoA    (const CM_PIPELINE *pli, const CM_t *cm);
 extern int   cm_pli_NewModel          (CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, int cm_nbp, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, int p7_max_length, int64_t cur_cm_idx, int cur_clan_idx, ESL_KEYHASH *glocal_kh);
 extern int   cm_pli_NewModelThresholds(CM_PIPELINE *pli, CM_t *cm);
+/* max length (incl. NUL) of the CM name kept for the --nonull3 fallback warning */
+#define CM_NONULL3_FB_NAMELEN 256
 extern int   cm_pli_ReportNoNull3Fallback(FILE *ofp);
+extern int   cm_pli_GetNoNull3Fallback(char **opt_cmname);
+extern int   cm_pli_SetNoNull3Fallback(const char *cmname);
 extern int   cm_pli_NewSeq            (CM_PIPELINE *pli, const ESL_SQ *sq, int64_t cur_seq_idx);
 extern int   cm_Pipeline              (CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_SCOREDATA *msvdata, ESL_SQ *sq, CM_TOPHITS *hitlist, int in_rc, P7_HMM **opt_hmm, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, CM_t **opt_cm);
 extern int   cm_pli_Statistics    (FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w);
@@ -3880,7 +3885,7 @@ extern void         cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9
 extern void         cp9_PredictStartAndEndPositionsP7B(CP9_MX *pmx, CP9Bands_t *cp9b, int *kmin, int *kmax, int i0, int j0);
 extern int          cp9_MarginalCandidatesFromStartEndPositions(CM_t *cm, CP9Bands_t *cp9b, int pass_idx, char *errbuf);
 extern void         ij2d_bands(CM_t *cm, CP9Bands_t *cp9b, int do_trunc, int debug_level);
-extern void         PrintDPCellsSaved_jd(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax, int W);
+extern void         PrintDPCellsSaved_jd(CM_t *cm, CP9Bands_t *cp9b, int W);
 extern void         debug_print_ij_bands(CM_t *cm);
 
 /* from logsum.c */

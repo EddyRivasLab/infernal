@@ -109,7 +109,7 @@ ckpt_cykbands_cellcount(CM_t *cm)
  * (below) so the standalone --cykbands path can share the *exact same* bounded
  * mechanism.  Before this, --cykbands called cm_BandsFromCYKParsetree() raw --
  * no baseline snapshot, no never-loosen intersection, no bounded hd-recompute --
- * so the unvisited-state full-envelope fallback (project_cykbands_h5_cache_verdict)
+ * so the unvisited-state full-envelope fallback (brief 26_0430-065)
  * could inflate the pass-2 matrix without bound and outright fail at genome scale
  * (brief 26_0430-242: band_area_ratio up to 145924x, 343 GB matrix, 4 dengue
  * cells ESL_XFAIL'd).  The --ckpt-cykbands path never blew up because it already
@@ -198,15 +198,15 @@ cykbands_tighten_bounded(CM_t *cm, char *errbuf, Parsetree_t *tr, int L, int pas
    * for a state unvisited by the pass-1 CYK parse (common in local mode for a
    * low-coverage/fragment sequence -- most of a large CM's states) the
    * full-envelope fallback above instead EXPANDS it past the CP9 baseline
-   * (project_cykbands_h5_cache_verdict / brief 237's measured 94K->190M-cell
+   * (brief 26_0430-065 / brief 26_0430-237's measured 94K->190M-cell
    * blowup on the LSU fragment repro). Intersecting bounds the result to
    * [never worse than the untightened baseline]: unvisited states'
    * full-envelope CYK band always contains the CP9 band, so the intersection
    * collapses back to exactly the CP9 band (safe, unchanged cost, and -- per
-   * brief 235 -- still covers every state OptAcc/MEA might diverge into);
+   * brief 26_0430-235 -- still covers every state OptAcc/MEA might diverge into);
    * visited states' CYK band already sits inside (or pad-widens slightly past)
-   * the CP9 band, so the intersection preserves the brief 234/236 tightening
-   * win. This makes brief 237's revert-on-blowup ratio cap a pure backstop
+   * the CP9 band, so the intersection preserves the brief 26_0430-234/26_0430-236 tightening
+   * win. This makes brief 26_0430-237's revert-on-blowup ratio cap a pure backstop
    * that should no longer fire on real data -- the mechanism is now
    * intrinsically bounded rather than merely capped. */
   {
@@ -219,13 +219,13 @@ cykbands_tighten_bounded(CM_t *cm, char *errbuf, Parsetree_t *tr, int L, int pas
       int nj_max = ESL_MIN(cm->cp9b->jmax[v], s_jmax[v]);
       if(ni_min > ni_max || nj_min > nj_max) {
         /* Empty intersection. Never leave a state silently unreachable here
-         * (brief 238's safety requirement) -- fall back to the CP9
+         * (brief 26_0430-238's safety requirement) -- fall back to the CP9
          * (pre-tighten) band for this state alone, whatever it is
          * (sentinel or real). */
         ni_min = s_imin[v]; ni_max = s_imax[v];
         nj_min = s_jmin[v]; nj_max = s_jmax[v];
         if(cp9_is_sentinel) n_cp9_sentinel++;   /* CP9 baseline itself already unreachable (expected, harmless) */
-        else                n_real_empty++;     /* real accuracy-risk empty (brief 238; should be rare/never) */
+        else                n_real_empty++;     /* real accuracy-risk empty (brief 26_0430-238; should be rare/never) */
       }
       cm->cp9b->imin[v] = ni_min; cm->cp9b->imax[v] = ni_max;
       cm->cp9b->jmin[v] = nj_min; cm->cp9b->jmax[v] = nj_max;
@@ -306,7 +306,7 @@ cykbands_tighten_bounded(CM_t *cm, char *errbuf, Parsetree_t *tr, int L, int pas
  * the SAME <tr>.  Every pinned B state is a VISITED state, so its tightened
  * band is [visited emitl/emitr] +/- pad and necessarily contains the pinned
  * cell.  Unvisited B states carry no pin (kpin=-1), so the phantom-wide-band
- * inheritance (project_cykbands_h5_cache_verdict) can only widen an unpinned
+ * inheritance (briefs 26_0430-065/26_0430-068) can only widen an unpinned
  * state -- it can never exclude a pin.  No pin/band conflict is possible.
  *
  * brief 26_0430-237: for a low-coverage sequence (most of a large CM's states
@@ -329,8 +329,8 @@ ckpt_cykbands_tighten(CM_t *cm, char *errbuf, Parsetree_t *tr, int L, int pass_i
   int         pad      = cm->p7_cykbands_pad;   /* default 5 (cm.c); shared with --cykbands */
   double      maxratio = 3.0;                   /* brief 26_0430-237: revert if band-cells > maxratio x
                                                  * untightened baseline. Legit widening tops out ~2.24x
-                                                 * (5S_rRNA pad=8, brief 236); low-coverage blowup is
-                                                 * 30x-40000x (brief 237); 3.0 cleanly separates them.
+                                                 * (5S_rRNA pad=8, brief 26_0430-236); low-coverage blowup is
+                                                 * 30x-40000x (brief 26_0430-237); 3.0 cleanly separates them.
                                                  * With never-loosen this is a pure backstop. */
 
   status = cykbands_tighten_bounded(cm, errbuf, tr, L, pass_idx, preserve_valid,
@@ -1221,7 +1221,7 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	     * hundreds of GB, far over --mxsize, and unlike the CM DP matrix there is
 	     * no banding/tau lever to shrink the CP9 F/B. The p7-banded path already
 	     * returned !eslOK (matrix too big), so attempting the even-larger
-	     * non-banded CP9 F/B would only OOM (it did: brief-157 SIGSEGV via int32
+	     * non-banded CP9 F/B would only OOM (it did: brief 26_0430-157 SIGSEGV via int32
 	     * overflow, now int64-correct but still 155 GB -> SIGKILL). If the
 	     * non-banded CP9 F/B (fwd+bck) would itself exceed --mxsize, refuse with
 	     * eslERANGE up front -- the eslERANGE-before-alloc convention used for
@@ -1394,10 +1394,10 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	 * FALSE and tightening is silently skipped -- no crash, but also no tightening, at
 	 * whatever genome scale the banded full matrix stops fitting.
 	 * New default: estimate the full-matrix cost first (cm_[Tr]AlignSizeNeededHB, the
-	 * same estimator + mxsize semantics briefs 225/226/269 already use for the main
+	 * same estimator + mxsize semantics briefs 26_0430-225/26_0430-226/26_0430-269 already use for the main
 	 * alignment engine); if it doesn't fit, fall back to HMM-banded D&C-CYK
 	 * (CYKDivideAndConquerHB/TrCYKDivideAndConquerHB), gated on the D&C estimate
-	 * (cm_[Tr]DnCAlignSizeNeededHB, brief 228's banded-EL version, already on this base).
+	 * (cm_[Tr]DnCAlignSizeNeededHB, brief 26_0430-228's banded-EL version, already on this base).
 	 * If even the D&C estimate doesn't fit, this degrades exactly like the legacy path:
 	 * _cyk_ok stays FALSE, original bands kept, no crash. Budget = full mxsize for both
 	 * tiers: the pre-pass matrix is transient (allocated, consumed for the parsetree,
@@ -1531,7 +1531,7 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	   * sqrt(M) pinned-OptAcc, (c) HMM-banded D&C-CYK floor. The comparison quantity is the CM DP
 	   * matrices only (excludes the CP9 F/B), matching stock --mxsize semantics
 	   * (cm_AlignSizeNeededHB:587 compares cmtotmb, not totmb). Estimators are
-	   * safe-overestimates (briefs 225/226), so a "fits" verdict never under-provisions. */
+	   * safe-overestimates (briefs 26_0430-225/26_0430-226), so a "fits" verdict never under-provisions. */
 	  if(do_mxesc) {
 	    float est_std_cm = 0., est_std_tot = 0.;
 	    char  est_trmode = (mode == TRMODE_J || mode == TRMODE_L ||
@@ -1568,7 +1568,7 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	      if(ckpt_avail && ck_cmmb <= mxsize) { mxesc_tier = 'b'; eff_checkpt = TRUE; mb_tot = ck_cmmb; }
 	      else {
 	        /* tier (c): D&C-CYK floor (CYK parse, no PP). Real HMM-banded D&C peak is small
-	         * post-brief-227 (banded EL deck), and brief 228's banded-EL estimator (cherry-
+	         * since brief 26_0430-227 (banded EL deck), and brief 26_0430-228's banded-EL estimator (cherry-
 	         * picked onto this base) tracks it tightly at genome scale -- where tier (c)
 	         * actually fires (tier b handles everything smaller). cm_[Tr]DnCAlignSizeNeededHB
 	         * is a safe over-estimate; the truncated estimate uses est_trmode (max planes) as
@@ -1637,7 +1637,7 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	  if(do_trunc) {
 		/* brief 26_0430-126 merge: route
 		 * SizeNeededHB failure to CM_ALIGN_HB_CHECK_FB (IBV vitband fallback)
-		 * instead of directly to ERROR, so the brief-120 IBV fallback stays live
+		 * instead of directly to ERROR, so the brief 26_0430-120 IBV fallback stays live
 		 * in the trunc path. For non-IBV runs CHECK_FB falls through to ERROR.
 		 * brief 26_0430-269: under do_mxesc the tier selector above already validated
 		 * the chosen engine's fit and set mb_tot, so skip this eslERANGE size-gate
@@ -1671,9 +1671,9 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 		}
 		else if(do_trckpt_r4) {
 		  /* brief 26_0610-094: rung-4 pass 1 = the sqrt(M) combined-mode (J/L/R/T)
-		   * checkpointed CYK sweep, cm_CheckptTrCYKAlignHB() (brief 080, R3): the
+		   * checkpointed CYK sweep, cm_CheckptTrCYKAlignHB() (brief 26_0610-080, R3): the
 		   * only sqrt(M) way to resolve the mode for a STRUCTURED CM (an unpinned
-		   * sqrt(M) bifurcation Inside hits the brief-017 2D-coupling wall). It
+		   * sqrt(M) bifurcation Inside hits the brief 26_0610-017 2D-coupling wall). It
 		   * resolves the (mode, bkind/kpin/bbmode/blmode/brmode) pins for the
 		   * pass-2 checkpointed pinned posterior + OptAcc + traceback below. */
 		  int   *bkind = NULL, *kpin = NULL;
@@ -1739,7 +1739,7 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 			  cm_CheckptAlignHB_Qualifies(cm)) ? TRUE : FALSE;
 	/* rung-3 checkpointed STRUCTURED (bps>0) OptAcc pipeline: engaged by --ckpt
 	 * for non-truncated structured CMs (local or global).  Pass 1 checkpointed
-	 * CYK (brief 084, R1-L) supplies the bifurcation k* pins; pass 2 = checkpointed
+	 * CYK (brief 26_0610-084, R1-L) supplies the bifurcation k* pins; pass 2 = checkpointed
 	 * pinned posterior -> emit_mx -> checkpointed pinned OptAcc + pinned-tree
 	 * traceback.  Separate qualifier so the truncated gate is NOT relaxed
 	 * (truncated bps>0 falls back to the rung-4 branch above).  No engine
@@ -1770,7 +1770,7 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	  int has_bif = (CMCountStatetype(cm, B_st) > 0);
 	  /* pass 1: HMM-banded CYK parse -> k* pins, with the checkpointed
 	   * sqrt(M)-memory CYK engine (cm_CheckptCYKAlignHB, brief 26_0610-084 R1-L),
-	   * which closed the pass-1 memory floor (briefs 26_0610-040/041) so the
+	   * which closed the pass-1 memory floor (briefs 26_0610-040/26_0610-041) so the
 	   * whole rung-3 pipeline is checkpointed. The pins feed the pass-2
 	   * checkpointed pinned posterior + OptAcc + traceback below via
 	   * rung3_kpin_from_cyk. */
@@ -1810,12 +1810,19 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
       }
     CM_ALIGN_HB_CHECK_FB:
       /* Brief 26_0430-120 IBV HMM-divergence fallback: cm_TrInsideAlignHB returns
-       * eslEAMBIGUOUS "no valid parsetree found" on the 3/14 brief-117 seqs
+       * eslEAMBIGUOUS "no valid parsetree found" on the 3/14 brief 26_0430-117 seqs
        * where HMM-Viterbi disagrees with the CM's preferred parse (brief 26_0430-117
        * §5). Re-derive bands using the unbanded p7_Seq2BandsVit path (PAD=20
        * around the p7-Viterbi trace) and retry the CM alignment once.
        */
       if (status != eslOK && cm->p7_use_ibv && !ibv_fallback_used) {
+	/* brief 26_0821-192: the Viterbi re-derivation below allocates a full
+	 * (M+1) x (L+1) p7 matrix. Check it against --mxsize first, as the
+	 * CP9 band calculation does (plain_cp9_engine()). */
+	float fbvit_Mb = (float) ((double) sizeof(float) * (double) (cm->fp7->M + 1) * (double) (sq->L + 1) * (double) p7G_NSCELLS / (1024. * 1024.));
+	if (fbvit_Mb > mxsize)
+	  ESL_XFAIL(eslERANGE, errbuf, "HMM band calculation needs %.0f Mb > %.0f Mb limit.\nUse --mxsize %d.",
+		    fbvit_Mb, mxsize, (int) (floor(fbvit_Mb / 1024.) + 1.) * 1024);
 	ibv_fallback_used = TRUE;
 	errbuf[0] = '\0';
 	status    = eslOK;

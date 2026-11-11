@@ -550,7 +550,7 @@ UpdateExpsForDBSize(CM_t *cm, char *errbuf, double dbsize)
    * cur_eff_dbsize too, from ITS own dbsize/nrandhits. Harmless for the default
    * (null3-on) search, which never reads it; required so that an --nonull3
    * search picks a consistent (lambda/mu, eZ) pair from the off-set. See
-   * cm_pli_ExpInfoA() and briefs 053/069. */
+   * cm_pli_ExpInfoA() and briefs 26_0422-053/26_0422-069. */
   if(cm->flags & CMH_EXPTAIL_NONULL3_STATS) {
     for(i = 0; i < EXP_NMODES; i++) {
       cm->expA_nonull3[i]->cur_eff_dbsize = (dbsize / cm->expA_nonull3[i]->dbsize) * ((double) cm->expA_nonull3[i]->nrandhits);

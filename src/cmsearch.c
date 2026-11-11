@@ -239,7 +239,7 @@ static ESL_OPTIONS options[] = {
   { "--cykbands-strict", eslARG_NONE, FALSE, NULL, NULL, NULL, "--cykbands", NULL, "with --cykbands, constrain F7 to F6 parsetree state path only",                              106 },
   { "--p7nodepad-file", eslARG_INFILE, NULL, NULL, NULL, NULL, NULL, "--novitband,--msvband", "read per-consensus position p7 pads from <f>",                 106 },
   { "--p7padplus",  eslARG_INT,    "7", NULL, "n>=0", NULL, NULL, NULL, "add <n> to every per-state pad",                                                            106 },
-  { "--p7vit-hopback", eslARG_INT, "0", NULL, "n>=0", NULL, NULL, "--msvband", "with --vitband, dilate per-pin band by trace-hop-back of <n> pins (D1)",          106 },
+  { "--p7vit-hopback", eslARG_INT, "0", NULL, "n>=0", NULL, NULL, "--msvband", "with --vitband, dilate per-pin band by trace-hop-back of <n> pins",               106 },
   { "--p7sc",      eslARG_REAL,  "0.0", NULL, "x>=0",  NULL,  "--msvband", NULL, "with --msvband, min pin match score for pruning",                        106 },
   { "--p7len",     eslARG_INT,   "0",   NULL, "n>=0",  NULL,  "--msvband", NULL, "with --msvband, min nmer length for pruning",                            106 },
   { "--p7end",     eslARG_INT,   "0",   NULL, "n>=0",  NULL,  "--msvband", NULL, "with --msvband, min dist from nmer end for pruning",                     106 },
@@ -282,7 +282,7 @@ static ESL_OPTIONS options[] = {
   { "--onlytrunc",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */ "allow only truncated hits, anywhere within sequences",      108 },
   { "--5trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */ "allow truncated hits only at 5' ends of sequences",         108 },
   { "--3trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */ "allow truncated hits only at 3' ends of sequences",         108 },
-  { "--devdiag",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                     "show developer stage/band diagnostics on stderr",              108 },
+  { "--devdiag",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                     "show developer diagnostics (stage timing in main output, rest on stderr)", 108 },
 #ifdef HAVE_MPI
   /* Searching only a subset of sequences in the target database, currently requires MPI b/c SSI is required */
   { "--sidx",       eslARG_INT,     NULL, NULL, "n>0",   NULL,"--mpi", NULL,            "start searching at sequence index <n> in target db SSI index" , 108 },

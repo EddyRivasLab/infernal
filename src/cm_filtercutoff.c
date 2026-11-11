@@ -3,7 +3,7 @@
  * Per-CM F1/F2/F3 P-value cutoff calibration.
  *
  * cm_CalibrateFilterPvalCutoffs() emits N sequences from a CM, runs the
- * F1 (MSV), F2 (Viterbi), and F3 (local Forward) HMM filter stages on each
+ * F1 (SSV), F2 (Viterbi), and F3 (local Forward) HMM filter stages on each
  * emission, and picks the M-th-rank P-value at each stage as the per-CM
  * cutoff (M = ceil(0.99*N), giving 99% retention of CM-emitted sequences).
  * Floor (loosest = global default) and ceiling (tightest = default/10) are
@@ -66,7 +66,7 @@ cmp_double_asc(const void *a, const void *b)
 /* Function: cm_CalibrateFilterPvalCutoffs()
  * Synopsis: Compute per-CM F1/F2/F3 P-value cutoffs from N CM emissions.
  *
- * Purpose:  Emit <N> sequences from <cm>, run the local-mode F1 (MSV),
+ * Purpose:  Emit <N> sequences from <cm>, run the local-mode F1 (SSV),
  *           F2 (Viterbi), and F3 (local Forward) HMM filter stages on each,
  *           then pick the M-th-rank P-value at each stage (M = ceil(0.99*N))
  *           as the per-CM cutoff. Store the **raw** quantile in
@@ -81,9 +81,18 @@ cmp_double_asc(const void *a, const void *b)
  *           Likewise F1≥F2≥F3 monotonicity is re-enforced at search time
  *           after clamping; raw quantiles can violate monotonicity.
  *
- *           Caller must ensure <cm> has a valid cm->fp7 (CMH_FP7) with
- *           local-mode evparam fields (CM_p7_LMMU/LMLAMBDA/LVMU/LVLAMBDA/
- *           LFTAU/LFLAMBDA) set.
+ *           Each stage uses the score the search pipeline compares
+ *           with that stage's threshold (pli_p7_filter()). F1 there is
+ *           p7_SSVFilter_longtarget(), which passes a window if its best
+ *           ungapped diagonal (SSV) score, with the MSV length model set to the pipeline's
+ *           maxW = max(W, 1.25*clen), reaches the threshold. So F1 here is
+ *           p7_SSVFilter()'s score under the same length model, not the
+ *           MSV score: MSV >= SSV, so an MSV-calibrated cutoff kept fewer
+ *           than 99% of emissions (brief 26_0821-191).
+ *
+ *           Caller must ensure <cm> has a valid W and a valid cm->fp7
+ *           (CMH_FP7) with local-mode evparam fields (CM_p7_LMMU/LMLAMBDA/
+ *           LVMU/LVLAMBDA/LFTAU/LFLAMBDA) set.
  *
  * Args:     cm     - CM with fp7 attached
  *           r      - random number generator (drives EmitParsetree)
@@ -110,6 +119,8 @@ cm_CalibrateFilterPvalCutoffs(CM_t *cm, ESL_RANDOMNESS *r, int N,
   double       *F3ps = NULL;
   int           i;
   int           M_idx;
+  int           maxW;
+  float         ssv_nullsc;
   double        F1cut, F2cut, F3cut;
 
   if (cm->fp7 == NULL || ! (cm->flags & CMH_FP7))
@@ -137,6 +148,10 @@ cm_CalibrateFilterPvalCutoffs(CM_t *cm, ESL_RANDOMNESS *r, int N,
   if ((status = p7_oprofile_Convert(gm, om))                          != eslOK)
     ESL_XFAIL(status, errbuf, "p7_oprofile_Convert failed");
 
+  /* the search pipeline's F1 length model: pli->maxW, with wmult 1.0 and
+   * cmult 1.25 as set in cm_pipeline_Create() */
+  maxW = (int) ESL_MAX(cm->W, 1.25 * cm->clen);
+
   for (i = 0; i < N; i++)
     {
       float  mfsc, vfsc, fwdsc, nullsc;
@@ -147,20 +162,33 @@ cm_CalibrateFilterPvalCutoffs(CM_t *cm, ESL_RANDOMNESS *r, int N,
       if ((status = EmitParsetree(cm, errbuf, r, name, TRUE, &tr, &sq, NULL)) != eslOK) goto ERROR;
       L = sq->n;
 
-      p7_oprofile_ReconfigLength(om, L);
-      p7_bg_SetLength(bg, L);
-      p7_bg_NullOne(bg, sq->dsq, L, &nullsc);
-
       if ((status = p7_omx_GrowTo(oxf, om->M, 0, L)) != eslOK)
         ESL_XFAIL(status, errbuf, "p7_omx_GrowTo failed at emission %d", i);
 
-      /* F1: MSV. eslERANGE means score overflowed — P-value essentially 0. */
+      /* F1: SSV with the MSV length model at maxW, as in
+       * p7_SSVFilter_longtarget(). eslERANGE means the score overflowed:
+       * P-value essentially 0. eslENORESULT means a J state could have
+       * contributed (a high score); use the MSV score then, as HMMER does.
+       * HMMER's VMX implementation has no p7_SSVFilter(), so there the
+       * MSV score (>= SSV, a stricter cutoff) is used. */
+      p7_oprofile_ReconfigMSVLength(om, maxW);
+      p7_bg_SetLength(bg, maxW);
+      p7_bg_NullOne(bg, sq->dsq, maxW, &ssv_nullsc);
+#ifndef eslENABLE_VMX
+      status = p7_SSVFilter(sq->dsq, L, om, &mfsc);
+      if (status == eslENORESULT) status = p7_MSVFilter(sq->dsq, L, om, oxf, &mfsc);
+#else
       status = p7_MSVFilter(sq->dsq, L, om, oxf, &mfsc);
+#endif
       if (status == eslERANGE)      F1ps[i] = 0.0;
-      else if (status != eslOK)     ESL_XFAIL(status, errbuf, "p7_MSVFilter failed at emission %d (status %d)", i, status);
-      else                          F1ps[i] = esl_gumbel_surv((mfsc - nullsc) / eslCONST_LOG2,
+      else if (status != eslOK)     ESL_XFAIL(status, errbuf, "p7_SSVFilter failed at emission %d (status %d)", i, status);
+      else                          F1ps[i] = esl_gumbel_surv((mfsc - ssv_nullsc) / eslCONST_LOG2,
                                                               cm->fp7_evparam[CM_p7_LMMU],
                                                               cm->fp7_evparam[CM_p7_LMLAMBDA]);
+
+      p7_oprofile_ReconfigLength(om, L);
+      p7_bg_SetLength(bg, L);
+      p7_bg_NullOne(bg, sq->dsq, L, &nullsc);
 
       /* F2: Viterbi. eslERANGE handled the same way. */
       status = p7_ViterbiFilter(sq->dsq, L, om, oxf, &vfsc);

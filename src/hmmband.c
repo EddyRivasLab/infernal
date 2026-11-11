@@ -531,7 +531,7 @@ hmmbands2cmbands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_MX *pmx, int *occ, CP9B
   ESL_DPRINTF1(("#DEBUG: bands validated.\n"));
 #endif
   if(debug_level > 0) debug_print_ij_bands(cm);
-  if(debug_level > 0) PrintDPCellsSaved_jd(cm, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, (j0-i0+1));
+  if(debug_level > 0) PrintDPCellsSaved_jd(cm, cp9b, (j0-i0+1));
 
   return eslOK;
 }
@@ -1823,20 +1823,20 @@ cp9_ValidateBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int i0, int j0, int 
      * a truncated begin with d=1 for L,R marginal alignments. */
     if(cm->sttype[v] == E_st) {
       for(jp = 0; jp <= (cp9b->jmax[v]-cp9b->jmin[v]); jp++) {
-	if(cp9b->hdmin[v][jp] != 0) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->hdmin for E state is inconsistent.");
-	if(cp9b->hdmax[v][jp] != 0) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->hdmin for E state is inconsistent.");
+	if(hd_min(cp9b, v, jp) != 0) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->hdmin for E state is inconsistent.");
+	if(hd_max(cp9b, v, jp) != 0) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->hdmin for E state is inconsistent.");
       }
     }
     else {
       if(cp9b->jmin[v] != -1) { 
 	for(jp = 0; jp <= (cp9b->jmax[v]-cp9b->jmin[v]); jp++) {
 	  j = jp+cp9b->jmin[v];
-          if(cp9b->hdmin[v][jp] == -1) { 
-            if(cp9b->hdmax[v][jp] != -2) { ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->hdmin is -1 for state %d, j: %d, but hdmax is not -2 (it's %d).",  v, j, cp9b->hdmax[v][jp]); }
+          if(hd_min(cp9b, v, jp) == -1) { 
+            if(hd_max(cp9b, v, jp) != -2) { ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->hdmin is -1 for state %d, j: %d, but hdmax is not -2 (it's %d).",  v, j, hd_max(cp9b, v, jp)); }
           }
           else { 
-            if(cp9b->hdmin[v][jp] != ESL_MAX((j - cp9b->imax[v] + 1), dn)) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->hdmin %d (dn: %d) for state %d, j: %d imax[v]: %d is inconsistent.", cp9b->hdmin[v][jp], dn, v, j, cp9b->imax[v]);
-            if(cp9b->hdmax[v][jp] != ESL_MAX((j - cp9b->imin[v] + 1), dn)) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->hdmax %d (dn: %d) for state %d, j: %d imin[v]: %d is inconsistent.", cp9b->hdmax[v][jp], dn, v, j, cp9b->imin[v]);
+            if(hd_min(cp9b, v, jp) != ESL_MAX((j - cp9b->imax[v] + 1), dn)) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->hdmin %d (dn: %d) for state %d, j: %d imax[v]: %d is inconsistent.", hd_min(cp9b, v, jp), dn, v, j, cp9b->imax[v]);
+            if(hd_max(cp9b, v, jp) != ESL_MAX((j - cp9b->imin[v] + 1), dn)) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->hdmax %d (dn: %d) for state %d, j: %d imin[v]: %d is inconsistent.", hd_max(cp9b, v, jp), dn, v, j, cp9b->imin[v]);
           }
         }
       }
@@ -1864,12 +1864,12 @@ cp9_ValidateBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int i0, int j0, int 
 	for(j = cp9b->jmin[v]; j <= cp9b->jmax[v]; j++) {
 	  if(j < (i0-1)) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), j: %d outside i0-1:%d..j0:%d is within v's j band: jmin[%d]: %d jmax[%d]: %d\n", j, i0-1, j0, v, cp9b->jmin[v], v, cp9b->jmax[v]);
 	  if(j > j0)     ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), j: %d outside i0-1:%d..j0:%d is within v's j band: jmin[%d]: %d jmax[%d]: %d\n", j, i0-1, j0, v, cp9b->jmin[v], v, cp9b->jmax[v]);
-          if(cp9b->hdmin[v][(j-cp9b->jmin[v])] == -1) { 
-            if(cp9b->hdmax[v][(j-cp9b->jmin[v])] != -2) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), v: %d j: %d hdmin[v][jp_v:%d] == -1, but hdmax[v][jp_v:%d] != -2 (it's %d)\n", v, j, (j-cp9b->jmin[v]), (j-cp9b->jmin[v]), cp9b->hdmax[v][(j-cp9b->jmin[v])]);
+          if(hd_min(cp9b, v, (j-cp9b->jmin[v])) == -1) { 
+            if(hd_max(cp9b, v, (j-cp9b->jmin[v])) != -2) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), v: %d j: %d hdmin[v][jp_v:%d] == -1, but hdmax[v][jp_v:%d] != -2 (it's %d)\n", v, j, (j-cp9b->jmin[v]), (j-cp9b->jmin[v]), hd_max(cp9b, v, (j-cp9b->jmin[v])));
           }
           else { 
-            if(cp9b->hdmin[v][(j-cp9b->jmin[v])] < dn) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), v: %d j: %d hdmin[v][jp_v:%d] : %d less than StateDelta for v: %d\n", v, j, (j-cp9b->jmin[v]), cp9b->hdmin[v][(j-cp9b->jmin[v])], dn);
-            if(cp9b->hdmax[v][(j-cp9b->jmin[v])] < dn) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), v: %d j: %d hdmax[v][jp_v:%d] : %d less than StateDelta for v: %d\n", v, j, (j-cp9b->jmin[v]), cp9b->hdmax[v][(j-cp9b->jmin[v])], dn);
+            if(hd_min(cp9b, v, (j-cp9b->jmin[v])) < dn) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), v: %d j: %d hdmin[v][jp_v:%d] : %d less than StateDelta for v: %d\n", v, j, (j-cp9b->jmin[v]), hd_min(cp9b, v, (j-cp9b->jmin[v])), dn);
+            if(hd_max(cp9b, v, (j-cp9b->jmin[v])) < dn) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), v: %d j: %d hdmax[v][jp_v:%d] : %d less than StateDelta for v: %d\n", v, j, (j-cp9b->jmin[v]), hd_max(cp9b, v, (j-cp9b->jmin[v])), dn);
           }
         }
 	if(cp9b->jmax[v] > cp9b->jmax[0]) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), jmax[v:%d]:%d > jmax[0]:%d.", v, cp9b->jmax[v], cp9b->jmax[0]);
@@ -5840,9 +5840,12 @@ cp9_DebugPrintHMMBands(FILE *ofp, int L, CP9Bands_t *cp9b, double hmm_bandp, int
 /* Function: PrintDPCellsSaved_jd()
  * Prints out an estimate of the speed up due to j and d bands */
 void
-PrintDPCellsSaved_jd(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax,
-		     int W)
+PrintDPCellsSaved_jd(CM_t *cm, CP9Bands_t *cp9b, int W)
 {
+  /* brief 26_0821-192: d-bands come from hd_min()/hd_max(); cp9b->hdmin/hdmax
+   * are no longer allocated (brief 26_0430-157) */
+  int *jmin = cp9b->jmin;
+  int *jmax = cp9b->jmax;
   int v;
   int j;
   int max;
@@ -5858,8 +5861,8 @@ PrintDPCellsSaved_jd(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax,
       for(j = jmin[v]; j <= jmax[v]; j++)
 	if (cm->sttype[v] != E_st) 
 	  {
-	    max = (j < hdmax[v][j-jmin[v]]) ? j : hdmax[v][j-jmin[v]];
-	    after += max - hdmin[v][j-jmin[v]] + 1;
+	    max = (j < hd_max(cp9b, v, j-jmin[v])) ? j : hd_max(cp9b, v, j-jmin[v]);
+	    after += max - hd_min(cp9b, v, j-jmin[v]) + 1;
 	  }
     }
   printf("Before:  something like %" PRId64 "\n", before);

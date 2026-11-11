@@ -64,12 +64,25 @@ basepairs are aligned with the profile HMM alone (no CM), as with
 .B --hmm,
 unless
 .B --nohmm
-is used, or one of
-.B --cyk,
+or one of the CM alignment methods
 .B --sample,
-.B --small
+.B --small,
+.B --ckpt,
+.B --p7band
 or
-.B --p7band.
+.B --hbanded
+is given (the output header then says which).
+.B --cyk
+and
+.B --nonbanded
+are taken as their HMM counterparts (see
+.BR --hmm ).
+Options for CM output or CM band tuning are errors for such a model
+unless
+.B --nohmm
+is also given (see
+.B --hmm
+for the list).
 Their bands are derived from the HMM's Forward and Backward
 posterior probabilities (as with
 .B --p7ibv)
@@ -301,6 +314,13 @@ optimally scoring (maximum likelihood) alignment of the sequence to
 the model, given the HMM bands (unless 
 .B --nonbanded
 is also enabled). 
+With HMM-only alignment
+.RB ( --hmm ,
+or the default for a model with zero basepairs),
+.B --cyk
+selects the HMM's Viterbi alignment, as
+.B --hmmvit
+does.
 
 .TP
 .B --sample
@@ -357,9 +377,53 @@ has no effect; with
 .B --notrunc,
 .B -g
 configures the HMM for global alignment.
-.B --hmm
+The output options
+.B --noprob,
+.B --matchonly,
+.B --miss,
+.B --mapali,
+.B --mapstr,
+.B --ifile,
+.B --sfile
+and
+.B --regress
+work as they do with CM alignment.
+.B --cyk
+selects the HMM's Viterbi alignment (as
+.BR --hmmvit ),
+and
+.B --nonbanded
+optimal accuracy alignment without bands (as
+.BR --hmmnoband ).
+The CM alignment methods
+.B --sample,
+.B --small,
+.B --ckpt,
+.B --p7band
+and
+.B --hbanded
 cannot be combined with
-.B --small.
+.B --hmm;
+for a model with zero basepairs, which is aligned with its HMM by
+default, each of them selects CM alignment instead.
+Options that only CM alignment uses cannot be combined with
+.B --hmm:
+CM output
+.RB ( --tfile,
+.B --elfile,
+.B --bpstatus,
+.B --bpcons,
+.BR --bpcov )
+and CM band and engine tuning
+.RB ( --tau,
+.B --fixedtau,
+.B --maxtau,
+.B --no-mxesc,
+.B --no-mxesc-fixedtau,
+.BR --ckpt-cykbands ).
+For a model with zero basepairs each of them is an error unless
+.B --nohmm
+is given.
 
 .TP
 .B --hmmvit
@@ -383,7 +447,10 @@ length.
 Align models with zero basepairs with the CM, instead of switching
 automatically to HMM alignment
 .RB ( --hmm )
-for them.
+for them. This is needed to use an option that requires CM alignment
+(see
+.B --hmm)
+with such a model.
 
 .SH OPTIONS FOR CONTROLLING SPEED AND MEMORY REQUIREMENTS
 
@@ -554,6 +621,13 @@ option is recommended in combination with this option, because
 standard alignment without HMM banding requires a lot of memory (see
 .B --small
 ).
+With HMM-only alignment
+.RB ( --hmm ,
+or the default for a model with zero basepairs),
+.B --nonbanded
+selects optimal accuracy alignment without bands, as
+.B --hmmnoband
+does.
 
 .TP
 .B --p7band

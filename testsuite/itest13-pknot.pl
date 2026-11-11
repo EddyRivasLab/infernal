@@ -161,7 +161,7 @@ if ($err !~ /Invalid .*pknot character on MATP node line/) {
 }
 
 ######################################################################
-# Subtest 8: cmsearch PS-line orphan marking (brief 025). A pseudoknot
+# Subtest 8: cmsearch PS-line orphan marking (brief 26_0617-025). A pseudoknot
 # letter whose partner isn't present in a hit's displayed alignment keeps
 # its CS-line letter and gets '?' on the PS line, instead of being erased
 # to a plain singlet -- for BOTH a truncated hit and an ordinary

@@ -33,7 +33,7 @@
  * program run. 0: hasn't happened; 1: happened, not yet reported;
  * 2: reported. nonull3_fb_cmname is the first such CM's name. */
 static int  nonull3_fb_state = 0;
-static char nonull3_fb_cmname[256];
+static char nonull3_fb_cmname[CM_NONULL3_FB_NAMELEN];
 
 static int  pli_p7_filter          (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_SCOREDATA *msvdata, const ESL_SQ *sq, int64_t **ret_ws, int64_t **ret_we, float **ret_wb, int **ret_wnmerged, int *ret_nwin);
 static int  pli_p7_env_def         (CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, const ESL_SQ *sq, int64_t *ws, int64_t *we, int *wnmerged, int nwin, P7_HMM **opt_hmm, P7_PROFILE **opt_gm,
@@ -253,6 +253,9 @@ cm_pipeline_Create(ESL_GETOPTS *go, ESL_ALPHABET *abc, int clen_hint, int L_hint
   pli->stg_time_F7_aln      = 0.0;
   pli->last_dispatch_cp9bands = 0.0;
   pli->last_dispatch_dp       = 0.0;
+  /* stage timing is reported only with --devdiag, so only time stages then */
+  pli->stg_w = NULL;
+  if (cm_StageVerbose() && (pli->stg_w = esl_stopwatch_Create()) == NULL) goto ERROR;
   pli->p7gm = NULL;
   pli->p7bg = NULL;
 
@@ -1006,6 +1009,7 @@ cm_pipeline_Destroy(CM_PIPELINE *pli, CM_t *cm)
   if (pli->p7_cm_nodepad)  free(pli->p7_cm_nodepad);
   if (pli->cyk_envtree) FreeParsetree(pli->cyk_envtree);
   if (pli->last_dispatch_tr) FreeParsetree(pli->last_dispatch_tr);
+  if (pli->stg_w) esl_stopwatch_Destroy(pli->stg_w);
   if (pli->cyk_envtreeA) {
     int ii;
     for (ii = 0; ii < pli->cyk_envtreeA_n; ii++) if (pli->cyk_envtreeA[ii]) FreeParsetree(pli->cyk_envtreeA[ii]);
@@ -1179,7 +1183,7 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
 
   /* check contract */
   if(pli->mode == CM_SEARCH_SEQS) { /* case 1 */
-    if(modmode != CM_NEWMODEL_CM) 
+    if(modmode != CM_NEWMODEL_CM)              ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, SEARCH mode and modmode is not CM_NEWMODEL_CM"); 
     if(cm == NULL)                             ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, SEARCH mode and CM is NULL"); 
     if(cm->clen != cm_clen)                    ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, cm->clen != cm_clen"); 
     if(cm->W    != cm_W)                       ESL_FAIL(eslEINCOMPAT, pli->errbuf, "cm_pli_NewModel(), contract violated, cm->W != cm_W"); 
@@ -1323,7 +1327,7 @@ cm_pli_NewModel(CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, 
        * would re-warn per query; cmscan also calls this per CM in the DB, which
        * would spam per-CM. The static dedups across all CMs, queries, and
        * worker threads to one line per invocation (a benign race between two
-       * threads only changes which CM name is recorded). See brief 053
+       * threads only changes which CM name is recorded). See brief 26_0422-053
        * addendum D. Recorded here, and printed in the stdout report by the
        * program via cm_pli_ReportNoNull3Fallback(), not to stderr
        * (brief 26_0821-135). */
@@ -1418,6 +1422,51 @@ cm_pli_ReportNoNull3Fallback(FILE *ofp)
     fprintf(ofp, "# WARNING: --nonull3, but CM %s has no --nonull3 E-value stats; using default (null3-on) stats (E-values may be inflated for low-GC/AT-rich models; to fix, rebuild with cmbuild or run cmcalibrate --nonull3; reported once per run)\n",
             nonull3_fb_cmname);
     nonull3_fb_state = 2;
+  }
+  return eslOK;
+}
+
+/* Function:  cm_pli_GetNoNull3Fallback()
+ * Incept:    EPN, Tue Nov 10 2026 (w/Claude)
+ *
+ * Purpose:   Return TRUE if this process has recorded a --nonull3
+ *            fallback to the default (null3-on) E-value statistics
+ *            (see cm_pli_NewModel()), reported or not, else FALSE.
+ *            If TRUE and <opt_cmname> is non-NULL, set <*opt_cmname>
+ *            to the name of the first such CM (static storage; caller
+ *            must not free it).
+ *
+ *            In MPI cmscan the workers read the CMs, not the master,
+ *            so cm_pipeline_MPISend() sends this to the master, and
+ *            cm_pipeline_MPIRecv() records it there with
+ *            cm_pli_SetNoNull3Fallback() (brief 26_0821-191).
+ *
+ * Returns:   TRUE or FALSE.
+ */
+int
+cm_pli_GetNoNull3Fallback(char **opt_cmname)
+{
+  if(nonull3_fb_state == 0) return FALSE;
+  if(opt_cmname != NULL) *opt_cmname = nonull3_fb_cmname;
+  return TRUE;
+}
+
+/* Function:  cm_pli_SetNoNull3Fallback()
+ * Incept:    EPN, Tue Nov 10 2026 (w/Claude)
+ *
+ * Purpose:   Record a --nonull3 fallback for CM <cmname> that another
+ *            process (an MPI worker) found, unless this process has
+ *            already recorded one, so that cm_pli_ReportNoNull3Fallback()
+ *            reports it once.
+ *
+ * Returns:   <eslOK>.
+ */
+int
+cm_pli_SetNoNull3Fallback(const char *cmname)
+{
+  if(nonull3_fb_state == 0) {
+    snprintf(nonull3_fb_cmname, sizeof(nonull3_fb_cmname), "%s", cmname);
+    nonull3_fb_state = 1;
   }
   return eslOK;
 }
@@ -1947,13 +1996,9 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
 #if eslDEBUGLEVEL >= 2
 	printf("#DEBUG:\n#DEBUG: PIPELINE calling p7_filter() %s  %" PRId64 " residues (pass: %d)\n", sq2search->name, sq2search->n, p);
 #endif
-	{ ESL_STOPWATCH *w_f1f3 = esl_stopwatch_Create();
-	  esl_stopwatch_Start(w_f1f3);
-	  if((status = pli_p7_filter(pli, om, bg, p7_evparam, msvdata, sq2search, &ws, &we, &wb, &wnmerged, &nwin)) != eslOK) { esl_stopwatch_Destroy(w_f1f3); return status; }
-	  esl_stopwatch_Stop(w_f1f3);
-	  pli->stg_time_F1F3 += w_f1f3->elapsed;
-	  esl_stopwatch_Destroy(w_f1f3);
-	}
+	if(pli->stg_w) esl_stopwatch_Start(pli->stg_w);
+	if((status = pli_p7_filter(pli, om, bg, p7_evparam, msvdata, sq2search, &ws, &we, &wb, &wnmerged, &nwin)) != eslOK) return status;
+	if(pli->stg_w) { esl_stopwatch_Stop(pli->stg_w); pli->stg_time_F1F3 += pli->stg_w->elapsed; }
 	if(p == PLI_PASS_STD_ANY) nwin_pass_std_any = nwin;
 	if(pli->do_time_F1 || pli->do_time_F2 || pli->do_time_F3) return status;
         
@@ -2037,8 +2082,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
   /* Second loop over each pipeline pass:
    * Complete all CM-based calculations.
    */
-  { ESL_STOPWATCH *w_f6 = esl_stopwatch_Create();
-    esl_stopwatch_Start(w_f6);
+  if(pli->stg_w) esl_stopwatch_Start(pli->stg_w);
   /* Store p7 objects for use by pli_dispatch_cm_search() when --msvband or --vitband */
   if((pli->do_msvband || pli->do_vitband) && opt_gm != NULL) pli->p7gm = *opt_gm;
   if(pli->do_msvband || pli->do_vitband)                     pli->p7bg = bg;
@@ -2191,10 +2235,7 @@ cm_Pipeline(CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float
     if(ee != NULL) { free(ee); ee   = NULL; }
     nenv = 0;
   } /* end of 'for(p = PLI_PASS_STD_ANY; p <= PLI_NPASSES; p++)', second loop over pipeline passes */
-    esl_stopwatch_Stop(w_f6);
-    pli->stg_time_F6 += w_f6->elapsed;
-    esl_stopwatch_Destroy(w_f6);
-  }
+  if(pli->stg_w) { esl_stopwatch_Stop(pli->stg_w); pli->stg_time_F6 += pli->stg_w->elapsed; }
 
   for(p = 0; p < NPLI_PASSES; p++) {
     if(p7esAA && p7esAA[p]) free(p7esAA[p]);
@@ -4950,7 +4991,7 @@ pli_cyk_env_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, int64_t 
    * be included in the redefined envelope, any that doesn't will not
    * be.
    */
-  ExpInfo_t **fcyk_expA = cm_pli_ExpInfoA(pli, cm); /* on-set, or off-set under --nonull3 (briefs 053/069) */
+  ExpInfo_t **fcyk_expA = cm_pli_ExpInfoA(pli, cm); /* on-set, or off-set under --nonull3 (briefs 26_0422-053/26_0422-069) */
   cyk_env_cutoff = fcyk_expA[pli->fcyk_cm_exp_mode]->mu_extrap + (log(pli->F6env) / (-1 * fcyk_expA[pli->fcyk_cm_exp_mode]->lambda));
 
 #if eslDEBUGLEVEL >= 2
@@ -5223,7 +5264,7 @@ pli_cyk_seq_filter(CM_PIPELINE *pli, off_t cm_offset, const ESL_SQ *sq, CM_t **o
   save_tau        = cm->tau;
   cm->tau         = pli->fcyk_tau;
   qdbidx          = (cm->search_opts & CM_SEARCH_NONBANDED) ? SMX_NOQDB : SMX_QDB1_TIGHT;
-  ExpInfo_t **fcyk_expA = cm_pli_ExpInfoA(pli, cm); /* on-set, or off-set under --nonull3 (briefs 053/069) */
+  ExpInfo_t **fcyk_expA = cm_pli_ExpInfoA(pli, cm); /* on-set, or off-set under --nonull3 (briefs 26_0422-053/26_0422-069) */
   cutoff          = fcyk_expA[pli->fcyk_cm_exp_mode]->mu_extrap + (log(pli->F6) / (-1 * fcyk_expA[pli->fcyk_cm_exp_mode]->lambda));
   sq_hitlist      = cm_tophits_Create();
   status = pli_dispatch_cm_search(pli, cm, sq->dsq, 1, sq->n, sq_hitlist, cutoff, 0., qdbidx, &sc, NULL, NULL);
@@ -6397,8 +6438,12 @@ pli_scan_mode_read_cm(CM_PIPELINE *pli, off_t cm_offset, float *p7_evparam, int 
   }
 #endif
   cm_file_Position(pli->cmfp, cm_offset);
-  /* read_fp7=TRUE: needed for --msvband / --vitband which call p7_ProfileConfig(cm->fp7,...) in dispatch */
-  if((status = cm_file_Read(pli->cmfp, TRUE, &(pli->abc), &cm)) != eslOK) ESL_FAIL(status, pli->errbuf, "%s", pli->cmfp->errbuf);
+  /* Read the filter HMM (cm->fp7) only for --msvband / --vitband, which
+   * call p7_ProfileConfig(cm->fp7,...) in envelope band derivation. No
+   * other scan path uses cm->fp7 (search alignment never sets
+   * CM_ALIGN_P7BANDED), and reading it costs time and memory per CM read
+   * (brief 26_0821-191). */
+  if((status = cm_file_Read(pli->cmfp, (pli->do_msvband || pli->do_vitband), &(pli->abc), &cm)) != eslOK) ESL_FAIL(status, pli->errbuf, "%s", pli->cmfp->errbuf);
 #ifdef HMMER_THREADS
   if (pli->cmfp->syncRead) { 
     if (pthread_mutex_unlock (&pli->cmfp->readMutex) != 0) ESL_EXCEPTION(eslESYS, "mutex unlock failed");

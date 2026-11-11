@@ -1024,7 +1024,7 @@ cm_p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
   return status; /* NEVERREACHED */
 }
 
-/* brief 26_0628-045/047: small-M gate for kmerchain (also gated the earlier
+/* brief 26_0628-045/26_0628-047: small-M gate for kmerchain (also gated the earlier
  * best-window-anchor deriver before its removal by brief 26_0628-066).
  * Root cause (rmark4 MIR2655 and 4 other catastrophic-loss families, all
  * M=84-400): at this M range these divergent structural-RNA test families
@@ -1288,7 +1288,7 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
   int        *rawpins = NULL;       /* pins before junction slack, for <ret_rawpins> */
   int        *local_nodepad = NULL;
   int j, x, i;
-  /* brief 26_0628-059 (extended 2026-07-11, brief 190 follow-up): optional
+  /* brief 26_0628-059 (extended 2026-07-11, brief 26_0430-190 follow-up): optional
    * stage a/b/bd timing -- a = seed finding (raw hits + merge), b = colinear
    * chaining DP + backtrack + pin emission, bd = converting the winning
    * chain's pins into HMM bands (the p7_pins2bands_nodepad call). If we bail
@@ -1303,7 +1303,7 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
   *ret_i2k = NULL; *ret_kmin = NULL; *ret_kmax = NULL; *ret_ncells = 0;
   if (ret_rawpins != NULL) *ret_rawpins = NULL;
   if (cm->p7_kmerchain_mgate > 0 && M < cm->p7_kmerchain_mgate) {
-    status = eslOK;   /* brief 26_0628-045/047 opt-in small-M gate; caller falls back per brief 26_0628-047's fallback mechanism */
+    status = eslOK;   /* brief 26_0628-045/26_0628-047 opt-in small-M gate; caller falls back per brief 26_0628-047's fallback mechanism */
     goto CLEANUP;     /* brief 26_0628-059: route through CLEANUP so stage a/b timing (if requested) still gets filled in */
   }
 
@@ -3596,7 +3596,7 @@ cp9_FBMatrices2BandsP7B(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_MX *fmx, CP9_MX 
   ESL_DPRINTF1(("#DEBUG: bands validated.\n"));
 #endif
   if(debug_level > 0) debug_print_ij_bands(cm);
-  if(debug_level > 0) PrintDPCellsSaved_jd(cm, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, L);
+  if(debug_level > 0) PrintDPCellsSaved_jd(cm, cp9b, L);
 
   return eslOK;
 }
@@ -3734,7 +3734,7 @@ cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, 
      * bump (no cached pmx), instrumented via #CP9_CKPTF_TAU. */
     /* brief 26_0430-187 (2026-07-05): temporary, pragmatic reroute. The float non-ckpt
      * F/B below (cp9_ForwardP7BF/cp9_BackwardP7BF/cp9_FBMatrices2BandsF) was
-     * shown (briefs 26_0430-185/186) to lose Fwd=Bwd consistency and collapse
+     * shown (briefs 26_0430-185/26_0430-186) to lose Fwd=Bwd consistency and collapse
      * numerically on genuinely-truncated genome-scale sequences (L~147K,
      * ~15x past its documented L=10K validation bound), producing garbage
      * per-node bands. The checkpointed double-precision twin (brief 26_0430-154) is
@@ -5166,8 +5166,8 @@ cm_BandsFromParsetree(CM_t *cm, Parsetree_t *tr, int L, int pad,
  * aggregate). The long-tail per-state pads (LSU p99=90, max=160)
  * produce cell-count blowup that exceeds the cell savings from
  * tighter mean bands. Floor+cap variants (`f5_cap10`) still 1.39x
- * slower than pad5. p95 refit also failed (project memory
- * `project_cykperstate_p95_failed`).
+ * slower than pad5. p95 refit also failed (brief
+ * 26_0430-028).
  *
  * Decision (2026-05-19): kept in source as reference but not hooked
  * up. The `--cykbands-perstate`, `--cykperstate-maxpad`, `--cykpadfile`
@@ -6541,7 +6541,7 @@ cp9_FBMatrices2BandsF(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_FMX *fmx, CP9_FMX 
   if((status = cp9_ValidateBands(cm, errbuf, cp9b, i0, j0, do_trunc)) != eslOK) return status;
 #endif
   if(debug_level > 0) debug_print_ij_bands(cm);
-  if(debug_level > 0) PrintDPCellsSaved_jd(cm, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, L);
+  if(debug_level > 0) PrintDPCellsSaved_jd(cm, cp9b, L);
 
   return eslOK;
 }
@@ -8103,7 +8103,7 @@ p7b_geo_Create(const P7_GBANDS *bnd, int M, int L)
  * (a dead row) or overflows its top cells, and the posteriors -- hence the
  * OA alignment and the PP line -- are meaningless; the reported Forward
  * score was off by up to +-326 bits.  This is the same collapse the CP9
- * family had (cm_p7_band_chk.c, briefs 26_0430-153/154), with the same
+ * family had (cm_p7_band_chk.c, briefs 26_0430-153/26_0430-154), with the same
  * remedy: every F/B cell, carried special, checkpoint seed and block
  * buffer is now double.  The rounding is in the STORED values, so double
  * accumulation alone would not be enough.  The per-cell recurrences and

@@ -258,7 +258,7 @@ static ESL_OPTIONS options[] = {
   { "--debug-f6-envs", eslARG_OUTFILE, NULL, NULL, NULL, NULL, NULL, NULL, "dump per-envelope post-F6 TSV to <f>", 106 },
   { "--p7nodepad-file", eslARG_INFILE, NULL, NULL, NULL, NULL, NULL, "--novitband,--msvband", "read per-consensus position p7 pads from <f>",                 106 },
   { "--p7padplus",  eslARG_INT,    "7", NULL, "n>=0", NULL, NULL, NULL, "add <n> to every per-state pad",                                                            106 },
-  { "--p7vit-hopback", eslARG_INT, "0", NULL, "n>=0", NULL, NULL, "--msvband", "with --vitband, dilate per-pin band by trace-hop-back of <n> pins (D1)",          106 },
+  { "--p7vit-hopback", eslARG_INT, "0", NULL, "n>=0", NULL, NULL, "--msvband", "with --vitband, dilate per-pin band by trace-hop-back of <n> pins",               106 },
   { "--p7sc",      eslARG_REAL,  "0.0", NULL, "x>=0",  NULL,  "--msvband", NULL, "with --msvband, min pin match score for pruning",                        106 },
   { "--p7len",     eslARG_INT,   "0",   NULL, "n>=0",  NULL,  "--msvband", NULL, "with --msvband, min nmer length for pruning",                            106 },
   { "--p7end",     eslARG_INT,   "0",   NULL, "n>=0",  NULL,  "--msvband", NULL, "with --msvband, min dist from nmer end for pruning",                     106 },
@@ -272,8 +272,10 @@ static ESL_OPTIONS options[] = {
    * the CM file is ignored. cmbuild writes F1F2F3CUT only with --fil-pcut
    * (brief 26_0821-160); a CM without it searches with the default
    * thresholds. With --use-fil-pcut, default cap is 10 per stage
-   * (validated as the strict-improvement Pareto point on rmark4). */
-  { "--use-fil-pcut", eslARG_NONE, FALSE, NULL, NULL,    NULL, NULL, "--max,--nohmm", "use per-CM F1/F2/F3 P-value cutoffs (F1F2F3CUT, from cmbuild --fil-pcut)", 106 },
+   * (validated as the strict-improvement Pareto point on rmark4).
+   * cmscan refuses --use-fil-pcut (see process_commandline()); the option
+   * stays in the table so the refusal can say why. */
+  { "--use-fil-pcut", eslARG_NONE, FALSE, NULL, NULL,    NULL, NULL, "--max,--nohmm", "not supported by cmscan (use cmsearch --use-fil-pcut)",                    106 },
   { "--pcut-F1cap", eslARG_REAL, "10.0", NULL, "x>=1.0", NULL, "--use-fil-pcut", NULL, "with --use-fil-pcut: max F1 tightening factor",                          106 },
   { "--pcut-F2cap", eslARG_REAL, "10.0", NULL, "x>=1.0", NULL, "--use-fil-pcut", NULL, "with --use-fil-pcut: max F2 tightening factor",                          106 },
   { "--pcut-F3cap", eslARG_REAL, "10.0", NULL, "x>=1.0", NULL, "--use-fil-pcut", NULL, "with --use-fil-pcut: max F3 tightening factor",                          106 },
@@ -301,7 +303,7 @@ static ESL_OPTIONS options[] = {
   { "--onlytrunc",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */ "allow only truncated hits, anywhere within sequences",         108 },
   { "--5trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */ "allow truncated hits only at 5' ends of sequences",            108 },
   { "--3trunc",     eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL, /* see *** above */ "allow truncated hits only at 3' ends of sequences",            108 },
-  { "--devdiag",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                     "show developer stage/band diagnostics on stderr",              108 },
+  { "--devdiag",    eslARG_NONE,   FALSE, NULL, NULL,    NULL,  NULL,  NULL,                     "show developer diagnostics (stage timing in main output, rest on stderr)", 108 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -2150,6 +2152,18 @@ process_commandline(int argc, char **argv, ESL_GETOPTS **ret_go, char **ret_cmfi
   if (strcmp(*ret_cmfile, "-") == 0) { esl_fprintf(stderr, "cmscan cannot read <cm database> from stdin stream, because it must have cmpress'ed auxfiles\n"); goto ERROR; }
 
   /* Check for incompatible option combinations I don't know how to disallow with esl_getopts */
+
+  /* --use-fil-pcut is supported by cmsearch only. cmscan reads each CM
+   * lazily, after that model's F1-F3 filters have run, and
+   * cm_pli_NewModel() sets the per-CM thresholds only when the CM is
+   * read, so each model would be filtered with the thresholds of the
+   * previous CM read. Supporting it would require storing the cutoffs in
+   * the cmpress'ed files (brief 26_0821-191).
+   */
+  if (esl_opt_GetBoolean(go, "--use-fil-pcut")) {
+    esl_fprintf(stderr, "Error: --use-fil-pcut is supported by cmsearch only, not cmscan\n");
+    exit(1);
+  }
 
   /* --beta only makes sense with --qdb, --nohmm or --max */
   if (esl_opt_IsUsed(go, "--beta") && (! esl_opt_GetBoolean(go, "--qdb")) && 

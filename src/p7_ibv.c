@@ -526,10 +526,10 @@ ibv_through_scan(int M, size_t k_stride, double margin,
  * only widen further and so cannot re-introduce a gap.  Widening keeps
  * kmin>=1 and kmax<=M for i>=2; the final clamp is purely defensive.
  */
-/* brief 26_0430-307/309: row-0 delete-chain band coverage. Formerly a
+/* brief 26_0430-307/26_0430-309: row-0 delete-chain band coverage. Formerly a
  * candidate fix gated behind P298_ROW0D (brief 26_0430-298, default OFF);
- * brief 307 established this is a CORRECTNESS FIX, not a tuning knob, and
- * brief 309 promoted it to unconditional, removing the flag entirely.
+ * brief 26_0430-307 established this is a CORRECTNESS FIX, not a tuning knob, and
+ * brief 26_0430-309 promoted it to unconditional, removing the flag entirely.
  *
  * Every IBV band deriver hard-pinned row 0 to the single cell k=0
  * (kmin[0]=0, kmax[0]=0), i.e. the B state alone. But row 0 is also where
@@ -783,7 +783,7 @@ cm_p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_
   if (L >= 1) { kmin[1] = 1; kmax[1] = M; }
   if (L >= 2) { kmin[L - 1] = 1; kmax[L - 1] = M; }
   if (L >= 1) { kmin[L] = 1; kmax[L] = M; }
-  kmin[0] = 0; kmax[0] = M;   /* brief 26_0430-307/309: row-0 delete-chain coverage */
+  kmin[0] = 0; kmax[0] = M;   /* brief 26_0430-307/26_0430-309: row-0 delete-chain coverage */
 
   /* Brief 26_0430-140a: bridge inter-row gaps so FIXED/HYBRID bands are connected
    * (DELTA untouched).  Must run before ncells is summed. */
@@ -1279,7 +1279,7 @@ cm_p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
     if (L >= 2) { kmin_arr[L - 1] = 1; kmax_arr[L - 1] = M; }
     if (L >= 1) { kmin_arr[L] = 1; kmax_arr[L] = M; }
   }
-  kmin_arr[0] = 0; kmax_arr[0] = M;   /* brief 26_0430-307/309: row-0 delete-chain coverage */
+  kmin_arr[0] = 0; kmax_arr[0] = M;   /* brief 26_0430-307/26_0430-309: row-0 delete-chain coverage */
   i2k[0] = 0;   /* B-state convention (brief 26_0430-137): i2k[i]=argmax_k for i in [1,L]. */
 
   /* Brief 26_0430-140a: bridge inter-row gaps so FIXED/HYBRID bands are connected
