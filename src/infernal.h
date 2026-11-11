@@ -3488,29 +3488,30 @@ extern float            cm_tr_penalties_Sizeof(CM_TR_PENALTIES *trp);
 extern void             cm_tr_penalties_Destroy(CM_TR_PENALTIES *trp);
 extern int              cm_tr_penalties_IdxForPass(int pass_idx);
 
-/* D16 compat shims -- TEMPORARY.  Registered on the X5 strip list in
- * HUB-INFERNAL/releases/1.2/INVENTORY.md; see that entry for the strip
- * procedure, its prerequisite and its deadline.  Added by brief 26_0316-038.
+/* Compatibility #defines -- TEMPORARY, remove before the 1.2 release.
+ * Added by brief 26_0316-038; this comment rewritten by brief 26_0821-193.
  *
- * D16 renamed 38 Infernal functions out of HMMER's namespace (35 "p7_" plus 3
- * "my_p7_"/"my_dmx_") into "cm_".  Only the definitions and their declarations
- * were renamed; the ~190 call sites, spread across many in-flight branches,
- * were deliberately left alone, and these #defines are what keeps them
- * compiling.  That is the whole point: the merge-conflict surface is the 38
- * definition lines plus this block, instead of every line in the tree that
- * mentions one of the 38 identifiers.
+ * Infernal functions that used names in HMMER's namespace (38 at the
+ * time: 35 "p7_" and 3 "my_p7_"/"my_dmx_") were renamed into Infernal's
+ * "cm_" namespace, but only their definitions and declarations were: the
+ * ~190 call sites, spread over many branches under development at the
+ * time, still use the old names, and these #defines map each old name
+ * still in use to the new one so that they compile. That kept the
+ * rename's merge conflicts to the definitions and this block.
  *
- * !! HAZARD -- THESE SHIMS INVERT THE SAFETY PROPERTY THE RENAME BUYS.
- * The reason for D16 is that Infernal was squatting on 38 names in HMMER's
- * namespace by luck: if vendored HMMER ever defined one of them, we would find
- * out at link time, loudly.  While a shim exists, that no longer happens -- a
- * call meant for a newly vendored HMMER function is silently rewritten to
- * Infernal's cm_ function instead, and it compiles, links and runs wrong.
- * (p7_GForwardBanded already collided once; my_p7_GForwardBanded was the dodge.)
+ * To remove them: rename the old names at every call site to the cm_
+ * names (one sed over src/, using the pairs below; this also renames the
+ * few local declarations of old names, e.g. in p7band-test.c), then
+ * delete this block and check that the tree builds.
  *
- * TRIPWIRE: ANY BUMP OF VENDORED HMMER.  On such a bump, strip these shims
- * (per X5) before trusting the build -- do not read a clean link as evidence
- * that the two namespaces are still disjoint.
+ * !! HAZARD while these exist: they undo the point of the rename. Without
+ * them, a function that a newer vendored HMMER defines under one of the
+ * old names would collide with Infernal's at link time, loudly. With
+ * them, a call meant for HMMER's new function is silently rewritten to
+ * Infernal's cm_ function, and compiles, links and runs wrong.
+ * (p7_GForwardBanded collided once already; my_p7_GForwardBanded was the
+ * dodge.) So on ANY update of the vendored HMMER, remove these first;
+ * don't take a clean link as evidence that the namespaces are disjoint.
  */
 #define my_dmx_Visualize                                         cm_dmx_Visualize
 #define my_p7_GForwardBanded                                     cm_p7_GForwardBanded
