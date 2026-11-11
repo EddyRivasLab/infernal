@@ -404,27 +404,33 @@ hmm_noparse_fallback(CM_t *cm, const ESL_SQ *sq, int do_trunc, int ibv_base_slab
  * (briefs 26_0821-161, 26_0821-163). Peak DP memory is HMM_UNBANDED_OA_NMAT
  * float matrices: <gxf>, <gxb>, and the double rows that do not fit in
  * <gxf>. The OA trace goes in <tr>, the Forward score (nats) in
- * <*ret_fwdsc>. Returns the status of the OA traceback.
+ * <*ret_fwdsc>. Returns eslOK, or an error status with the message in
+ * <errbuf> (HMM_ERRBUFSIZE), so that an MPI worker can report it
+ * (brief 26_0821-193).
  */
 #define HMM_UNBANDED_OA_NMAT 3
 static int
-hmm_unbanded_oa(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMX *gxf, P7_GMX *gxb, P7_TRACE *tr, float *ret_fwdsc)
+hmm_unbanded_oa(const ESL_SQ *sq, const P7_PROFILE *gm, P7_GMX *gxf, P7_GMX *gxb, P7_TRACE *tr, float *ret_fwdsc, char *errbuf)
 {
   CM_P7_GMXD *oax = NULL;
+  int         L   = sq->n;
   float       oasc;
   int         status;
 
-  p7_gmx_GrowTo(gxf, gm->M, L);
-  p7_gmx_GrowTo(gxb, gm->M, L);
-  cm_p7_GForwardDbl (dsq, L, gm, gxf, ret_fwdsc);
-  cm_p7_GBackwardDbl(dsq, L, gm, gxb, NULL);
+  if (p7_gmx_GrowTo(gxf, gm->M, L) != eslOK || p7_gmx_GrowTo(gxb, gm->M, L) != eslOK)
+    return hmm_fail(errbuf, eslEMEM, "out of memory in unbanded HMM alignment of sequence %s (M=%d, L=%d)", sq->name, gm->M, L);
+  if ((status = cm_p7_GForwardDbl (sq->dsq, L, gm, gxf, ret_fwdsc)) != eslOK ||
+      (status = cm_p7_GBackwardDbl(sq->dsq, L, gm, gxb, NULL))      != eslOK)
+    return hmm_fail(errbuf, status, "out of memory in unbanded HMM Forward/Backward of sequence %s (M=%d, L=%d)", sq->name, gm->M, L);
   p7_GDecoding(gm, gxf, gxb, gxb);
   if ((oax = cm_p7_gmxd_CreateOver(gxf, gm->M, L)) == NULL)
-    cm_Fail("out of memory in HMM-only optimal accuracy alignment (M=%d, L=%d)", gm->M, L);
+    return hmm_fail(errbuf, eslEMEM, "out of memory in unbanded HMM optimal accuracy alignment of sequence %s (M=%d, L=%d)", sq->name, gm->M, L);
   cm_p7_GOptimalAccuracyDbl(gm, gxb, oax, &oasc);
   status = cm_p7_GOATraceDbl(gm, gxb, oax, tr);
   cm_p7_gmxd_Destroy(oax);
-  return status;
+  if (status != eslOK)
+    return hmm_fail(errbuf, status, "unbanded HMM optimal accuracy traceback failed for sequence %s", sq->name);
+  return eslOK;
 }
 
 /* hmm_unbanded_oa_mb()
@@ -1682,7 +1688,7 @@ hmm_align_one(HMM_ALIGNER *ha, const ESL_SQ *sq, P7_TRACE *tr, float *st, char *
     if (ha->gxf == NULL && (ha->gxf = p7_gmx_Create(hmm->M, L)) == NULL) { status = hmm_fail(errbuf, eslEMEM, "out of memory"); goto ERROR; }
     if (ha->gxb == NULL && (ha->gxb = p7_gmx_Create(hmm->M, L)) == NULL) { status = hmm_fail(errbuf, eslEMEM, "out of memory"); goto ERROR; }
     p7_trace_Reuse(tr);
-    hmm_unbanded_oa(sq->dsq, L, ha->gm, ha->gxf, ha->gxb, tr, &fwdsc);
+    if ((status = hmm_unbanded_oa(sq, ha->gm, ha->gxf, ha->gxb, tr, &fwdsc, errbuf)) != eslOK) goto ERROR;
     raw = fwdsc;
   }
   else {
