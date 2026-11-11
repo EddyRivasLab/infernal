@@ -2344,7 +2344,7 @@ hmm_master(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int ncpus, int nproc)
     MPI_Status mpistatus;
     for (wi = 1; wi < nproc; wi++) {
       if (! mpi_ready_seen[wi]) MPI_Recv(&wstatus, 1, MPI_INT, wi, INFERNAL_INITIALREADY_TAG, MPI_COMM_WORLD, &mpistatus);
-      if (cm_dsq_MPISend(NULL, -1, -1, wi, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size) != eslOK) mpi_failure("MPI send failed");
+      if (cm_dsq_MPISend(NULL, NULL, -1, -1, wi, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size) != eslOK) mpi_failure("MPI send failed");
     }
   }
 #endif
@@ -2861,7 +2861,7 @@ hmm_mpi_align_block(ESL_SQ_BLOCK *sq_block, P7_TRACE **trA, float *stA, char **b
   while (nidle > 0 && si < sq_block->count) {
     wi = idle[--nidle];
     sq = sq_block->list + si;
-    if (cm_dsq_MPISend(sq->dsq, sq->L, sq_block->first_seqidx + si, wi, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, buf, nalloc) != eslOK) mpi_failure("problem sending dsq to worker %d", wi);
+    if (cm_dsq_MPISend(sq->name, sq->dsq, sq->L, sq_block->first_seqidx + si, wi, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, buf, nalloc) != eslOK) mpi_failure("problem sending dsq to worker %d", wi);
     nworking++;
     si++;
   }
@@ -2888,7 +2888,7 @@ hmm_mpi_align_block(ESL_SQ_BLOCK *sq_block, P7_TRACE **trA, float *stA, char **b
 
     if (si < sq_block->count) {
       sq = sq_block->list + si;
-      if (cm_dsq_MPISend(sq->dsq, sq->L, sq_block->first_seqidx + si, wi, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, buf, nalloc) != eslOK) mpi_failure("problem sending dsq to worker %d", wi);
+      if (cm_dsq_MPISend(sq->name, sq->dsq, sq->L, sq_block->first_seqidx + si, wi, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, buf, nalloc) != eslOK) mpi_failure("problem sending dsq to worker %d", wi);
       nworking++;
       si++;
     }
@@ -3122,7 +3122,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
       
       if(have_work) { /* send new sequence: si's dsq, L, and seqidx to the worker */
 	sq = sq_block->list + si;
-	status = cm_dsq_MPISend(sq->dsq, sq->L, sq_block->first_seqidx + si, wi, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size);
+	status = cm_dsq_MPISend(sq->name, sq->dsq, sq->L, sq_block->first_seqidx + si, wi, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size);
 	if(status != eslOK) mpi_failure("problem sending dsq to worker %d", wi);
 	nworking++; /* one more worker is working now */
 	si++;       /* move onto next sequence */
@@ -3145,7 +3145,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     printf("master sending NULL dsq to all workers signaling we're done with the file\n");
 #endif
     for (wi = 1; wi < cfg->nproc; wi++) {
-      if((status = cm_dsq_MPISend(NULL, -1, -1, wi, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size)) != eslOK) mpi_failure(errbuf);
+      if((status = cm_dsq_MPISend(NULL, NULL, -1, -1, wi, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size)) != eslOK) mpi_failure(errbuf);
     }
 
     /* output alignment (if do_oneblock we died above if we didn't reach EOF yet) */
@@ -3187,7 +3187,7 @@ mpi_master(ESL_GETOPTS *go, struct cfg_s *cfg)
   printf("master sending NULL dsq to all workers signaling we're done with the file\n");
 #endif
   for (wi = 1; wi < cfg->nproc; wi++) {
-    if((status = cm_dsq_MPISend(NULL, -1, -1, wi, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size)) != eslOK) mpi_failure(errbuf);
+    if((status = cm_dsq_MPISend(NULL, NULL, -1, -1, wi, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size)) != eslOK) mpi_failure(errbuf);
   }
   
   if     (sstatus == eslEFORMAT) mpi_failure("Parse failed (sequence file %s):\n%s\n", cfg->sqfp->filename, esl_sqfile_GetErrorBuf(cfg->sqfp));
@@ -3237,6 +3237,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   int64_t         L, idx;                 /* sequence length, index, rec'd from master */
   char           *mpibuf      = NULL;     /* buffer used to pack/unpack structures */
   int             mpibuf_size = 0;        /* size of the mpibuf                    */
+  char           *sqname      = NULL;     /* sequence name, rec'd from master */
   int             blocks_remain_in_file;  /* set to FALSE to break outer loop over blocks */
   int             seqs_remain_in_block;   /* set to FALSE to break inner loop over seqs  */
 
@@ -3267,7 +3268,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
     P7_TRACE    *wtr = NULL;
     float        hst[HMMST_N];
     char         herrbuf[HMM_ERRBUFSIZE];
-    char         wname[64];
+    char        *wname = NULL;
 
     if ((ha = hmm_aligner_Create(go, cm)) == NULL) mpi_failure("out of memory");
     /* one start-up message, then sequences until a NULL dsq; there are no
@@ -3275,16 +3276,16 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
     status = eslOK;
     MPI_Send(&status, 1, MPI_INT, 0, INFERNAL_INITIALREADY_TAG, MPI_COMM_WORLD);
     while (1) {
-      status = cm_dsq_MPIRecv(0, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size, &dsq, &L, &idx);
+      status = cm_dsq_MPIRecv(0, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size, &dsq, &L, &idx, &wname);
       if     (status == eslOK  && dsq    == NULL)   mpi_failure("problem receiving dsq");
       else if(status == eslEOD && dsq    != NULL)   mpi_failure("problem receiving termination signal");
       else if(status != eslOK  && status != eslEOD) mpi_failure("problem receiving dsq");
       if (dsq == NULL) break;
 
-      /* the worker gets no names; error messages name the sequence by its number in the input */
-      snprintf(wname, sizeof(wname), "#%" PRId64, idx+1);
-      if ((sq = esl_sq_CreateDigitalFrom(cfg->abc, wname, dsq, L, NULL, NULL, NULL)) == NULL) mpi_failure("out of memory");
+      /* the master sends the name, so that messages name the sequence as a serial run does (brief 26_0821-193) */
+      if ((sq = esl_sq_CreateDigitalFrom(cfg->abc, (wname != NULL) ? wname : "unnamed", dsq, L, NULL, NULL, NULL)) == NULL) mpi_failure("out of memory");
       free(dsq);
+      free(wname); wname = NULL;
       if ((wtr = (ha->do_hmmvit ? p7_trace_Create() : p7_trace_CreateWithPP())) == NULL) mpi_failure("out of memory");
       if ((status = hmm_align_one(ha, sq, wtr, hst, herrbuf)) != eslOK) mpi_failure("%s", herrbuf);
       if (hmm_trace_MPISend(wtr, idx, hst, 0, INFERNAL_ALNDATA_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size) != eslOK) mpi_failure("out of memory");
@@ -3328,7 +3329,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 #endif 
 
     /* receive first dsq in block, if it's NULL, we know we're out of blocks */
-    status = cm_dsq_MPIRecv(0, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size, &dsq, &L, &idx);
+    status = cm_dsq_MPIRecv(0, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size, &dsq, &L, &idx, &sqname);
     if     (status == eslOK  && dsq    == NULL)   mpi_failure("problem receiving 1st dsq");
     else if(status == eslEOD && dsq    != NULL)   mpi_failure("problem receiving termination signal");
     else if(status != eslOK  && status != eslEOD) mpi_failure("problem receiving 1st dsq");
@@ -3350,8 +3351,10 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
       printf("worker %d dsq %" PRId64 " of length %" PRId64 " received from master\n", cfg->my_rank, idx, L);
 #endif 
       /* create a sequence object from dsq */
-      if ((sq = esl_sq_CreateDigitalFrom(cfg->abc, "irrelevant", dsq, L, NULL, NULL, NULL)) == NULL) mpi_failure("out of memory");
+      /* the master sends the name, so that messages name the sequence as a serial run does (brief 26_0821-193) */
+      if ((sq = esl_sq_CreateDigitalFrom(cfg->abc, (sqname != NULL) ? sqname : "unnamed", dsq, L, NULL, NULL, NULL)) == NULL) mpi_failure("out of memory");
       free(dsq); /* esl_sq_CreateDigitalFrom() makes a copy of dsq */
+      free(sqname); sqname = NULL;
       
       /* align the sequence */
       status = DispatchSqAlignment(info.cm, errbuf, sq, idx, info.mxsize, TRMODE_UNKNOWN, info.pass_idx, FALSE, /* FALSE: cm->cp9b not valid */
@@ -3384,7 +3387,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
       cm_alndata_Destroy(data, FALSE); /* don't free data->sq, it was pointing at the sq we just free'd */
       
       /* receive next sequence from the master, if it's null that's our signal to stop with this block */
-      status = cm_dsq_MPIRecv(0, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size, &dsq, &L, &idx);
+      status = cm_dsq_MPIRecv(0, INFERNAL_DSQ_TAG, MPI_COMM_WORLD, &mpibuf, &mpibuf_size, &dsq, &L, &idx, &sqname);
       if     (status == eslOK  && dsq    == NULL)   mpi_failure("problem receiving dsq");
       else if(status == eslEOD && dsq    != NULL)   mpi_failure("problem receiving termination signal");
       else if(status != eslOK  && status != eslEOD) mpi_failure("problem receiving dsq");

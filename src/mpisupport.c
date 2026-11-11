@@ -645,8 +645,9 @@ expinfo_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, ExpInfo_t **ret_exp
  * Incept:    EPN, Tue Aug 28 15:20:16 2007
  *            EPN, Fri Jan 13 05:25:13 2012 [updated]
  *
- * Purpose:   Sends a digitized sequence, its length and a sequence index
- *            as a work unit to MPI process <dest> (<dest> ranges from <0..nproc-1>),
+ * Purpose:   Sends a digitized sequence, its length, a sequence index
+ *            and (optionally) its name as a work unit to MPI process
+ *            <dest> (<dest> ranges from <0..nproc-1>),
  *            tagging the message with MPI tag <tag> for MPI communicator
  *            <comm>. The receiver uses <cm_dsq_MPIRecv()> to receive the dsq.
  *            
@@ -666,7 +667,9 @@ expinfo_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, ExpInfo_t **ret_exp
  *            appropriately, but the caller is still responsible for
  *            free'ing it.
  *            
- * Args:      dsq    - digitized seq to send
+ * Args:      name   - name of the sequence, or NULL (sent so that the
+ *                     receiver's messages can name it; brief 26_0821-193)
+ *            dsq    - digitized seq to send
  *            L      - length of dsq we're sending (dsq could extend further)
  *            idx    - sequence index (serves as unique id) for the dsq we're sending 
  *            dest   - MPI destination (0..nproc-1)
@@ -682,11 +685,12 @@ expinfo_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, ExpInfo_t **ret_exp
  *            memory (though the contents of <*buf> are undefined). 
  */
 int
-cm_dsq_MPISend(ESL_DSQ *dsq, int64_t L, int64_t idx, int dest, int tag, MPI_Comm comm, char **buf, int *nalloc)
+cm_dsq_MPISend(const char *name, ESL_DSQ *dsq, int64_t L, int64_t idx, int dest, int tag, MPI_Comm comm, char **buf, int *nalloc)
 {
   int   status;
   int   code;
   int   sz, n, pos;
+  int   namelen = (dsq != NULL && name != NULL) ? (int) strlen(name) + 1 : 0; /* with the '\0'; 0 = no name */
 
   /* First, figure out the size of the work unit */
   if (MPI_Pack_size(1,     MPI_INT,           comm, &n) != 0) ESL_EXCEPTION(eslESYS, "mpi pack size failed"); /* status code */
@@ -697,6 +701,12 @@ cm_dsq_MPISend(ESL_DSQ *dsq, int64_t L, int64_t idx, int dest, int tag, MPI_Comm
     n += sz;
     if (MPI_Pack_size(L+2, MPI_BYTE,          comm, &sz) != 0) ESL_EXCEPTION(eslESYS, "mpi pack size failed"); /* dsq */
     n += sz;
+    if (MPI_Pack_size(1,   MPI_INT,           comm, &sz) != 0) ESL_EXCEPTION(eslESYS, "mpi pack size failed"); /* namelen */
+    n += sz;
+    if (namelen > 0) {
+      if (MPI_Pack_size(namelen, MPI_CHAR,    comm, &sz) != 0) ESL_EXCEPTION(eslESYS, "mpi pack size failed"); /* name */
+      n += sz;
+    }
   }
   ESL_DPRINTF2(("#DEBUG: cm_dsq_MPISend(): dsq has size %d\n", n));
 
@@ -715,6 +725,9 @@ cm_dsq_MPISend(ESL_DSQ *dsq, int64_t L, int64_t idx, int dest, int tag, MPI_Comm
     if (MPI_Pack(&L,   1,   MPI_LONG_LONG_INT,  *buf, n, &pos, comm) != 0) ESL_EXCEPTION(eslESYS, "mpi pack failed"); 
     if (MPI_Pack(&idx, 1,   MPI_LONG_LONG_INT,  *buf, n, &pos, comm) != 0) ESL_EXCEPTION(eslESYS, "mpi pack failed"); 
     if (MPI_Pack(dsq,  L+2, MPI_BYTE,           *buf, n, &pos, comm) != 0) ESL_EXCEPTION(eslESYS, "mpi pack failed"); 
+    if (MPI_Pack(&namelen, 1, MPI_INT,          *buf, n, &pos, comm) != 0) ESL_EXCEPTION(eslESYS, "mpi pack failed");
+    if (namelen > 0 &&
+        MPI_Pack((void *) name, namelen, MPI_CHAR, *buf, n, &pos, comm) != 0) ESL_EXCEPTION(eslESYS, "mpi pack failed");
   }
   ESL_DPRINTF2(("#DEBUG: cm_dsq_MPISend(): dsq is packed into %d bytes\n", pos));
 
@@ -733,7 +746,7 @@ cm_dsq_MPISend(ESL_DSQ *dsq, int64_t L, int64_t idx, int dest, int tag, MPI_Comm
  *            EPN, Fri Jan 13 05:25:29 2012 [updated]
  *
  * Purpose:   Receives a work unit that consists of a digitized sequence
- *            its length and an index from <source> (<0..nproc-1>, or
+ *            its length, an index and an optional name from <source> (<0..nproc-1>, or
  *            <MPI_ANY_SOURCE>) tagged as <tag> from communicator <comm>.
  *            
  *            Work units are prefixed by a status code. If the unit's
@@ -758,7 +771,9 @@ cm_dsq_MPISend(ESL_DSQ *dsq, int64_t L, int64_t idx, int dest, int tag, MPI_Comm
  *            
  * Returns:   <eslOK> on success. <*ret_dsq> contains the new dsq; it
  *            is allocated here, and the caller is responsible for
- *            free'ing it.  <*buf> may have been reallocated to a
+ *            free'ing it. If <opt_ret_name> is non-NULL, <*opt_ret_name>
+ *            is the sequence's name, allocated here (caller frees it), or
+ *            NULL if the sender sent none.  <*buf> may have been reallocated to a
  *            larger size, and <*nalloc> may have been increased.
  *
  *
@@ -767,10 +782,12 @@ cm_dsq_MPISend(ESL_DSQ *dsq, int64_t L, int64_t idx, int dest, int tag, MPI_Comm
  *            <*nalloc> remain valid.
  */
 int
-cm_dsq_MPIRecv(int source, int tag, MPI_Comm comm, char **buf, int *nalloc, ESL_DSQ **ret_dsq, int64_t *ret_L, int64_t *ret_idx)
+cm_dsq_MPIRecv(int source, int tag, MPI_Comm comm, char **buf, int *nalloc, ESL_DSQ **ret_dsq, int64_t *ret_L, int64_t *ret_idx, char **opt_ret_name)
 {
   int         status, code;
   ESL_DSQ    *dsq  = NULL;
+  char       *name = NULL;
+  int         namelen;
   int64_t     L    = -1;
   int64_t     idx  = -1;
   int         n;
@@ -803,16 +820,25 @@ cm_dsq_MPIRecv(int source, int tag, MPI_Comm comm, char **buf, int *nalloc, ESL_
   ESL_ALLOC(dsq, sizeof(ESL_DSQ) * (L+2));
   if (MPI_Unpack       (*buf, n, &pos, dsq,   L+2, MPI_BYTE,          comm) != 0)  ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   dsq[0] = dsq[(L+1)] = eslDSQ_SENTINEL; /* overwrite */
+  if (MPI_Unpack       (*buf, n, &pos, &namelen, 1, MPI_INT,          comm) != 0)  ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  if (namelen > 0) {
+    ESL_ALLOC(name, sizeof(char) * namelen);
+    if (MPI_Unpack     (*buf, n, &pos, name, namelen, MPI_CHAR,       comm) != 0)  ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+    name[namelen-1] = '\0';
+  }
   ESL_DPRINTF2(("#DEBUG: cm_dsq_MPIRecv(): dsq has been unpacked.\n"));
 
   *ret_L   = L;
   *ret_idx = idx;
   *ret_dsq = dsq;
+  if (opt_ret_name != NULL) *opt_ret_name = name; else if (name != NULL) free(name);
 
   return eslOK;
 
  ERROR:
-  if (dsq != NULL) free(dsq);
+  if (dsq  != NULL) free(dsq);
+  if (name != NULL) free(name);
+  if (opt_ret_name != NULL) *opt_ret_name = NULL;
   *ret_dsq = NULL;
   *ret_L   = -1;
   *ret_idx = -1;

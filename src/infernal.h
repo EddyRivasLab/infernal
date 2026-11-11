@@ -3937,8 +3937,8 @@ extern int cm_worker_MPIBcast(char *errbuf, int tag, MPI_Comm comm, char **buf, 
 extern int cm_nonconfigured_MPIUnpack(ESL_ALPHABET **abc, char *errbuf, char *buf, int n, int *pos, MPI_Comm comm, CM_t **ret_cm);
 extern int cm_nonconfigured_MPIPack(CM_t *cm, char *errbuf, char *buf, int n, int *pos, MPI_Comm comm);
 extern int cm_nonconfigured_MPIPackSize(CM_t *cm, MPI_Comm comm, int *ret_n);
-extern int cm_dsq_MPISend(ESL_DSQ *dsq, int64_t L, int64_t idx, int dest, int tag, MPI_Comm comm, char **buf, int *nalloc);
-extern int cm_dsq_MPIRecv(int source, int tag, MPI_Comm comm, char **buf, int *nalloc, ESL_DSQ **ret_dsq, int64_t *ret_L, int64_t *ret_idx);
+extern int cm_dsq_MPISend(const char *name, ESL_DSQ *dsq, int64_t L, int64_t idx, int dest, int tag, MPI_Comm comm, char **buf, int *nalloc);
+extern int cm_dsq_MPIRecv(int source, int tag, MPI_Comm comm, char **buf, int *nalloc, ESL_DSQ **ret_dsq, int64_t *ret_L, int64_t *ret_idx, char **opt_ret_name);
 extern int cm_parsetree_MPIPackSize(Parsetree_t *tr, MPI_Comm comm, int *ret_n);
 extern int cm_parsetree_MPIPack(Parsetree_t *tr, char *buf, int n, int *position, MPI_Comm comm);
 extern int cm_parsetree_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, Parsetree_t **ret_tr);
