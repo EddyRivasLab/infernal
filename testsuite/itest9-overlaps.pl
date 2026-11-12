@@ -81,6 +81,14 @@ if(-e "$tmppfx.cm.ssi") { unlink "$tmppfx.cm.ssi"; }
 
 # cmscan
 # trial 1, --fmt 2 only option, should mark up all overlaps
+#
+# Expected hits, with the models in INFERNAL1/e (filter HMMs derived from
+# the CMs; brief 26_0821-186):
+#   1 Plant_SRP 20072..20376 + *   2 tRNA-Sec 20377..20467 + *
+#   3 tRNA      20001..20071 + ^   4 tRNA-Sec 20001..20070 + = (overlaps 3)
+#   5 tRNA-Sec  20467..20377 - *
+# With the filter HMMs stored in the old INFERNAL1/a files, hit 5 was a
+# weak tRNA hit at 20395..20467 + instead, which overlapped hit 2 (^, =).
 $output = `$builddir/src/cmscan --fmt 2 -E 0.1 --tblout $tmppfx.tbl $tmppfx.cm $tmppfx.fa 2>&1`;
 if ($? != 0) { die "FAIL: cmscan failed\n"; }
 &i1::ParseTblFormat2("$tmppfx.tbl");
@@ -88,10 +96,10 @@ if ($i1::ntbl    != 5)           { die "FAIL: on expected number of hits, trial 
 if ($i1::hitE[0] !~ m/4.\de-98/) { die "FAIL: on cfg, hit 1, trial 1\n"; }
 if ($i1::hitE[3] !~ m/1.\de-07/) { die "FAIL: on cfg, hit 4, trial 1\n"; }
 if ($i1::olp[0]  !~ m/^\*$/)     { die "FAIL: on cfg, hit 1 olp, trial 1\n"; }
-if ($i1::olp[1]  !~ m/^\^$/)     { die "FAIL: on cfg, hit 2 olp, trial 1\n"; }
+if ($i1::olp[1]  !~ m/^\*$/)     { die "FAIL: on cfg, hit 2 olp, trial 1\n"; }
 if ($i1::olp[2]  !~ m/^\^$/)     { die "FAIL: on cfg, hit 3 olp, trial 1\n"; }
 if ($i1::olp[3]  !~ m/^\=$/)     { die "FAIL: on cfg, hit 4 olp, trial 1\n"; }
-if ($i1::olp[4]  !~ m/^\=$/)     { die "FAIL: on cfg, hit 5 olp, trial 1\n"; }
+if ($i1::olp[4]  !~ m/^\*$/)     { die "FAIL: on cfg, hit 5 olp, trial 1\n"; }
 if ($i1::clan[0] !~ m/^\-$/)         { die "FAIL: on cfg, hit 1 clan name, trial 1\n"; }
 if ($i1::clan[1] !~ m/^\-$/)         { die "FAIL: on cfg, hit 2 clan name, trial 1\n"; }
 if ($i1::clan[2] !~ m/^\-$/)         { die "FAIL: on cfg, hit 3 clan name, trial 1\n"; }
@@ -104,10 +112,10 @@ if ($i1::ntbl    != 5)           { die "FAIL: on expected number of hits, trial 
 if ($i1::hitE[0] !~ m/4.\de-98/) { die "FAIL: on cfg, hit 1, trial 2\n"; }
 if ($i1::hitE[3] !~ m/1.\de-07/) { die "FAIL: on cfg, hit 4, trial 2\n"; }
 if ($i1::olp[0]  !~ m/^\*$/)     { die "FAIL: on cfg, hit 1 olp, trial 2\n"; }
-if ($i1::olp[1]  !~ m/^\^$/)     { die "FAIL: on cfg, hit 2 olp, trial 2\n"; }
+if ($i1::olp[1]  !~ m/^\*$/)     { die "FAIL: on cfg, hit 2 olp, trial 2\n"; }
 if ($i1::olp[2]  !~ m/^\^$/)     { die "FAIL: on cfg, hit 3 olp, trial 2\n"; }
 if ($i1::olp[3]  !~ m/^\=$/)     { die "FAIL: on cfg, hit 4 olp, trial 2\n"; }
-if ($i1::olp[4]  !~ m/^\=$/)     { die "FAIL: on cfg, hit 5 olp, trial 2\n"; }
+if ($i1::olp[4]  !~ m/^\*$/)     { die "FAIL: on cfg, hit 5 olp, trial 2\n"; }
 if ($i1::clan[0] !~ m/^\-$/)         { die "FAIL: on cfg, hit 1 clan name, trial 2\n"; }
 if ($i1::clan[1] !~ m/^tRNA\-clan$/) { die "FAIL: on cfg, hit 2 clan name, trial 2\n"; }
 if ($i1::clan[2] !~ m/^tRNA\-clan$/) { die "FAIL: on cfg, hit 3 clan name, trial 2\n"; }
@@ -116,11 +124,12 @@ if ($i1::clan[2] !~ m/^tRNA\-clan$/) { die "FAIL: on cfg, hit 3 clan name, trial
 $output = `$builddir/src/cmscan --fmt 2 --oskip -E 0.1 --tblout $tmppfx.tbl $tmppfx.cm $tmppfx.fa 2>&1`;
 if ($? != 0) { die "FAIL: cmscan failed\n"; }
 &i1::ParseTblFormat2("$tmppfx.tbl");
-if ($i1::ntbl    != 3)           { die "FAIL: on expected number of hits, trial 2\n"; }
+if ($i1::ntbl    != 4)           { die "FAIL: on expected number of hits, trial 3\n"; }
 if ($i1::hitE[0] !~ m/4.\de-98/) { die "FAIL: on cfg, hit 1, trial 2\n"; }
 if ($i1::olp[0]  !~ m/^\*$/)     { die "FAIL: on cfg, hit 1 olp, trial 3\n"; }
-if ($i1::olp[1]  !~ m/^\^$/)     { die "FAIL: on cfg, hit 2 olp, trial 3\n"; }
+if ($i1::olp[1]  !~ m/^\*$/)     { die "FAIL: on cfg, hit 2 olp, trial 3\n"; }
 if ($i1::olp[2]  !~ m/^\^$/)     { die "FAIL: on cfg, hit 3 olp, trial 3\n"; }
+if ($i1::olp[3]  !~ m/^\*$/)     { die "FAIL: on cfg, hit 4 olp, trial 3\n"; }
 if ($i1::clan[0] !~ m/^\-$/)         { die "FAIL: on cfg, hit 1 clan name, trial 3\n"; }
 if ($i1::clan[1] !~ m/^\-$/)         { die "FAIL: on cfg, hit 2 clan name, trial 3\n"; }
 if ($i1::clan[2] !~ m/^\-$/)         { die "FAIL: on cfg, hit 3 clan name, trial 3\n"; }

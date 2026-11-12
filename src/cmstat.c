@@ -50,7 +50,7 @@ static ESL_OPTIONS options[] = {
   { "--cut_nc",    eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,       OUTOPTS, "print E-values that correspond to NC bit score thresholds",       0 },
   { "--cut_tc",    eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,       OUTOPTS, "print E-values that correspond to TC bit score thresholds",       0 },
   { "--key",       eslARG_STRING, NULL,      NULL, NULL,      NULL,      NULL,          NULL, "only print statistics for CM with name or accession <s>",         0 },
-  { "--hmmonly",   eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,          NULL, "print filter HMM bit scores/E-values, not CM ones",               0 },
+  { "--hmmonly",   eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,          NULL, "print HMM-only search bit scores/E-values, not CM ones",               0 },
   { "--nohmmonly", eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL, "--nohmmonly", "print CM bit scores/E-values, even for models with 0 basepairs",  0 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
@@ -263,6 +263,8 @@ output_stats(ESL_GETOPTS *go, CM_t *cm, int ncm, P7_BG *bg, int output_mode)
   if      (esl_opt_GetBoolean(go, "--nohmmonly")) use_cm = TRUE;
   else if (esl_opt_GetBoolean(go, "--hmmonly"))   use_cm = FALSE;
   else                                            use_cm = (CMCountNodetype(cm, MATP_nd) > 0) ? TRUE : FALSE;
+  /* HMM-only stats are those of the HMM that cmsearch --hmmonly uses (brief 26_0821-162) */
+  if(! use_cm) cm_p7_UseHMMOnlyFilter(cm);
 
   if(output_mode != OUTMODE_DEFAULT) { 
     if(use_cm && (! (cm->flags & CMH_EXPTAIL_STATS))) {

@@ -18,9 +18,46 @@ formats.
 
 .PP
 By default, the input CM file can be any CM file created by Infernal
-version 1.0 or later; the output CM file is a current Infernal
-format. Files from versions older than version 1.0 cannot be
-converted.
+version 1.0 or later; the output CM file is in the current Infernal
+format, except as described below. Files from versions older than
+version 1.0 cannot be converted.
+
+.PP
+CM files written by Infernal 1.1 (format INFERNAL1/a) store a
+separately built filter HMM after each CM. Of the Infernal 1.2
+programs, only
+.B cmconvert
+reads them; the others refuse them. Convert such a file once with
+.BR "cmconvert --upgrade" ,
+which writes the current format (INFERNAL1/e), the format
+.B cmbuild
+writes: the stored filter HMM is replaced by the profile HMMs that
+Infernal 1.2 derives from the CM, and the CM's parameters and its
+.B cmcalibrate
+E-value parameters are unchanged. For a CM built with
+.BR "cmbuild --prior <f>" ,
+add
+.B --prior <f>
+(see below). A database pressed by Infernal 1.1's
+.B cmpress
+must be pressed again from the converted file. A few old CM files
+carry invalid E-value parameters (an impossible database size), which
+.B cmconvert
+can't write; it says so, and such a file must first be recalibrated
+with Infernal 1.1's
+.BR cmcalibrate .
+
+.PP
+Without
+.BR --upgrade ,
+.B cmconvert
+writes a CM read from an INFERNAL1/a file in INFERNAL1/a again,
+keeping its filter HMM, so Infernal 1.1 can still read it, and
+.B --outfmt 1/a
+writes a CM in the current format as INFERNAL1/a. CMs read from an
+Infernal v1.0 file, which has no filter HMM, are always converted to
+the current format, as with
+.B --upgrade.
 
 .PP
 .I <cmfile> 
@@ -40,6 +77,19 @@ options, and exit.
 .B \-\-version
 Show version information: print the program name and Infernal version, and exit.
 
+.TP
+.B --devhelp
+Print help, as with  
+.B "-h",
+but also include expert options that are not displayed with 
+.B "-h". 
+These expert options are not expected to be relevant for the vast
+majority of users and so are not described in the manual page.  The
+only resources for understanding what they actually do are the brief
+one-line descriptions output when
+.B "--devhelp"
+is enabled, and the source code.
+
 .TP 
 .B -a
 Output profiles in ASCII text format. This is the default.
@@ -58,6 +108,12 @@ in
 .B <cmfile>
 will not be written to the converted output file. 
 
+.TP
+.BI -o " <f>"
+Save the converted output to file
+.I <f>
+instead of writing it to standard output.
+
 .TP 
 .B --mlhmm
 Do not output a CM file. Instead, output one maximum likelihood p7 HMM
@@ -73,7 +129,10 @@ Infernal and HMMER3.
 Do not output a CM file. Instead, output the filter p7 HMM
 for each CM in
 .B <cmfile>
-in HMMER3 ASCII text format.
+in HMMER3 ASCII text format. For a CM in the current format, this is
+the HMM derived from the CM when it is read (its maximum likelihood p7
+HMM); for a CM in an older format, it is the filter HMM stored in the
+file.
 
 .TP
 .B --cp9ascm
@@ -91,10 +150,137 @@ that it can be aligned or searched against with
 .B cmalign
 or
 .B cmsearch
-like any other (unstructured) CM. Only CMs configured in global mode
+like any other (unstructured) CM. The new CM is written in the
+current format, with its filter HMM calibrated, but without
+.B cmcalibrate
+E-value parameters. Only CMs configured in global mode
 are currently supported (this is the default state of a freshly-read
 CM file).
 
+.TP
+.BI --outfmt " <s>"
+With
+.B -a
+or
+.B -b,
+write the CMs in format
+.I <s>
+= 1/a or 1/e. INFERNAL1/a is the format of Infernal 1.1, so
+.B --outfmt 1/a
+writes CMs that Infernal 1.1 can read. It stores a filter HMM after
+each CM; a CM in the current format has none, so its filter HMM (its
+maximum likelihood p7 HMM) is stored. INFERNAL1/a can't store a CM's
+consensus pseudoknot annotation (see
+.BR --dropknots ),
+nor its null3-off E-value parameters, which are left out.
+INFERNAL1/e is the current format, and the default for CMs in it;
+for a CM in an older format,
+.B --outfmt 1/e
+is an error: use
+.B --upgrade
+instead.
+
+.TP
+.B --dropknots
+Allow a conversion that loses consensus pseudoknot annotation. Only
+the current CM format (INFERNAL1/e) can
+store a CM's consensus pseudoknot annotation. Converting such a CM to
+an older format (with
+.B -1,
+or with
+.B --outfmt 1/a )
+is an error unless
+.B --dropknots
+is used, in which case the annotation is silently left out of the
+output. CMs without pseudoknot annotation are unaffected.
+
+.TP
+.B --upgrade
+Convert CMs in older formats (INFERNAL1/a, and Infernal v1.0)
+to the current format (INFERNAL1/e), the format
+.B cmbuild
+writes. The filter HMM stored after each CM is discarded; the two
+profile HMMs that Infernal 1.2 derives from a CM, the filter HMM and
+the HMM-only search HMM (for
+.B cmsearch
+and
+.BR "cmscan --hmmonly" ),
+are derived from the CM and calibrated for E-values as
+.B cmbuild
+does, so the output CM is the one that
+.B cmbuild
+would have written, without needing the CM's training alignment.
+The CM itself and its own E-value parameters (from
+.BR cmcalibrate )
+are unchanged.
+CMs already in the current format are written unchanged.
+
+.IP
+How the HMM-only search HMM is made, and the calibration settings,
+depend on how the CM was built, which
+.B --upgrade
+reads from the
+.B cmbuild
+command on the CM's COM line: the transition prior
+.RB ( --p56
+and
+.B --v1p0
+use the version 1.0 prior, as do Infernal v1.0 files; otherwise the
+default prior), whether a CM with no basepairs was built like
+a profile HMM (as
+.B cmbuild
+did before version 1.2, unless it was given
+.BR --noh3pri ,
+.BR --p56 ,
+.B --v1p0
+or
+.BR --prior ),
+and
+.B cmbuild's
+filter HMM calibration options. If the CM was built with
+.B cmbuild --prior <f>,
+give the same prior file with
+.B --prior <f>.
+Without it, converting the CM is an error unless
+.B --noprior
+is used, in which case its HMM-only search HMM is its filter HMM.
+Calibration takes about as long as it does in
+.B cmbuild:
+seconds for most CMs, and minutes for CMs of tens of thousands of
+positions or more.
+
+.TP
+.BI --prior " <f>"
+With
+.B --upgrade,
+the CMs were built with
+.B cmbuild --prior <f>.
+The prior file's transition priors determine the HMM-only search HMM.
+
+.TP
+.B --noprior
+With
+.B --upgrade,
+convert CMs built with
+.B cmbuild --prior <f>
+without that prior file. Their HMM-only search HMM is then their filter
+HMM. Without
+.B --noprior
+or
+.B --prior <f>,
+upgrading such a CM is an error, and so is converting one from an
+Infernal v1.0 file (which is always upgraded); there, add
+.B --upgrade
+to use either option. Incompatible with
+.B --prior.
+
+.TP
+.BI --cpu " <n>"
+With
+.B --upgrade,
+or for CMs read from an Infernal v1.0 file (which are always
+upgraded), the number of parallel worker threads for calibrating the
+filter HMMs.
 
 .SH SEE ALSO
 

@@ -42,7 +42,6 @@ OBJS  = cm.o\
 	cm_mx.o\
 	cm_parsetree.o\
 	cm_qdband.o\
-	cm_submodel.o\
 	cp9.o\
 	cp9_dp.o\
 	cp9_modelconfig.o\

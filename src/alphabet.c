@@ -331,9 +331,8 @@ iDegeneratePairScore(const ESL_ALPHABET *abc, int *iesc, ESL_DSQ syml, ESL_DSQ s
  * residues as efficiently as I know how. 
  * Calculating 'optimized' emission scores, which calculates all possible
  * base pair scores (including non-canonicals) in cm_mx.c:{F,I}CalcOptimizedEmitScores()
- * was a time bottleneck in alignment with P7 and CP9 bands during sub CM construction.
- * sub CMs are created for each target seq, and optimized scores must be 
- * calc'ed for each sub CM.
+ * was a time bottleneck in alignment with P7 and CP9 bands during sub CM construction
+ * (cmalign --sub, which built a sub CM for each target seq; removed in 1.2).
  */
 
 /* Function:  FastPairScoreBothDegenerate() (float version)

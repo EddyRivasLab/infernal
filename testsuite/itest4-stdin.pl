@@ -60,6 +60,8 @@ if(-e "$tmppfx.cm.i1m") { unlink "$tmppfx.cm.i1m"; }
 if(-e "$tmppfx.cm.i1p") { unlink "$tmppfx.cm.i1p"; }
 if(-e "$tmppfx.cm.i1f") { unlink "$tmppfx.cm.i1f"; }
 if(-e "$tmppfx.cm.i1i") { unlink "$tmppfx.cm.i1i"; }
+if(-e "$tmppfx.cm.i1hf") { unlink "$tmppfx.cm.i1hf"; }
+if(-e "$tmppfx.cm.i1hp") { unlink "$tmppfx.cm.i1hp"; }
 if(-e "$tmppfx.cm.ssi") { unlink "$tmppfx.cm.ssi"; }
 `$builddir/src/cmpress $tmppfx.cm`;                                                 if ($?) { die "FAIL: cmpress"; }
 
@@ -182,6 +184,8 @@ if(-e "$arg1.i1m") { unlink "$arg1.i1m"; }
 if(-e "$arg1.i1p") { unlink "$arg1.i1p"; }
 if(-e "$arg1.i1f") { unlink "$arg1.i1f"; }
 if(-e "$arg1.i1i") { unlink "$arg1.i1i"; }
+if(-e "$arg1.i1hf") { unlink "$arg1.i1hf"; }
+if(-e "$arg1.i1hp") { unlink "$arg1.i1hp"; }
 if(-e "$arg1.ssi") { unlink "$arg1.ssi"; }
 `$prog --index $arg1            > $tmppfx.out1`;   if ($?)   { die "FAIL: $tag --index $tag1\n"; }
 $output = `cat $arg1 | $prog --index - 2>&1`;      if (! $?) { die "FAIL: $tag should reject - for <cmfile> when using --index\n"; }

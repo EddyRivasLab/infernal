@@ -150,6 +150,12 @@ AllocCPlan9Body(CP9_t *hmm, int M, const ESL_ALPHABET *abc)
    * used, set them to 0. and -INFTY */
   hmm->end[0] = hmm->begin[0] = 0.;
   hmm->esc[0] = hmm->bsc[0] = -INFTY;
+
+  /* msc[x][0] is never used either (M_0 has no emission); set it to
+   * -INFTY so a banded loop that reaches k=0 reads a defined value
+   * (brief 26_0821-134). */
+  for (x = 0; x < hmm->abc->Kp; x++)
+    hmm->msc[x][0] = -INFTY;
   
   ESL_ALLOC(hmm->has_el,     (M+1) * sizeof(int));
   ESL_ALLOC(hmm->el_from_ct, (M+2) * sizeof(int));

@@ -285,7 +285,7 @@ if(! $do_nopos) {
     $status = system("$command");
     if ($status != 0) { die "FAILED: $command"; }
     
-    $command = "perl $idscript $posfile $sorttmpoutfile > $outfile";
+    $command = "perl $idscript $posfile $sorttmpoutfile --resolve-overlap > $outfile";
     $status = system("$command");
     if ($status != 0) { die "FAILED: $command"; }
     

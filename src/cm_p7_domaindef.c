@@ -51,6 +51,7 @@
 #include "esl_vectorops.h"
 
 #include "hmmer.h"
+#include "p7_gmxb.h"
 
 #include "infernal.h"
 
@@ -59,6 +60,7 @@ static int is_multidomain_region         (P7_DOMAINDEF *ddef, int i, int j);
 static int glocal_region_trace_ensemble  (P7_DOMAINDEF *ddef, const P7_PROFILE *gm, const ESL_DSQ *dsq, int ireg, int jreg, const P7_GMX *fwd, P7_GMX *wrk, int do_null2, int *ret_nc);
 static int glocal_rescore_isolated_domain(P7_DOMAINDEF *ddef, const P7_PROFILE *gm, P7_OPROFILE *om, const ESL_SQ *sq, P7_GMX *gx1, P7_GMX *gx2, 
 					  int i, int j, int null2_is_done, int do_null2, int do_aln);
+
 
 /* Function:  p7_domaindef_GlocalByPosteriorHeuristics()
  * Synopsis:  Define glocal domains in a sequence using posterior probs.
@@ -110,7 +112,7 @@ static int glocal_rescore_isolated_domain(P7_DOMAINDEF *ddef, const P7_PROFILE *
  *            multiple domains are suspected.
  */
 int
-p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm, 
+cm_p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm, 
            P7_OPROFILE *om,
 					 P7_GMX *gxf, P7_GMX *gxb, P7_GMX *fwd, P7_GMX *bck, 
            P7_DOMAINDEF *ddef, int do_null2, int do_aln)
@@ -180,7 +182,7 @@ p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm,
 	       * works
 	       */
 	      p7_ReconfigMultihit(gm, saveL);
-	      p7_GForward(sq->dsq+i-1, j-i+1, gm, fwd, NULL);
+	      cm_p7_GForwardDbl(sq->dsq+i-1, j-i+1, gm, fwd, NULL);
 	      glocal_region_trace_ensemble(ddef, gm, sq->dsq, i, j, fwd, bck, do_null2, &nc);
 	      p7_ReconfigUnihit(gm, saveL);
 	      /* ddef->n2sc is now set on i..j by the traceback-dependent method */
@@ -261,11 +263,31 @@ p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm,
  *   E(z) = expected number of E states occurring in region before z is emitted
  *        = \sum_{y=i}^{z} eocc[i]  =  etot[z] - etot[i-1]
  *   B(z) = expected number of B states occurring in region after z is emitted
- *        = \sum_{y=z}^{j} bocc[i]  =  btot[j] - btot[z-1]               
+ *        = \sum_{y=z+1}^{j} bocc[i]  =  btot[j] - btot[z]
  *        
  *        
  * Because this relies on the <ddef->etot> and <ddef->btot> arrays,
  * <calculate_domain_posteriors()> needs to have been called first.
+ *
+ * INDEX CONVENTION (brief 26_0316-047): eocc[y] = etot[y]-etot[y-1] is the
+ * posterior that a domain *ends* at residue y (E state on row y); bocc[y] =
+ * btot[y]-btot[y-1] is the posterior that a domain *begins* at residue y (B
+ * state on row y-1). A split at z therefore pairs "ends at <= z" with "begins
+ * at >= z+1"; the two index ranges must be DISJOINT. Upstream HMMER (through
+ * 3.4) uses btot[j]-btot[z-1] here, which also counts bocc[z] -- so a single
+ * domain occupying exactly residue z contributes its own begin AND its own end
+ * to the same split point, and is scored as evidence of two domains. In HMMER's
+ * setting that overcount is diffuse and harmless; in Infernal it is not, because
+ * the truncated-hit profiles built by cm_p7_modelconfig_trunc.c pin all of one
+ * mass to a single row (Rgm sets N->N = -inf, so all B mass is on row 0; Lgm
+ * sets C->C = -inf, so all E mass is on row L). For those profiles every
+ * min(E(z),B(z)) with disjoint indices is identically 0, and the whole statistic
+ * degenerates to "posterior that the single domain is the one residue at the
+ * window edge" -- which then trips rt3 and, since the profile is unihit, aborts
+ * the whole search at cm_p7_domaindef_GlocalByPosteriorHeuristics()'s
+ * eslEINCONCEIVABLE. See brief 26_0316-047 for the DP-matrix-level derivation
+ * and the measurements: 0/3145 default-path verdict changes on rmark4h, and
+ * 23/23 spurious truncated-pass calls removed.
  *
  * Xref:    J2/101.  
  */
@@ -279,7 +301,8 @@ is_multidomain_region(P7_DOMAINDEF *ddef, int i, int j)
   max = -1.0;
   for (z = i; z <= j; z++)
     {
-      expected_n = ESL_MIN( (ddef->etot[z] - ddef->etot[i-1]), (ddef->btot[j] - ddef->btot[z-1]));
+      /* brief 26_0316-047: btot[z], not btot[z-1] -- see INDEX CONVENTION above. */
+      expected_n = ESL_MIN( (ddef->etot[z] - ddef->etot[i-1]), (ddef->btot[j] - ddef->btot[z]));
       max        = ESL_MAX(max, expected_n);
     }
   return ( (max >= ddef->rt3) ? TRUE : FALSE);
@@ -510,11 +533,11 @@ glocal_rescore_isolated_domain(P7_DOMAINDEF *ddef, const P7_PROFILE *gm, P7_OPRO
   float          null2[p7_MAXCODE];
   int            status;
 
-  p7_GForward (sq->dsq + i-1, Ld, gm, gx1, &envsc);
+  cm_p7_GForwardDbl (sq->dsq + i-1, Ld, gm, gx1, &envsc);
 
   oasc = 0.;
   if(do_null2 || do_aln) { 
-    p7_GBackward(sq->dsq + i-1, Ld, gm, gx2, NULL);
+    cm_p7_GBackwardDbl(sq->dsq + i-1, Ld, gm, gx2, NULL);
   
     status = p7_GDecoding(gm, gx1, gx2, gx2);      /* <ox2> is now overwritten with post probabilities     */
     if (status == eslERANGE) return eslFAIL;      /* rare: numeric overflow; domain is assumed to be repetitive garbage [J3/119-212] */
@@ -525,7 +548,7 @@ glocal_rescore_isolated_domain(P7_DOMAINDEF *ddef, const P7_PROFILE *gm, P7_OPRO
      * do it now, by the expectation (posterior decoding) method.
      */
     if ((! null2_is_done) && do_null2) { 
-      p7_GNull2_ByExpectation(gm, gx2, null2);
+      cm_p7_GNull2_ByExpectationDbl(gm, gx2, null2);   /* double sums (brief 26_0821-161) */
       for (pos = i; pos <= j; pos++) 
 	ddef->n2sc[pos]  = logf(null2[sq->dsq[pos]]);
     }
@@ -535,9 +558,15 @@ glocal_rescore_isolated_domain(P7_DOMAINDEF *ddef, const P7_PROFILE *gm, P7_OPRO
     }
 
     if(do_aln) { 
-      /* Find an optimal accuracy alignment */
-      p7_GOptimalAccuracy(gm, gx2, gx1, &oasc);      /* <ox1> is now overwritten with OA scores              */
-      p7_GOATrace        (gm, gx2, gx1, ddef->tr);   /* <tr>'s seq coords are offset by i-1, rel to orig dsq */
+      /* Find an optimal accuracy alignment. OA scores go in a double
+       * matrix whose first rows reuse <gx1>'s memory; the Forward values
+       * there are no longer needed (brief 26_0821-161). */
+      CM_P7_GMXD *oax = cm_p7_gmxd_CreateOver(gx1, gm->M, Ld);
+      if (oax == NULL) { status = eslEMEM; goto ERROR; }
+      cm_p7_GOptimalAccuracyDbl(gm, gx2, oax, &oasc);
+      status = cm_p7_GOATraceDbl(gm, gx2, oax, ddef->tr); /* <tr>'s seq coords are offset by i-1, rel to orig dsq */
+      cm_p7_gmxd_Destroy(oax);
+      if (status != eslOK) goto ERROR;
       
       /* hack the trace's sq coords to be correct w.r.t. original dsq */
       for (z = 0; z < ddef->tr->N; z++)
@@ -575,9 +604,429 @@ glocal_rescore_isolated_domain(P7_DOMAINDEF *ddef, const P7_PROFILE *gm, P7_OPRO
   return eslOK;
 
  ERROR:
-  if(do_aln) { 
+  if(do_aln) {
     p7_trace_Reuse(ddef->tr);
   }
   return status;
 }
-  
+
+
+/* Function:  p7_domaindef_GlocalByPosteriorHeuristics_Banded()
+ * Synopsis:  Banded version of p7_domaindef_GlocalByPosteriorHeuristics().
+ * Incept:    EPN*, Wed Mar 18 2026
+ *
+ * Purpose:   Banded domaindef for unihit profiles. Hardcodes one domain
+ *            spanning 1..sq->n; sets envsc=fwdsc directly.
+ *
+ *            When do_aln=TRUE, runs banded posterior decoding, OA DP,
+ *            and OA traceback to produce an alignment display. The
+ *            gxbb matrix is overwritten with posteriors; the OA scores
+ *            go in a separate double matrix (brief 26_0821-151), so gxfb
+ *            keeps the Forward values.
+ *
+ *            When do_aln=FALSE, skips alignment (Step 1 --noali path).
+ *
+ * Returns:   <eslOK> on success.
+ *            <eslEINCONCEIVABLE> if profile is not unihit.
+ */
+int
+cm_p7_domaindef_GlocalByPosteriorHeuristics_Banded(const ESL_SQ *sq, P7_PROFILE *gm,
+                                                P7_OPROFILE *om,
+                                                P7_GMXB *gxfb, P7_GMXB *gxbb,
+                                                float fwdsc, P7_DOMAINDEF *ddef,
+                                                int do_aln)
+{
+  P7_DOMAIN   *dom   = NULL;
+  CM_P7_GMXBD *oax   = NULL;
+  float        oasc  = 0.0f;
+  int          status;
+
+  if (p7_IsMulti(gm->mode)) return eslEINCONCEIVABLE;
+
+  if ((status = p7_domaindef_GrowTo(ddef, sq->n)) != eslOK) return status;
+
+  ddef->nexpected = 1.0;
+  ddef->nregions  = 1;
+  ddef->nenvelopes++;
+
+  if (do_aln) {
+    /* Banded posterior decoding: gxbb overwritten with posteriors */
+    if ((status = p7_GDecodingBanded(gm, gxfb, gxbb, gxbb, fwdsc)) != eslOK) return status;
+
+    /* Banded OA fill, in its own double matrix (brief 26_0821-151; it
+     * used to overwrite gxfb) */
+    if ((oax = cm_p7_gmxbd_Create(gxbb->bnd)) == NULL) return eslEMEM;
+    if ((status = p7_GOptimalAccuracyBanded(gm, gxbb, oax, &oasc)) != eslOK) { cm_p7_gmxbd_Destroy(oax); return status; }
+
+    /* Banded OA traceback */
+    status = p7_GOATraceBanded(gm, gxbb, oax, ddef->tr);
+    cm_p7_gmxbd_Destroy(oax);
+    if (status != eslOK) return status;
+
+    /* No coordinate adjustment needed: domain is 1..L, offset = 0 */
+  }
+
+  /* Grow dcl[] if needed */
+  if (ddef->ndom == ddef->nalloc) {
+    void *p;
+    ESL_RALLOC(ddef->dcl, p, sizeof(P7_DOMAIN) * (ddef->nalloc * 2));
+    ddef->nalloc *= 2;
+  }
+  dom = &(ddef->dcl[ddef->ndom]);
+
+  dom->ienv          = 1;
+  dom->jenv          = sq->n;
+  dom->envsc         = fwdsc;   /* in NATS; same as rescore Forward since profile not reconfigured */
+  dom->domcorrection = 0.0;     /* no null2 */
+  dom->oasc          = oasc;
+  dom->dombias       = 0.0;
+  dom->bitscore      = 0.0;
+  dom->lnP           = 1.0;
+  dom->is_reported   = FALSE;
+  dom->is_included   = FALSE;
+  dom->ad            = (do_aln ? p7_alidisplay_Create(ddef->tr, 0, om, sq, NULL) : NULL);
+  dom->iali          = 1;
+  dom->jali          = sq->n;
+
+  ddef->ndom++;
+  return eslOK;
+
+ ERROR:
+  return status;
+}
+
+
+/* Function:  p7_domaindef_GlocalByPosteriorHeuristics_Banded_Multihit()
+ * Synopsis:  Banded domaindef for multihit GLOCAL profiles (--msvband).
+ * Incept:    EPN*, Wed Mar 18 2026
+ *
+ * Purpose:   Banded version of p7_domaindef_GlocalByPosteriorHeuristics()
+ *            for the standard pipeline (multihit GLOCAL profiles).
+ *
+ *            Uses banded Forward/Backward xmx for domain decoding, then
+ *            for each simple single-domain region, extracts sub-bands and
+ *            runs banded rescore (Forward/Backward/Decoding/OA/Trace).
+ *
+ *            For rare multidomain regions, falls back to unbanded rescore
+ *            using the provided P7_GMX fwd/bck matrices.
+ *
+ * Args:      sq      - sequence
+ *            gm      - profile (multihit GLOCAL)
+ *            om      - optimized profile (for alidisplay)
+ *            gxfb    - banded Forward matrix
+ *            gxbb    - banded Backward matrix
+ *            fwdsc   - Forward score in nats
+ *            fwd     - P7_GMX for unbanded fallback (resized as needed)
+ *            bck     - P7_GMX for unbanded fallback (resized as needed)
+ *            ddef    - domain definition structure
+ *            kmin    - [0..L] band lower bounds from MSV
+ *            kmax    - [0..L] band upper bounds from MSV
+ *            do_null2 - TRUE to compute null2 correction
+ *            do_aln   - TRUE to compute OA alignments
+ *
+ * Returns:   eslOK on success.
+ */
+int
+cm_p7_domaindef_GlocalByPosteriorHeuristics_Banded_Multihit(const ESL_SQ *sq, P7_PROFILE *gm,
+							 P7_OPROFILE *om,
+							 P7_GMXB *gxfb, P7_GMXB *gxbb,
+							 float fwdsc,
+							 P7_GMX *fwd, P7_GMX *bck,
+							 P7_DOMAINDEF *ddef,
+							 int *kmin, int *kmax,
+							 int do_null2, int do_aln)
+{
+  int          L = sq->n;
+  int          M = gm->M;
+  int          i, j, d, z;
+  int          triggered;
+  int          saveL     = gm->L;
+  int          save_mode = gm->mode;
+  int          save_mode_is_unihit;
+  float        overall_sc = fwdsc;  /* Forward score in nats */
+  float        njcp;
+  float        oasc;
+  int          status;
+
+  /* Banded xmx pointers for domain decoding */
+  float       *fwd_xmx = gxfb->xmx;
+  float       *bck_xmx = gxbb->xmx;
+  int          nrow     = gxfb->bnd->nrow;
+
+  /* Build row_idx: seq position i -> banded row index r */
+  int         *row_idx = NULL;
+  int         *bnd_ip;
+  int          ia, ib, r, g;
+
+  ESL_ALLOC(row_idx, sizeof(int) * (L + 1));
+  for (i = 0; i <= L; i++) row_idx[i] = -1;
+  bnd_ip = gxfb->bnd->imem;
+  r = 0;
+  for (g = 0; g < gxfb->bnd->nseg; g++) {
+    ia = *bnd_ip++;
+    ib = *bnd_ip++;
+    for (i = ia; i <= ib; i++) row_idx[i] = r++;
+  }
+
+  save_mode_is_unihit = (p7_IsMulti(save_mode)) ? FALSE : TRUE;
+  if (do_aln && om == NULL) { status = eslEINVAL; goto ERROR; }
+
+  if ((status = p7_domaindef_GrowTo(ddef, L)) != eslOK) goto ERROR;
+
+  /* --- Domain decoding from banded xmx --- */
+  /* Compute btot, etot, mocc from banded Forward/Backward xmx.
+   * This is the same calculation as p7_GDomainDecoding() but reads from P7_GMXB xmx.
+   */
+  {
+    float fwd_xN_prev = 0.0f, fwd_xJ_prev = -eslINFINITY, fwd_xC_prev = -eslINFINITY;
+    int   last_ib2 = 0;
+
+    ddef->btot[0] = 0.0;
+    ddef->etot[0] = 0.0;
+    ddef->mocc[0] = 0.0;
+
+    bnd_ip = gxfb->bnd->imem;
+    r = 0;
+    for (g = 0; g < gxfb->bnd->nseg; g++) {
+      ia = *bnd_ip++;
+      ib = *bnd_ip++;
+      /* For positions outside bands (gap), set mocc=0, btot/etot unchanged */
+      for (i = last_ib2 + 1; i < ia; i++) {
+	ddef->btot[i] = ddef->btot[i-1];
+	ddef->etot[i] = ddef->etot[i-1];
+	ddef->mocc[i] = 0.0;
+      }
+      /* Advance fwd prev specials through gap */
+      { int gap2 = ia - last_ib2 - 1;
+	if (gap2 > 0) {
+	  fwd_xN_prev = fwd_xN_prev + gap2 * gm->xsc[p7P_N][p7P_LOOP];
+	  fwd_xJ_prev = fwd_xJ_prev + gap2 * gm->xsc[p7P_J][p7P_LOOP];
+	  fwd_xC_prev = fwd_xC_prev + gap2 * gm->xsc[p7P_C][p7P_LOOP];
+	}
+      }
+      for (i = ia; i <= ib; i++) {
+	float fwd_B_prev, bck_B_prev;  /* B state at row i-1 */
+	float fwd_E_cur,  bck_E_cur;   /* E state at row i   */
+	float njcp_sum;
+
+	/* btot: uses B(i-1). Need fwd_B(i-1) and bck_B(i-1).
+	 * For i=ia (first row of segment), i-1 is outside bands.
+	 * fwd_B(0) = xsc[N][MOVE] (=N_MOVE), bck_B(0) needs row 0 Backward.
+	 * For simplicity, use the running prev variables for B.
+	 */
+	if (i == ia && ia == 1) {
+	  /* Row 0: fwd_B(0) = N_MOVE, bck_B(0) from banded Backward is not stored.
+	   * But bck_B(0) = overall_sc - fwd_B(0) for a properly normalized matrix.
+	   * So exp(fwd_B(0) + bck_B(0) - overall_sc) = 1.0 approximately.
+	   * Use fwd_xB_prev and bck_xB_prev from initialization.
+	   */
+	  fwd_B_prev = gm->xsc[p7P_N][p7P_MOVE]; /* fwd N(0) + N_MOVE = 0 + N_MOVE */
+	  bck_B_prev = overall_sc - fwd_B_prev;   /* reconstruct from overall score */
+	} else if (r > 0) {
+	  fwd_B_prev = fwd_xmx[(r-1) * p7G_NXCELLS + p7G_B];
+	  bck_B_prev = bck_xmx[(r-1) * p7G_NXCELLS + p7G_B];
+	} else {
+	  fwd_B_prev = -eslINFINITY;
+	  bck_B_prev = -eslINFINITY;
+	}
+	ddef->btot[i] = ddef->btot[i-1] + exp(fwd_B_prev + bck_B_prev - overall_sc);
+
+	/* etot: uses E(i) */
+	fwd_E_cur = fwd_xmx[r * p7G_NXCELLS + p7G_E];
+	bck_E_cur = bck_xmx[r * p7G_NXCELLS + p7G_E];
+	ddef->etot[i] = ddef->etot[i-1] + exp(fwd_E_cur + bck_E_cur - overall_sc);
+
+	/* mocc: 1 - P(N at i) - P(J at i) - P(C at i) */
+	njcp_sum  = expf(fwd_xN_prev + bck_xmx[r * p7G_NXCELLS + p7G_N] + gm->xsc[p7P_N][p7P_LOOP] - overall_sc);
+	njcp_sum += expf(fwd_xJ_prev + bck_xmx[r * p7G_NXCELLS + p7G_J] + gm->xsc[p7P_J][p7P_LOOP] - overall_sc);
+	njcp_sum += expf(fwd_xC_prev + bck_xmx[r * p7G_NXCELLS + p7G_C] + gm->xsc[p7P_C][p7P_LOOP] - overall_sc);
+	ddef->mocc[i] = 1.0 - njcp_sum;
+
+	/* Update fwd prev specials for next row */
+	fwd_xN_prev = fwd_xmx[r * p7G_NXCELLS + p7G_N];
+	fwd_xJ_prev = fwd_xmx[r * p7G_NXCELLS + p7G_J];
+	fwd_xC_prev = fwd_xmx[r * p7G_NXCELLS + p7G_C];
+	r++;
+      }
+      last_ib2 = ib;
+    }
+    /* Fill any trailing positions after last segment */
+    for (i = last_ib2 + 1; i <= L; i++) {
+      ddef->btot[i] = ddef->btot[i-1];
+      ddef->etot[i] = ddef->etot[i-1];
+      ddef->mocc[i] = 0.0;
+    }
+  }
+
+  esl_vec_FSet(ddef->n2sc, L+1, 0.0);
+  ddef->nexpected = ddef->btot[L];
+
+  if (! save_mode_is_unihit) p7_ReconfigUnihit(gm, saveL);
+
+  /* --- Region finding and domain rescoring --- */
+  i = -1;
+  triggered = FALSE;
+  for (j = 1; j <= L; j++)
+    {
+      if (! triggered)
+	{
+	  if      (ddef->mocc[j] - (ddef->btot[j] - ddef->btot[j-1]) < ddef->rt2) i = j;
+	  else if (i == -1)                                                         i = j;
+	  if      (ddef->mocc[j]                                      >= ddef->rt1) triggered = TRUE;
+	}
+      else if (ddef->mocc[j] - (ddef->etot[j] - ddef->etot[j-1]) < ddef->rt2)
+	{
+	  ddef->nregions++;
+
+	  if (is_multidomain_region(ddef, i, j))
+	    {
+	      /* Multidomain region: fall back to unbanded.
+	       * Need full P7_GMX matrices for stochastic trace ensemble.
+	       */
+	      if (save_mode_is_unihit) { status = eslEINCONCEIVABLE; goto ERROR; }
+
+	      ddef->nclustered++;
+	      p7_gmx_GrowTo(fwd, gm->M, j-i+1);
+	      p7_gmx_GrowTo(bck, gm->M, j-i+1);
+	      p7_ReconfigMultihit(gm, saveL);
+	      cm_p7_GForwardDbl(sq->dsq+i-1, j-i+1, gm, fwd, NULL);
+	      glocal_region_trace_ensemble(ddef, gm, sq->dsq, i, j, fwd, bck, do_null2, &d);
+	      p7_ReconfigUnihit(gm, saveL);
+
+	      { int last_j2 = 0;
+		int i2, j2, nc2;
+		for (nc2 = 0; nc2 < d; nc2++) {
+		  p7_spensemble_GetClusterCoords(ddef->sp, nc2, &i2, &j2, NULL, NULL, NULL);
+		  if (i2 <= last_j2) ddef->noverlaps++;
+		  ddef->nenvelopes++;
+		  /* unbanded rescore for multidomain */
+		  p7_gmx_GrowTo(fwd, gm->M, j2-i2+1);
+		  p7_gmx_GrowTo(bck, gm->M, j2-i2+1);
+		  if (glocal_rescore_isolated_domain(ddef, gm, om, sq, fwd, bck, i2, j2, TRUE, do_null2, do_aln) == eslOK)
+		    last_j2 = j2;
+		}
+	      }
+	      p7_spensemble_Reuse(ddef->sp);
+	      p7_trace_Reuse(ddef->tr);
+	    }
+	  else
+	    {
+	      /* Simple single-domain region: use banded rescore. */
+	      ddef->nenvelopes++;
+
+	      /* Extract sub-bands for domain i..j, remap to 1..Ld */
+	      { int     Ld = j - i + 1;
+		int     p;
+		int    *sub_kmin = NULL;
+		int    *sub_kmax = NULL;
+		P7_GBANDS *sub_bnd = NULL;
+		P7_GMXB   *sub_fwd_bx = NULL;
+		P7_GMXB   *sub_bck_bx = NULL;
+		float      sub_fwdsc;
+		P7_DOMAIN *dom;
+
+		ESL_ALLOC(sub_kmin, sizeof(int) * (Ld + 1));
+		ESL_ALLOC(sub_kmax, sizeof(int) * (Ld + 1));
+		sub_kmin[0] = -1;
+		sub_kmax[0] = -1;
+		for (p = 1; p <= Ld; p++) {
+		  sub_kmin[p] = kmin[i + p - 1];
+		  sub_kmax[p] = kmax[i + p - 1];
+		}
+
+		if ((status = p7_kbands2gbands(NULL, sub_kmin, sub_kmax, Ld, M, &sub_bnd)) != eslOK) {
+		  free(sub_kmin); free(sub_kmax); goto ERROR;
+		}
+		free(sub_kmin); free(sub_kmax);
+
+		/* Banded Forward on domain subsequence */
+		if ((sub_fwd_bx = p7_gmxb_Create(sub_bnd)) == NULL) { p7_gbands_Destroy(sub_bnd); goto ERROR; }
+		if ((status = my_p7_GForwardBanded(sq->dsq + i - 1, Ld, gm, sub_fwd_bx, &sub_fwdsc)) != eslOK) {
+		  p7_gmxb_Destroy(sub_fwd_bx); p7_gbands_Destroy(sub_bnd); goto ERROR;
+		}
+
+		if (do_null2 || do_aln) {
+		  /* Banded Backward */
+		  if ((sub_bck_bx = p7_gmxb_Create(sub_bnd)) == NULL) {
+		    p7_gmxb_Destroy(sub_fwd_bx); p7_gbands_Destroy(sub_bnd); goto ERROR;
+		  }
+		  if ((status = p7_GBackwardBanded(sq->dsq + i - 1, Ld, gm, sub_bck_bx, NULL)) != eslOK) {
+		    p7_gmxb_Destroy(sub_fwd_bx); p7_gmxb_Destroy(sub_bck_bx); p7_gbands_Destroy(sub_bnd); goto ERROR;
+		  }
+
+		  /* Banded Decoding: overwrites sub_bck_bx with posteriors */
+		  if ((status = p7_GDecodingBanded(gm, sub_fwd_bx, sub_bck_bx, sub_bck_bx, sub_fwdsc)) != eslOK) {
+		    p7_gmxb_Destroy(sub_fwd_bx); p7_gmxb_Destroy(sub_bck_bx); p7_gbands_Destroy(sub_bnd); goto ERROR;
+		  }
+
+		  if (do_aln) {
+		    /* Banded OA in its own double matrix (brief 26_0821-151) */
+		    CM_P7_GMXBD *sub_oa_bx = cm_p7_gmxbd_Create(sub_bnd);
+		    if (sub_oa_bx == NULL) {
+		      status = eslEMEM;
+		      p7_gmxb_Destroy(sub_fwd_bx); p7_gmxb_Destroy(sub_bck_bx); p7_gbands_Destroy(sub_bnd); goto ERROR;
+		    }
+		    if ((status = p7_GOptimalAccuracyBanded(gm, sub_bck_bx, sub_oa_bx, &oasc)) != eslOK) {
+		      cm_p7_gmxbd_Destroy(sub_oa_bx);
+		      p7_gmxb_Destroy(sub_fwd_bx); p7_gmxb_Destroy(sub_bck_bx); p7_gbands_Destroy(sub_bnd); goto ERROR;
+		    }
+		    /* Banded OA Trace */
+		    if ((status = p7_GOATraceBanded(gm, sub_bck_bx, sub_oa_bx, ddef->tr)) != eslOK) {
+		      cm_p7_gmxbd_Destroy(sub_oa_bx);
+		      p7_gmxb_Destroy(sub_fwd_bx); p7_gmxb_Destroy(sub_bck_bx); p7_gbands_Destroy(sub_bnd); goto ERROR;
+		    }
+		    cm_p7_gmxbd_Destroy(sub_oa_bx);
+		    /* Adjust trace coords: domain starts at position i in original sequence */
+		    for (z = 0; z < ddef->tr->N; z++)
+		      if (ddef->tr->i[z] > 0) ddef->tr->i[z] += i - 1;
+		  }
+		}
+
+		/* Store domain result */
+		if (ddef->ndom == ddef->nalloc) {
+		  void *pp;
+		  ESL_RALLOC(ddef->dcl, pp, sizeof(P7_DOMAIN) * (ddef->nalloc * 2));
+		  ddef->nalloc *= 2;
+		}
+		dom = &(ddef->dcl[ddef->ndom]);
+		dom->ienv          = i;
+		dom->jenv          = j;
+		dom->envsc         = sub_fwdsc;
+		dom->domcorrection = 0.0;  /* TODO: null2 if do_null2 */
+		dom->oasc          = do_aln ? oasc : 0.0;
+		dom->dombias       = 0.0;
+		dom->bitscore      = 0.0;
+		dom->lnP           = 1.0;
+		dom->is_reported   = FALSE;
+		dom->is_included   = FALSE;
+		dom->ad            = (do_aln ? p7_alidisplay_Create(ddef->tr, 0, om, sq, NULL) : NULL);
+		dom->iali          = i;
+		dom->jali          = j;
+		ddef->ndom++;
+
+		if (do_aln) p7_trace_Reuse(ddef->tr);
+		p7_gmxb_Destroy(sub_fwd_bx);
+		if (sub_bck_bx) p7_gmxb_Destroy(sub_bck_bx);
+		p7_gbands_Destroy(sub_bnd);
+	      }
+	    }
+	  i = -1;
+	  triggered = FALSE;
+	}
+    }
+
+  if (! save_mode_is_unihit) {
+    p7_ReconfigMultihit(gm, saveL);
+    gm->L = saveL;
+  }
+  free(row_idx);
+  return eslOK;
+
+ ERROR:
+  if (row_idx) free(row_idx);
+  if (! save_mode_is_unihit) {
+    p7_ReconfigMultihit(gm, saveL);
+    gm->L = saveL;
+  }
+  return status;
+}

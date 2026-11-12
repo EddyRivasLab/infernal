@@ -185,6 +185,10 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_el, int use_wts, 
     }
     else clen++; 
   }
+  /* clen-1 is the consensus length: reject a model too long for this
+   * build's profile HMMs now, before building it (cmbuild's QDB step
+   * would otherwise run for hours first) */
+  if (clen > 1 && (status = cm_CheckConsensusLength(msa->name, clen-1, errbuf)) != eslOK) goto ERROR;
   /* build c2a_map and a2c_map, we need clen before we can allocate c2a_map, hence the second apos=1..alen loop */
   ESL_ALLOC(c2a_map, sizeof(int) * (clen+1)); 
   ESL_ALLOC(a2c_map, sizeof(int) * (msa->alen+1)); 
@@ -442,7 +446,7 @@ HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_el, int use_wts, 
    */
   if(ret_cm != NULL) { 
     cm = CreateCM(nnodes, nstates, clen, msa->abc);
-    if((status = cm_from_guide(cm, errbuf, gtr, FALSE)) != eslOK) return status; /* FALSE says, we're not building a sub CM that will never be localized */
+    if((status = cm_from_guide(cm, errbuf, gtr)) != eslOK) return status;
     CMZero(cm);
     cm->clen = clen;
 
@@ -574,26 +578,11 @@ AssignMatchColumnsForMsa(ESL_MSA *msa, char *errbuf, int use_rf, int use_wts, fl
  * Args:     cm  - allocated cm to construct
  *           errbuf - for error messages
  *           gtr - guide tree
- *           will_never_localize- TRUE if we're building a sub CM that we will never localize.
- *                                This is only relevant b/c we can allow 'invalid' CMs in this case.
- *                                An invalid CM is one that, if localized, could not generate all 
- *                                possible sequences (see comments in code below). 
- *                                We allow sub CMs to be invalid b/c we don't want cmalign to die
- *                                when a target seq results in a sub CM that is invalid in the middle
- *                                of a run. This is a pure hack and relies UNSAFELY on the assumption
- *                                that the sub CM will never be localized (though in the current
- *                                implementation sub CMs are only used by cmalign in global mode, thus
- *                                they never are localized). Still, we don't raise a flag in the 
- *                                CM to prevent downstream localization, which is dangerous - if the
- *                                implementation changes to allow sub CMs to become localized. Even then
- *                                though the risk is small b/c an invalid CM only is a problem if we
- *                                try to align a single residue sequence to it (again, see comments below
- *                                for more explanation).
  *
  * Returns:  eslOK on success;
  */
 int
-cm_from_guide(CM_t *cm, char *errbuf, Parsetree_t *gtr, int will_never_localize)
+cm_from_guide(CM_t *cm, char *errbuf, Parsetree_t *gtr)
 {
   int         status;
   ESL_STACK  *pda;              /* pushdown stack used for traversing gtr */
@@ -899,23 +888,20 @@ cm_from_guide(CM_t *cm, char *errbuf, Parsetree_t *gtr, int will_never_localize)
   cm->nodes = node;
   cm->clen  = clen;
 
-  if(!will_never_localize) { /* input arg tells us we may localize this CM, check it's valid,
-			      * if we won't localize it, then we don't check */
-    /* A couple of checks to make sure our CM is valid for local alignment/search.
-     * The following is invalid:
-     * 1. CMs with exactly 3 nodes. This must be either {ROOT, MATL, END} or
-     *    {ROOT, MATP, END}. Either way a local end is impossible b/c local ends
-     *    from nodes adjacent to end states are impossible. This is bad. Even
-     *    worse is a {ROOT, MATL, END} model can't emit/align more than a single
-     *    residue in local mode (ROOT_IL, ROOT_IR are unreachable, and so is MATL_IL,
-     *    b/c it was detached to remove an ambiguity with ROOT_IR).
-     * 2. CMs with 0 MATL, MATR and BIF nodes. The reason is because such a CM only has
-     *    a ROOT, a bunch of MATPs and an END, and it is impossible to align a single
-     *    residue to such a model when it's in local mode. 
-     */
-    if(cm->nodes == 3) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_from_guide(), it's illegal to construct a CM of only 3 nodes."); 
-    if((CMCountNodetype(cm, MATL_nd) == 0) && (CMCountNodetype(cm, MATR_nd) == 0) && (CMCountNodetype(cm,BIF_nd) == 0)) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_from_guide(), it's illegal to construct a CM with 0 MATL, MATR and BIF nodes."); 
-  }
+  /* A couple of checks to make sure our CM is valid for local alignment/search.
+   * The following is invalid:
+   * 1. CMs with exactly 3 nodes. This must be either {ROOT, MATL, END} or
+   *    {ROOT, MATP, END}. Either way a local end is impossible b/c local ends
+   *    from nodes adjacent to end states are impossible. This is bad. Even
+   *    worse is a {ROOT, MATL, END} model can't emit/align more than a single
+   *    residue in local mode (ROOT_IL, ROOT_IR are unreachable, and so is MATL_IL,
+   *    b/c it was detached to remove an ambiguity with ROOT_IR).
+   * 2. CMs with 0 MATL, MATR and BIF nodes. The reason is because such a CM only has
+   *    a ROOT, a bunch of MATPs and an END, and it is impossible to align a single
+   *    residue to such a model when it's in local mode. 
+   */
+  if(cm->nodes == 3) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_from_guide(), it's illegal to construct a CM of only 3 nodes."); 
+  if((CMCountNodetype(cm, MATL_nd) == 0) && (CMCountNodetype(cm, MATR_nd) == 0) && (CMCountNodetype(cm,BIF_nd) == 0)) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_from_guide(), it's illegal to construct a CM with 0 MATL, MATR and BIF nodes."); 
   return eslOK;
 
  ERROR:
@@ -1493,278 +1479,6 @@ trunc_mode_for_trace_node(int emitl, int emitr, int spos, int epos)
   return TRMODE_UNKNOWN; /* never reached */
 }
 
-/* Function: ConsensusModelmaker()
- * EPN 08.29.06 based closely on HandModelmaker:
- *              SRE 29 Feb 2000 [Seattle]; from COVE 2.0 code
- * 
- * Purpose:  Construct a model given a stated structure. The structure
- *           is provided via a "ss_cons" (consensus structure) line, as would
- *           occur in an annotated SELEX or Stockholm file. Only > and < characters
- *           in this line are interpreted (as base pairs). Pseudoknots, 
- *           if annotated, are ignored.
- *           
- *           All positions/columns of the given structure are considered 
- *           consensus, and this is the difference b/t this function and
- *           HandModelmaker. Also, this function does not take in a MSA 
- *           data structure. It was originally written for building a 
- *           new CM (a sub CM) that models a contiguous subset of columns
- *           of it's template (mother) CM.
- *           
- * Args:     abc       - the alphabet
- *           errbuf    - for error messages
- *           ss_cons   - input consensus structure string 
- *           clen      - length of ss_cons, number of consensus columns
- *           building_sub_model - TRUE if building a sub CM (usually TRUE)
- *           ret_cm    - RETURN: new model                      (maybe NULL)
- *           ret_gtr   - RETURN: guide tree for alignment (maybe NULL)
- *           
- * Return:   eslOK on success;
- *           eslEINCOMPAT on contract violation
- */
-int
-ConsensusModelmaker(const ESL_ALPHABET *abc, char *errbuf, char *ss_cons, int clen, int building_sub_model, CM_t **ret_cm, Parsetree_t **ret_gtr)
-{
-  int             status;
-  CM_t           *cm  = NULL;   /* new covariance model                       */
-  Parsetree_t    *gtr = NULL;	/* guide tree for alignment                   */
-  ESL_STACK      *pda = NULL;	/* pushdown stack used in building gtr        */
-  int            *ct  = NULL;	/* 0..alen-1 base pair partners array         */
-  int             v;		/* index of current node                      */
-  int             i,j,k;	/* subsequence indices                        */
-  int  type;			/* type of node we're working on              */
-  int  diff, bestdiff, bestk;   /* used while finding optimal split points    */   
-  int  nnodes;			/* number of nodes in CM                      */
-  int  nstates;			/* number of states in CM                     */
-  int  obs_clen;                /* observed (MATL+MATR+2*MATP) consensus len  */
-
-  if (ss_cons == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "No consensus structure annotation available in ConsensusModelmaker().");
-
-  /* 1. Determine a "ct" array, base-pairing partners for each position.
-   *    Disallow/ignore pseudoknots by removing them prior to making the ct array.
-   *    ct[] values give the index of a base pairing partner, or 0 for unpaired positions.
-   *    Even though ss_cons is in the 0..clen-1 coord system of msa, ct[]
-   *    comes back in the 1..alen coord system of the sequence.
-   */
-  esl_wuss_nopseudo(ss_cons, ss_cons); /* remove pknots in place */
-  ESL_ALLOC(ct, (clen+1) * sizeof(int));
-  if ((status = esl_wuss2ct(ss_cons, clen, ct)) != eslOK) ESL_FAIL(status, errbuf, "Consensus string is inconsistent in ConsensusModelMaker().");
-
-  /* 2. Construct a guide tree. 
-   *    This codes is borrowed from HandModelmaker(), where it
-   *    was originally borrowed from yarn's KHS2Trace().
-   *    
-   *    We also keep track of how many states we'll need in the final CM,
-   *    so we'll know how much to allocate -- and the number of nodes,
-   *    for informational purposes.
-   */
-  nstates = nnodes = 0;
-  gtr = CreateParsetree(25);	/* the parse tree we'll grow        */
-  pda = esl_stack_ICreate();    /* a pushdown stack for our indices */
-  obs_clen = 0;
-
-  /* Construction strategy has to make sure we number the nodes in
-   * preorder traversal: for bifurcations, we can't attach the right 
-   * child until we've fully traversed the left side. Therefore, we have
-   * to push what we intend to attach, and pop it later. And since we
-   * don't know an index for the node until we attach it, we have no
-   * place to put the node's data except the stack -- so we have to
-   * push several numbers onto the stack: what type of node, what
-   * subseq it's responsible for (emitl...emitr), and what node
-   * index it attaches to.
-   * 
-   * Note that we have to deal with the fact that ct is off-by-one
-   * in both indices and values: e.g. the base pairing partner 
-   * j of residue i is ct[i-1]-1. 
-   */
-  if((status = esl_stack_IPush(pda, -1)) != eslOK) goto ERROR;		/* what node it's attached to */
-  if((status = esl_stack_IPush(pda, 1)) != eslOK) goto ERROR;		/* emitl */
-  if((status = esl_stack_IPush(pda, clen)) != eslOK) goto ERROR;	/* emitr */
-  if((status = esl_stack_IPush(pda, ROOT_nd)) != eslOK) goto ERROR;	/* "state" (e.g. node type) */
-
-  while (esl_stack_IPop(pda, &type) != eslEOD) /* pop a node type to attach */
-    {
-      esl_stack_IPop(pda, &j);
-      esl_stack_IPop(pda, &i); /* i..j == subseq we're responsible for */
-      esl_stack_IPop(pda, &v); /* v = index of parent node in gtr */
-
-      /* This node accounts for i..j, but we usually don't know how yet.
-       * Six possibilities:
-       *    i > j; this is an END state; do nothing.
-       *    this is already assigned as a BEGIN; push i,j
-       *    i is unpaired; this is a MATL state; push i+1, j
-       *    j is unpaired; this is a MATR state; push i,j-1
-       *    i,j pair to each other; this is a MATP state; push i+1,j-1
-       *    i,j pair but not to each other; this is a BIFURC state;
-       *        pick mid ip <= mid < jp; push BEGIN i,mid and working i,mid,
-       *        and push BEGIN mid+1,j and working mid+1,j
-       */
-      if (i > j) {
-	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, END_nd);
-	nstates += 1;		/* END_nd -> E_st */
-	nnodes++;
-      }
-
-      else if (type == ROOT_nd) { /* try to push i,j; but deal with INSL and INSR */
-	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, ROOT_nd);
-	if((status = esl_stack_IPush(pda, v)) != eslOK) goto ERROR;	/* here v==0 always. */
-	if((status = esl_stack_IPush(pda, i)) != eslOK) goto ERROR;
-	if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;
-	if((status = esl_stack_IPush(pda, DUMMY_nd)) != eslOK) goto ERROR; /* we don't know yet what the next node will be */
-	nstates += 3;		/* ROOT_nd -> S_st, IL_st, IR_st */
-	nnodes++;
-      }
-
-      else if (type == BEGL_nd) {    /* no inserts */
-	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, BEGL_nd);
-	if((status = esl_stack_IPush(pda, v)) != eslOK) goto ERROR;	
-	if((status = esl_stack_IPush(pda, i)) != eslOK) goto ERROR;
-	if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;
-	if((status = esl_stack_IPush(pda, DUMMY_nd)) != eslOK) goto ERROR; /* we don't know yet what the next node will be */
-	nstates += 1;		/* BEGL_nd -> S_st */
-	nnodes++;
-      }
-
-      else if (type == BEGR_nd)  { /* look for INSL */
-	v = InsertTraceNode(gtr, v, TRACE_RIGHT_CHILD, i, j, BEGR_nd);
-	if((status = esl_stack_IPush(pda, v)) != eslOK) goto ERROR;	
-	if((status = esl_stack_IPush(pda, i)) != eslOK) goto ERROR;
-	if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;
-	if((status = esl_stack_IPush(pda, DUMMY_nd)) != eslOK) goto ERROR; /* we don't know yet what the next node will be */
-	nstates += 2;		/* BEGR_nd -> S_st IL_st */
-	nnodes++;
-      }
-
-      else if (ct[i] == 0) {
-	 	/* i unpaired. This is a MATL node; allow INSL */
-	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, MATL_nd);
-	i++;
-	if((status = esl_stack_IPush(pda, v)) != eslOK) goto ERROR;
-	if((status = esl_stack_IPush(pda, i)) != eslOK) goto ERROR;
-	if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;
-	if((status = esl_stack_IPush(pda, DUMMY_nd)) != eslOK) goto ERROR; /* we don't know yet what the next node will be */
-	nstates += 3;		/* MATL_nd -> ML_st, D_st, IL_st */
-	nnodes++;
-	obs_clen++;
-      }
-
-      else if (ct[j] == 0) { 	/* j unpaired. MATR node. Deal with INSR */
-	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, MATR_nd);
-	j--;
-	if((status = esl_stack_IPush(pda, v)) != eslOK) goto ERROR;
-	if((status = esl_stack_IPush(pda, i)) != eslOK) goto ERROR;
-	if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;
-	if((status = esl_stack_IPush(pda, DUMMY_nd)) != eslOK) goto ERROR; /* we don't know yet what the next node will be */
-	nstates += 3;		/* MATR_nd -> MR_st, D_st, IL_st */
-	nnodes++;
-	obs_clen++;
-      }
-
-      else if (ct[i] == j) { /* i,j paired to each other. MATP. deal with INSL, INSR */
-	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, MATP_nd);
-	i++;
-	j--;
-	if((status = esl_stack_IPush(pda, v)) != eslOK) goto ERROR;
-	if((status = esl_stack_IPush(pda, i)) != eslOK) goto ERROR;
-	if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;
-	if((status = esl_stack_IPush(pda, DUMMY_nd)) != eslOK) goto ERROR; /* we don't know yet what the next node will be */
-	nstates += 6;		/* MATP_nd -> MP_st, ML_st, MR_st, D_st, IL_st, IR_st */
-	nnodes++;
-	obs_clen += 2;
-      }
-
-      else /* i,j paired but not to each other. BIFURC. no INS. */
-	{
-	  /* Here's the first of two places where we can optimize the topology 
-           * of a CM. (The other comes from choosing a state traversal order when 
-           * building the CM.) Imagine a multifurcation of four domains:
-           *   [1]..[2]..[3]..[4]
-           * The "default leftwise" rule means that BEGL/INSL generates the 
-           * intervening sequences, so we must model the four stems as:
-           *   [1],    ..[2],    ..[3],   ..[4]
-           * but we have a choice of how we bifurcate:
-           *   (1,2)(3,4)    1,(2,(3,4))   ((1,2),3),4 
-           * Our choice affects the time and memory requirements of a divide
-           * conquer alignment algorithm. (1,(2,(3,4)) is most efficient for
-           * memory; (1,2)(3,4) is most efficient for time.
-           * 
-           * So we may want to choose carefully from several possible split 
-           * points k (3, in the above example). A priori we only know one 
-           * possible midpoint precisely: ct[i]+1, the next base after closing 
-           * domain 1. We can find the others by scanning for them, and we can 
-           * be reasonably efficient about scanning by using ct[] to instantly 
-           * skip subdomains.
-	   */
-	  /* One possible rule: optimize by finding most balanced split.
-           * Each stop of the following loop gives a possible midpoint k, which is
-           * then evaluated, keeping track of the best split so far.
-           */
-	  /* EPN, Tue Sep 9 07:41:28 2008 
-	   * Note: HandModelmaker() was revised at precisely this point to chose 
-	   * k based on split lengths of consensus positions (instead of alignment
-	   * positions), but we don't need that revision here b/c all positions
-	   * are consensus so this code was already doing what the revised HandModelmaker()
-	   * code now does. This is why this code block in Hand*() is more complex
-	   * than the one here.
-	   */ 
-	  v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, BIF_nd);
-
-	  bestk    = ct[i]+1;
-	  bestdiff = clen+1; /* effectively infinity, difference in left/right subtree lengths can never exceed this */
-	  for (k = ct[i] + 1; k <= ct[j]; k = ct[k] + 1) 
-	    {
-	      diff = abs((k-i) - (j-k+1)); 
-	      /* diff = abs(cons length modeled by left child minus cons length modeled by right child),
-	       * Note that left child is i..k-1, right child is k..j 
-	       */
-	      if (diff < bestdiff) {
-		bestdiff = diff; 
-		bestk    = k;
-	      }
-	      while (ct[k] == 0) k++;
-	    }
-				/* push the right BEGIN node first */
-	  if((status = esl_stack_IPush(pda, v)) != eslOK) goto ERROR;	
-	  if((status = esl_stack_IPush(pda, bestk)) != eslOK) goto ERROR;
-	  if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;
-	  if((status = esl_stack_IPush(pda, BEGR_nd)) != eslOK) goto ERROR;
-				/* then push the left BEGIN node */
-	  if((status = esl_stack_IPush(pda, v)) != eslOK) goto ERROR;	
-	  if((status = esl_stack_IPush(pda, i)) != eslOK) goto ERROR;
-	  if((status = esl_stack_IPush(pda, bestk-1)) != eslOK) goto ERROR;
-	  if((status = esl_stack_IPush(pda, BEGL_nd)) != eslOK) goto ERROR;
-	  nstates += 1;		/* BIF_nd -> B_st */
-	  nnodes++;
-	}
-    }	/* while something's on the stack */
-  if(obs_clen != clen) cm_Fail("ConsensusModelMaker(): obs_clen: %d != passed in clen: %d\n", obs_clen, clen);
-  esl_stack_Destroy(pda);
-  free(ct);
-
-  /* OK, we've converted ct into gtr -- gtr is a tree structure
-   * telling us the arrangement of consensus nodes. Now do the drill
-   * for constructing a full model using this guide tree. We only have
-   * to do this step if we're returning a CM though. (Sometimes caller
-   * may only want gtr.)
-   */
-  if(ret_cm != NULL) { 
-    cm = CreateCM(nnodes, nstates, clen, abc);
-    if((status = cm_from_guide(cm, errbuf, gtr, building_sub_model)) != eslOK) return status;
-    CMZero(cm);
-    cm->clen = clen;
-    /* note map and rf stay NULL (invalid) we could copy them from their mother, 
-     * but not in this function (because we don't have the mother CM here) */
-  }
-
-  if (ret_cm  != NULL) *ret_cm  = cm;  else if(cm  != NULL) FreeCM(cm);
-  if (ret_gtr != NULL) *ret_gtr = gtr; else if(gtr != NULL) FreeParsetree(gtr);
-  return eslOK;
-
- ERROR:
-  ESL_FAIL(eslEMEM, errbuf, "ConsensusModelMaker(): memory allocation error.");
-  return eslEMEM; /* never reached */
-
-}
-
 /**************************************************************************
  * EPN 09.25.06 [Parkway Hotel St. Louis, MO]
  * cm_find_and_detach_dual_inserts()
@@ -1908,7 +1622,7 @@ cm_find_and_detach_dual_inserts(CM_t *cm, int do_check, int do_detach)
  * Given two insert states that map to the same state in the original,
  * template CM, detach one of the them from the rest of the model by 
  * setting all transitions into it to 0.0. We choose the state to detach
- * as the state that is immediately prior to an END_E in the sub_cm. 
+ * as the state that is immediately prior to an END_E in the CM. 
  * This will always be the case because the sole source of alignment 
  * ambiguity in the CM architecture always involves 1 insert state 
  * immediately before an END_E.

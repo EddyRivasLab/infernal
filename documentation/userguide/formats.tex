@@ -9,7 +9,7 @@ CM save file. An abridged version is shown here, where (\ldots) mark
 deletions made for clarity and space:
 
 \begin{tinysreoutput}
-INFERNAL1/a [1.1 | June 2012]
+INFERNAL1/e [1.2 | January 2026]
 NAME     Cobalamin
 ACC      RF00174
 DESC     Cobalamin riboswitch
@@ -21,8 +21,9 @@ ALPH     RNA
 RF       no
 CONS     yes
 MAP      yes
+P7NODEPAD yes
 DATE     Wed Jun 13 05:40:07 2012
-COM      [1] ./cmbuild Cobalamin.cm ../tutorial/Cobalamin.sto
+COM      [1] ./cmbuild --p7pad Cobalamin.cm ../tutorial/Cobalamin.sto
 COM      [2] ./cmcalibrate Cobalamin.cm
 PBEGIN   0.05
 PEND     0.05
@@ -39,75 +40,68 @@ NULL     0.000  0.000  0.000  0.000
 GA       39.00
 TC       39.00
 NC       38.79
-EFP7GF   -9.3826 0.71319
+HP7      h3pri
+HP7A     1.809433 0.015186 0.038601 1.032015 0.601223 0.127366 0.277087
+EFP7L    -10.0802 0.71104 -11.6110 0.71104 -4.4258 0.71104
+EFP7GF   -26.1339 0.39236
+EHP7L    -10.0802 0.71104 -11.8905 0.71104 -4.2317 0.71104
+EHP7GF   -18.7063 0.39236
 ECMLC    0.69050    -9.55632    -0.82028     1600000      499982  0.002400
 ECMGC    0.33713   -30.56949   -21.45119     1600000        8652  0.046232
 ECMLI    0.68481    -7.98572     0.30786     1600000      351369  0.003415
 ECMGI    0.38286   -21.23885   -13.16656     1600000        8796  0.045475
 CM
-                                             [ ROOT    0 ]      -      - - - - -
-     S     0    -1 0     1     4     0     1   460   771  -8.175  -8.382  -0.025  -6.528                 
-    IL     1     1 2     1     4    86   133   462   774  -1.686  -2.369  -1.117  -4.855                  0.000  0.000  0.000  0.000 
-    IR     2     2 3     2     3    86   133   462   774  -1.442  -0.798  -4.142                          0.000  0.000  0.000  0.000 
-                                             [ MATL    1 ]      1      - u - - -
-    ML     3     2 3     5     3    86   132   461   772  -9.129  -0.009  -7.783                          0.192 -0.324 -0.320  0.331 
-     D     4     2 3     5     3    80   128   458   769  -6.226  -1.577  -0.618                         
-    IL     5     5 3     5     3    85   132   461   773  -1.442  -0.798  -4.142                          0.000  0.000  0.000  0.000 
+                                             [ ROOT    0 ]      -      - - - - -    -    -
+     S     0    -1 0     1     4     0     1   460   771  -8.175  -8.382  -0.025  -6.528
+    IL     1     1 2     1     4    86   133   462   774  -1.686  -2.369  -1.117  -4.855                  0.000  0.000  0.000  0.000
+    IR     2     2 3     2     3    86   133   462   774  -1.442  -0.798  -4.142                          0.000  0.000  0.000  0.000
+                                             [ MATL    1 ]      1      - u - - -    5    -
+    ML     3     2 3     5     3    86   132   461   772  -9.129  -0.009  -7.783                          0.192 -0.324 -0.320  0.331
+     D     4     2 3     5     3    80   128   458   769  -6.226  -1.577  -0.618
+    IL     5     5 3     5     3    85   132   461   773  -1.442  -0.798  -4.142                          0.000  0.000  0.000  0.000
 (...)
-                                             [ MATL   98 ]    151      - C - - -
-    ML   588   587 3   590     2     1     1     1     1       *   0.000                                 -3.022  1.825 -3.061 -2.226 
-     D   589   587 3   590     2     0     0     0     0       *   0.000                                 
-    IL   590   590 3   590     2     1     1    13    28  -1.823  -0.479                                  0.000  0.000  0.000  0.000 
-                                             [ END    99 ]      -      - - - - -
-     E   591   590 3    -1     0     0     0     0     0                                                 
-//
-HMMER3/f [i1.1 | June 2012]
-NAME  Cobalamin
-ACC   RF00174
-DESC  Cobalamin riboswitch
-LENG  191
-MAXL  565
-ALPH  RNA
-RF    no
-MM    no
-CONS  yes
-CS    yes
-MAP   yes
-DATE  Wed Jun 13 05:40:08 2012
-COM   [1] ./cmbuild Cobalamin.cm ../tutorial/Cobalamin.sto
-NSEQ  431
-EFFN  4.955421
-CKSUM 2307274568
-STATS LOCAL MSV      -10.2356  0.71319
-STATS LOCAL VITERBI  -12.2484  0.71319
-STATS LOCAL FORWARD   -3.9056  0.71319
-HMM          A        C        G        U   
-            m->m     m->i     m->d     i->m     i->i     d->m     d->d
-  COMPO   1.37169  1.39466  1.27962  1.51293
-          1.38629  1.38629  1.38629  1.38629
-          0.02747  4.30141  4.30141  1.46634  0.26236  0.00000        *
-      1   1.24903  1.60847  1.61442  1.15831      1 u - - :
-          1.38629  1.38629  1.38629  1.38629
-          0.02747  4.30141  4.30141  1.46634  0.26236  1.09861  0.40547
-(...)
-    191   1.51542  1.17791  1.56046  1.33817    441 c - - :
-          1.38629  1.38629  1.38629  1.38629
-          0.01381  4.28939        *  1.46634  0.26236  0.00000        *
+                                             [ MATL   98 ]    151      - C - - -    4    -
+    ML   588   587 3   590     2     1     1     1     1       *   0.000                                 -3.022  1.825 -3.061 -2.226
+     D   589   587 3   590     2     0     0     0     0       *   0.000
+    IL   590   590 3   590     2     1     1    13    28  -1.823  -0.479                                  0.000  0.000  0.000  0.000
+                                             [ END    99 ]      -      - - - - -    -    -
+     E   591   590 3    -1     0     0     0     0     0
 //
 \end{tinysreoutput}
 
-A CM file consists of one or more CMs and associated filter
-HMMs. Each CM is immediately followed by its filter HMM, this is
-mandatory. Each CM starts with a format version identifier (here,
-\prog{INFERNAL1/a}) and ends with \prog{//} on a line by itself. Each
-HMM also starts with a format version identifier (here,
-\prog{HMMER3/f}) and ends with \prog{//} on a line by itself.  The
-format version identifier allows backward compatibility as the
-Infernal software evolves: it tells the parser this file is from
-Infernal's save file format version a. The closing \prog{//} allows
-Infernal to determine when a CM ends and its profile HMM begins, and
-allows multiple CM/filter HMM pairs to be concatenated together into a
-single file.
+A CM file consists of one or more CMs. Each CM starts with a format
+version identifier (here, \prog{INFERNAL1/e}) and ends with \prog{//}
+on a line by itself. The format version identifier allows backward
+compatibility as the Infernal software evolves: it tells the parser
+which version of Infernal's save file format the CM is in. The closing
+\prog{//} allows multiple CMs to be concatenated together into a single
+file.
+
+In format \prog{INFERNAL1/e} (the format this version writes), the profile HMMs that
+Infernal uses as filters, and for HMM-only searches, are not stored:
+every program that reads a CM derives them from the CM (see the
+\prog{HP7} line below), and the file stores only their E-value
+parameters. In the older format \prog{INFERNAL1/a}, written by
+Infernal 1.1, each CM is immediately followed by a separately built
+filter HMM, in HMMER3 format: it starts with its own format version
+identifier (\prog{HMMER3/f}) and also ends with \prog{//} on a line by
+itself. In Infernal 1.2, only \prog{cmconvert} reads
+\prog{INFERNAL1/a} files; every other program refuses them and asks
+for them to be converted once with \prog{cmconvert --upgrade}, which
+leaves the CM's parameters and its \prog{cmcalibrate} E-value
+parameters unchanged and derives the filter and HMM-only HMMs as
+\prog{cmbuild} does. A pressed database made by Infernal 1.1's
+\prog{cmpress} is refused too: convert its CM file, then press it
+again. \prog{cmconvert} can still write \prog{INFERNAL1/a}, so that
+Infernal 1.1 can read a model (\prog{cmconvert --outfmt 1/a}, or
+plain \prog{cmconvert} of an \prog{INFERNAL1/a} file).
+\prog{INFERNAL1/a} can't store the \prog{P7NODEPAD}, \prog{PKNOT},
+\prog{F1F2F3CUT} and \prog{NONULL3\_xx} data described below:
+\prog{cmconvert --outfmt 1/a} leaves them out (pseudoknot annotation
+only with \prog{--dropknots}). A single file must not mix
+CMs in different formats. (Development versions of Infernal 1.2 also
+wrote formats \prog{INFERNAL1/b}, \prog{/c} and \prog{/d}, which were
+never released; Infernal 1.2 can't read them.)
 
 The CM format is divided into two regions. The first region contains
 textual information and miscalleneous parameters in a roughly
@@ -127,8 +121,8 @@ Spacing is arranged for human readability, but the parser only cares
 that fields are separated by at least one space character.
 
 The CM format is described in more detail below, followed by a
-description of the HMMER3 HMM format for the CM's mandatory filter HMM
-filter.
+description of the HMMER3 HMM format of the filter HMM that CM files
+in the older formats store.
 
 \subsubsection{CM header section}
 
@@ -138,14 +132,13 @@ indicated.
 
 \begin{sreitems}{QDBBETA1 <f>}
 
-\item [\emprog{INFERNAL1/a}] Unique identifier for the save file format
-  version; the \prog{/a} means that this is INFERNAL1 CM file format
-  version a. When INFERNAL changes its save file format, the revision
-  code advances. This way, parsers may easily remain backwards
-  compatible. The remainder of the line after the \prog{INFERNAL1/a} tag
+\item [\emprog{INFERNAL1/e}] Unique identifier for the save file format
+  version; the \prog{/e} means that this is INFERNAL1 CM file format
+  version e. When INFERNAL changes its save file format, the revision
+  code advances. The remainder of the line after the \prog{INFERNAL1/e} tag
   is free text that is ignored by the parser. INFERNAL currently writes
   its version number and release date in brackets here,
-  e.g. \prog{[1.1 | June 2012]} in this
+  e.g. \prog{[1.2 | January 2026]} in this
   example. \textbf{Mandatory.}
 
 \item [\emprog{NAME <s>}] Model name; \prog{<s>} is a single word
@@ -219,6 +212,37 @@ annotates each match state with the index of the alignment column from
 which it came. It can be used for quickly mapping any subsequent
 CM alignment back to the original multiple alignment, via the model.
 \textbf{Optional}; assumed to be no if not present.
+
+\item [\emprog{P7NODEPAD <s>}] Per-HMM-node band-pad annotation flag;
+\prog{<s>} is either \prog{no} or \prog{yes} (case insensitive). Only
+present in \prog{INFERNAL1/e} format. If \prog{yes}, the per-node pad
+fields on each node line (see below) are valid and contain the
+empirically-derived band-pad widths used by the p7 HMM Viterbi banding
+pipeline in \prog{cmsearch} / \prog{cmscan}. These pads are computed
+by \prog{cmbuild} or \prog{cmconvert} via Monte Carlo simulation, only
+when the \prog{--p7pad} option is given (they are not computed by
+default), and stored in the CM file so they do not need to be
+recomputed at search time. If
+\prog{no}, the per-node pad fields are ignored and the pipeline falls
+back to either a default uniform pad or a sidecar pad file supplied via
+\prog{--p7nodepad-file}. \textbf{Optional}; assumed to be no if not
+present.
+
+\item [\emprog{PKNOT <s>}] Consensus pseudoknot annotation flag;
+\prog{<s>} is either \prog{no} or \prog{yes} (case insensitive). Only
+present in \prog{INFERNAL1/e} format. If \prog{yes}, the
+pseudoknot fields on each \prog{MATP}/\prog{MATL}/\prog{MATR} node line
+(see below) are valid and record the pseudoknot stem label(s) --
+letters \prog{a-z}/\prog{A-Z}, following the same convention as the
+\prog{\#=GC SS\_cons} pseudoknot annotation in Stockholm alignments
+(WUSS notation, described later in this section) -- that Infernal's
+own nested CM structure
+cannot represent but that were present in the input alignment's
+consensus structure. This lets pseudoknot annotation be carried through
+losslessly from alignment to CM to any output alignment produced by
+\prog{cmalign}, even though the pseudoknotted base pairs themselves are
+never part of the model's scoring. \textbf{Optional}; assumed to be no
+if not present.
 
 \item [\emprog{DATE <s>}] Date the model was constructed; \prog{<s>}
 is a free text date string.  This field is only used for logging
@@ -350,13 +374,63 @@ scoring believed true positive that is above all known false positives
 found by searches during preparation of the Rfam database.
 \textbf{Optional.}
 
+\item [\emprog{HP7 <s>}] How the HMM-only search HMM is derived from
+  the CM (\prog{INFERNAL1/e} format and later). Two profile HMMs are
+  derived from the CM when it is read. The \emph{filter HMM} is always
+  the CM's maximum likelihood profile HMM. The \emph{HMM-only search
+  HMM}, used by \prog{cmsearch} and \prog{cmscan} with
+  \prog{--hmmonly}, is one of two things. \prog{<s>} is \prog{h3pri}
+  if it is the filter HMM with the CM's own transition prior backed
+  out of its transition probabilities (see \prog{HP7A}), which are
+  then re-estimated under HMMER3's DNA transition prior. \prog{<s>} is
+  \prog{ml} if the HMM-only search HMM is the filter HMM itself: for
+  CMs with zero basepairs built by a \prog{cmbuild} older than version
+  1.2 with its default prior for them (which mimicked HMMER's), and
+  upgraded with \prog{cmconvert --upgrade}; and for CMs built with a
+  \prog{--prior} file whose
+  transition priors out of \prog{MATL} states into \prog{MATL} nodes
+  are mixtures, which can't be backed out. \textbf{Mandatory} in
+  \prog{INFERNAL1/e}.
+
+\item [\emprog{HP7A <f1> <f2> <f3> <f4> <f5> <f6> <f7>}] The CM
+  transition prior that the \prog{h3pri} transform backs out: the
+  Dirichlet parameters of the prior the CM was built with for
+  transitions out of \prog{MATL} states into \prog{MATL} nodes,
+  mapped to the seven transitions of a profile HMM node, in the order
+  match-match (from \prog{ML}$\rightarrow$\prog{ML}), match-insert
+  (\prog{ML}$\rightarrow$\prog{IL}), match-delete
+  (\prog{ML}$\rightarrow$\prog{D}), insert-match
+  (\prog{IL}$\rightarrow$\prog{ML} plus \prog{IL}$\rightarrow$\prog{D}),
+  insert-insert (\prog{IL}$\rightarrow$\prog{IL}), delete-match
+  (\prog{D}$\rightarrow$\prog{ML}) and delete-delete
+  (\prog{D}$\rightarrow$\prog{D}). Present if and only if
+  \prog{HP7} is \prog{h3pri} (\prog{INFERNAL1/e} format and later);
+  if absent, the values of the default prior shown in the example
+  above are used.
+
+\item [\emprog{EFP7L <f1> <f2> <f3> <f4> <f5> <f6>}] Statistical
+  parameters for filter HMM E-value calculations in local mode
+  (\prog{INFERNAL1/e} format and later): $\mu$ and $\lambda$ for the
+  MSV filter scores, $\mu$ and $\lambda$ for the Viterbi filter
+  scores, and $\tau$ and $\lambda$ for the Forward scores, as on the
+  three \prog{STATS LOCAL} lines of a HMMER3 file. \textbf{Optional},
+  but must be present together with \prog{EFP7GF}; searches require
+  both.
+
 \item [\emprog{EFP7GF <f1> <f2>}] Statistical parameters for filter HMM
   E-value calculations in glocal mode for the Forward algorithm. 
   \prog{<f1>} and \prog{<f2>} are $\tau$ and $\lambda$ for exponential
-  tails for glocal Forward filter HMM scores. This line is necessary
-  in the CM file section rather than the filter HMM file because
-  glocal HMM searches are not normally performed in HMMER3, but are
-  part of the HMM filter pipeline in Infernal. \textbf{Mandatory.}
+  tails for glocal Forward filter HMM scores. In the older formats,
+  this line is necessary in the CM file section rather than the
+  filter HMM file because glocal HMM searches are not normally
+  performed in HMMER3, but are part of the HMM filter pipeline in
+  Infernal. \textbf{Mandatory} in the older formats; in
+  \prog{INFERNAL1/e}, as \prog{EFP7L}.
+
+\item [\emprog{EHP7L <f1> <f2> <f3> <f4> <f5> <f6>}, \emprog{EHP7GF <f1> <f2>}]
+  As \prog{EFP7L} and \prog{EFP7GF}, for the HMM-only search HMM
+  (\prog{INFERNAL1/e} format and later). Present if and only if the
+  \prog{EFP7} lines are present and \prog{HP7} is not \prog{ml}.
 
 \item [\emprog{ECMLC <f1> <f2> <f3> <d1> <d2> <f4>}] Statistical
   parameters needed for E-value calculations for the CM CYK algorithm
@@ -390,6 +464,51 @@ found by searches during preparation of the Rfam database.
   parameters analogous to those described above in the \prog{ECMLC}
   line, except that these pertain to CM Inside scores in glocal mode.
 
+\item [\emprog{NONULL3\_LC <f1> <f2> <f3> <d1> <d2> <f4>}] Statistical
+  parameters needed for E-value calculations for the CM CYK algorithm
+  in local mode \emph{when the null3 composition-bias correction is
+  turned off} (the \prog{--nonull3} option to \prog{cmsearch} and
+  \prog{cmscan}). The fields are exactly analogous to those of the
+  \prog{ECMLC} line above, but they calibrate the null3-off score
+  distribution rather than the default null3-on one. This line, along
+  with the next three, with tags \prog{NONULL3\_GC}, \prog{NONULL3\_LI},
+  and \prog{NONULL3\_GI}, must either all be present or none of them
+  must be present. They are added by \prog{cmcalibrate --nonull3},
+  which keeps the default \prog{ECMxx} set already in the file (the
+  ``store-both'' scheme described in
+  section~\ref{section:calibration-limitations}), so a CM calibrated
+  both with and without \prog{--nonull3} has both. They are
+  \textbf{optional}: a
+  model that has only the \prog{ECMxx} lines (the default null3-on
+  set) -- for example an older CM, or one produced by
+  \prog{cmcalibrate} without \prog{--nonull3} -- is still fully
+  calibrated, and a \prog{--nonull3} search of such a model falls back
+  to the null3-on parameters with a warning. When present, the
+  null3-off set is used in place of the \prog{ECMxx} set only when
+  \prog{--nonull3} is in effect; the default (null3-on) search path is
+  unaffected. The tags deliberately do not begin with \prog{ECM} so
+  that parsers of older Infernal versions silently skip them. Only
+  present in \prog{INFERNAL1/e} format. In the \textbf{binary} CM
+  file format the same four parameter sets are written as an optional
+  block immediately following the \prog{ECMxx} (EXPTAIL) block. The
+  binary form of \prog{INFERNAL1/e} (written by \prog{cmconvert -b}
+  and \prog{cmpress}) has its own magic number, which an older
+  Infernal cleanly rejects rather than misreading the file; it also
+  stores the derived filter and HMM-only search HMMs, so that
+  \prog{cmscan} need not derive them.
+
+\item [\emprog{NONULL3\_GC <f1> <f2> <f3> <d1> <d2> <f4>}] Null3-off
+  parameters analogous to \prog{NONULL3\_LC}, for CM CYK scores in
+  glocal mode.
+
+\item [\emprog{NONULL3\_LI <f1> <f2> <f3> <d1> <d2> <f4>}] Null3-off
+  parameters analogous to \prog{NONULL3\_LC}, for CM Inside scores in
+  local mode.
+
+\item [\emprog{NONULL3\_GI <f1> <f2> <f3> <d1> <d2> <f4>}] Null3-off
+  parameters analogous to \prog{NONULL3\_LC}, for CM Inside scores in
+  glocal mode.
+
 \item [\emprog{CM}] Flags the start of the main model
 section. \textbf{Mandatory.}
 
@@ -406,7 +525,10 @@ state lines, one each for each state within the node.
 \begin{sreitems}{\textbf{State line}}
 
 \item [\textbf{Node line}] Each node line begins with 45 spaces, and
-  includes ten fields. 
+  includes ten fields in \prog{INFERNAL1/a} format and fourteen
+  fields in \prog{INFERNAL1/e} format (adding the \prog{P7NODEPAD}
+  pair and the \prog{PKNOT} pair). Additional fields always appear at
+  the end of the line, in the order described below.
 
   The first field is always a \prog{[} character.
 
@@ -445,7 +567,7 @@ state lines, one each for each state within the node.
   any other type, or if the \prog{CONS} was \prog{no} in the header,
   then both fields will be '-'.
 
-  The final two fields are the \prog{RF} annotation for this node.
+  The next two fields are the \prog{RF} annotation for this node.
   this node. If \prog{RF} was \prog{yes} in the header and the node is
   a MATP (match pair) node, then these fields will both be characters,
   the reference annotation character for the left and right halves of
@@ -457,6 +579,33 @@ state lines, one each for each state within the node.
   field will be the reference annotation character for this state. If
   the node is any other type, or if the \prog{CONS} was \prog{no} in
   the header, then both fields will be '-'.
+
+  In \prog{INFERNAL1/e} format, the next two fields are for the
+  per-HMM-node p7 band pads (present on the node line whether or not
+  \prog{P7NODEPAD} is \prog{yes} in the header). If \prog{P7NODEPAD}
+  is \prog{yes}, they are the pad values for this node. If the node is a MATP (match pair) node, both fields
+  will be non-negative integers: the pad widths for the left and right
+  HMM consensus positions, respectively. If the node is a MATL (match
+  left) node, the first field will be the pad width and the second
+  field will be '-'. If the node is a MATR (match right) node, the
+  first field will be '-' and the second field will be the pad width.
+  If the node is any other type (ROOT, BIF, BEGL, BEGR, END), both
+  fields will be '-'. If \prog{P7NODEPAD} is \prog{no}, both fields
+  are '-'.
+
+  In \prog{INFERNAL1/e} format, a further two fields follow
+  for the \prog{PKNOT} consensus pseudoknot annotation (present on the
+  node line whether or not \prog{PKNOT} is \prog{yes} in the header, in
+  the same way as the \prog{RF} fields above). If \prog{PKNOT} is
+  \prog{yes} and the node is a MATP node, both fields are pseudoknot
+  stem-label characters (or \prog{.}/\prog{-} if this pair is not part
+  of an annotated pseudoknot), for the left and right halves of the
+  match pair, respectively. If the node is a MATL node, the first
+  field is the stem-label character (or \prog{.}/\prog{-}) and the
+  second is \prog{-}; if the node is a MATR node, the first field is
+  \prog{-} and the second is the stem-label character (or
+  \prog{.}/\prog{-}). For any other node type, or if \prog{PKNOT} is
+  \prog{no} or absent, both fields are \prog{-}.
 
   Each node line is followed by 1 to 6 state
   lines depending on the node type. ROOT, MATL, and MATR node lines
@@ -927,28 +1076,28 @@ pseudoknots are not annotated in this example.}
  ----   --------- ------ ----- --- -------- --------    ----------- -----------      ---- ----- ----
   (1) !   2.2e-20   58.0   0.0  cm        1      367 []           4         399 + .. 0.77    no 0.49
 
-                    v                          v      v                                  vv         vvvvv    vvvv vv NC
+                    v                          v      v                                  vv         vvvvv    vvvv vv PS
                     {{{{{{{{{{{{{{{{{{,<<<<<<<<<______>>>>>>>>>,,,,,,,,,,,,,[[[[.--------[[[[[~~~~~~<<<<<____>>>>->( CS
   RNaseP_bact_a   1 cgagccggccgggcggucGCgcccccccuuaaaagggggggcGAGGAAAGUCCGGgCUcC.AcAGGgCAggguG*[15]*cggggGugAccccAgG 104
                        ::CG::CGGG:::UCGC::C:::: U      ::::G::GAGGAAAGUCC  GCUC  AC G GC   G:G               +++C + 
        M13175.1   4 CUUAACGUUCGGGUAAUCGCUGCAGAUCU---UGAAUCUGUAGAGGAAAGUCCAUGCUCGcACGGUGCU--GAG*[96]*---------UAUCCUU 175
                     **************************974...4579**********************98788777776..555...8...........3444468 PP
 
-                                                                                           v   vv        vvvv        NC
+                                                                                           v   vv        vvvv        PS
                     (---(((((,,,,,,,,,,,,<<<<<<<<<<<____>>>>>>>>>-->>,,,,,,~~~~~~,,)))--))))]]]]].]]]],,,<<<<-----   CS
   RNaseP_bact_a 105 GAaAGugCcACAGAAAaaAgACCgCccgccccuuaaggggcggGcAAGGGUGAAA*[43]*uagGcAAaCCCCaccc.GgAGCAAggccAAAUA   234
                     GAAAGU:CCACAG +A  A+ :C   :::C:: +AA::G:::     G:GUG AA        GG:AAACC C:C +  GAG AA  C+AA U 
        M13175.1 176 GAAAGUGCCACAGUGACGAAGUC---UCACUAGAAAUGGUGA-----GAGUGGAA*[ 1]*GCGGUAAACCCCUCGAgCGAGAAACCCAAAUUU   256
                     99*****************8866...4455558888555444.....66999987...6..99********97665577899888765444332   PP
 
-                          vvvv                                                                                       NC
+                          vvvv                                                                                       PS
                     ~~~~~~>>>>,,,,,,<<<<<<.<<____>>>>>>>>,,,,,,,,,,}}}}}}}---------------........................--- CS
   RNaseP_bact_a 235 *[39]*ggccGCUuGAGccggc.cgGuAAcggccggCCuAGAugAAUgaccgcccucuuguuaaauuuu........................aAC 338
                               G     :::: : C:G AA:G: :::: UAGAU++AUGA:::CC  CU + UA  +  U                        AAC
        M13175.1 257 *[32]*----GAG---AGAAGGaCAG-AAUGCUUUCUGUAGAUAGAUGAUUGCCGCCUGAGUACGAGGUgaugagccguuugcaguacgauggAAC 370
                     ...3......222...2222221222.335555566699****************9998888888888899999********************** PP
 
-                                            v     NC
+                                            v     PS
                     -------------}-}}}}}}}}}}:::: CS
   RNaseP_bact_a 339 AGAAcCCGGCUUAcaggccggcucgucuu 367
                     A AAC  GGCUUACAG::CG::    C+ 

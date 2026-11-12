@@ -31,6 +31,8 @@
 
 1 exercise  utest/cm_tophits    @src/cm_tophits_utest@
 1 exercise  utest/cm_p7_modelmaker @src/cm_p7_modelmaker_utest@
+1 exercise  utest/cm_p7_band  @src/cm_p7_band_utest@
+1 exercise  utest/p7_ibv      @src/p7_ibv_utest@
 1 exercise  utest/hmmband     @src/hmmband_utest@
 
 ################################################################
@@ -48,9 +50,21 @@
 1 exercise  itest/scan-overlaps     !testsuite/itest9-overlaps.pl!           @@ !! %OUTFILES%
 1 exercise  itest/build-frags       !testsuite/itest10-build-frags.pl!       @@ !! %OUTFILES%
 1 exercise  itest/search-frags      !testsuite/itest11-search-frags.pl!      @@ !! %OUTFILES%
-1 exercise  itest/bpannot           !testsuite/itest14-cmalign-bpannot.pl!   @@ !! %OUTFILES%
+1 exercise  itest/p7nodepad         !testsuite/itest12-p7nodepad.pl!         @@ !! %OUTFILES%
+1 exercise  itest/pknot             !testsuite/itest13-pknot.pl!             @@ !! %OUTFILES%
+1 exercise  itest/bpannot          !testsuite/itest14-cmalign-bpannot.pl!   @@ !! %OUTFILES%
+1 exercise  itest/psline-wrap       !testsuite/itest15-pknot-psline-wrap.pl! @@ !! %OUTFILES%
+1 exercise  itest/pkshift-recover   !testsuite/itest17-pknot-shift-recoverable.pl! @@ !! %OUTFILES%
+1 exercise  itest/cmconvert-upgrade !testsuite/itest19-cmconvert-upgrade.pl!   @@ !! %OUTFILES%
+1 exercise  itest/threaded-hmmread  !testsuite/itest20-threaded-hmmread.pl! @@ !! %OUTFILES%
+1 exercise  itest/format1a-cmconvert !testsuite/itest23-format1a-cmconvert.pl! @@ !! %OUTFILES%
 1 exercise  itest/build-sscons      !testsuite/itest21-cmbuild-sscons.pl!    @@ !! %OUTFILES%
-1 exercise  itest/brute             @src/itest_brute@  
+1 exercise  itest/scan-hmmonly-hmm   !testsuite/itest22-scan-hmmonly-hmm.pl!  @@ !! %OUTFILES%
+1 exercise  itest/no-basepair-chasm !testsuite/itest24-no-basepair-chasm.pl! @@ !! %OUTFILES%
+1 exercise  itest/removed-formats   !testsuite/itest25-removed-formats.pl!   @@ !! %OUTFILES%
+1 exercise  itest/format1a-refused  !testsuite/itest26-format1a-refused.pl!  @@ !! %OUTFILES%
+1 exercise  itest/cyk-score         !testsuite/itest-cmalign-cyk-score.pl!   @@ !! %OUTFILES%
+1 exercise  itest/brute             @src/itest_brute@
 
 ################################################################
 # Fixed bug tests
@@ -61,7 +75,7 @@
 1 exercise  bug/i2-cmalign-leak   @src/cmalign@ --notrunc %CM% !testsuite/bug-i2.fa!
 1 exercise  bug/i11-bld-detach    !testsuite/bug-i11.pl! @src/cmbuild@ @src/cmalign@
 1 exercise  bug/i12-aln-outside   !testsuite/bug-i12.pl! @src/cmbuild@ @src/cmalign@
-1 exercise  bug/i13-aln-sub       !testsuite/bug-i13.pl! @src/cmbuild@ @src/cmalign@
+1 exercise  bug/i13-aln-adjpair   !testsuite/bug-i13.pl! @src/cmbuild@ @src/cmalign@
 1 exercise  bug/i14-aln-oa-zero   !testsuite/bug-i14.pl! @src/cmbuild@ @src/cmalign@ !testsuite/bug-i14.sto! !testsuite/bug-i14.fa!
 1 exercise  bug/i15-aln-bif-imp   !testsuite/bug-i15.pl! @src/cmbuild@ @src/cmalign@ !testsuite/bug-i15.sto! !testsuite/bug-i15.fa!
 1 exercise  bug/i28-srch-bndcln   !testsuite/bug-i28.pl! @src/cmsearch@ !testsuite/bug-i28.cm! !testsuite/bug-i28.fa!
@@ -81,13 +95,14 @@
 1 exercise  bug/i47-cmbuild-p7ml  !testsuite/bug-i47.pl! @src/cmbuild@
 1 exercise  bug/i49-hmmonly-ovlp  !testsuite/bug-i49.pl! @src/cmsearch@ !testsuite/bug-i49.cm! !testsuite/bug-i49.fa!
 1 exercise  bug/i57-eset0-effn    !testsuite/bug-i57.pl! @src/cmbuild@ @src/cmsearch@
+1 exercise  cmbuild/entropy-filter  !testsuite/i-entropy-filter-choice.pl! @src/cmbuild@ !testsuite/RIBOSUM85-60.mat!
 1 exercise  bug/i61-mapali-tilde  !testsuite/bug-i61.pl! @src/cmbuild@ @src/cmalign@
 1 exercise  bug/i64-el-dneg        !testsuite/bug-i64.pl! @src/cmbuild@ @src/cmalign@ !testsuite/bug-i64.sto!
 1 exercise  bug/i66-doctor-rprefix !testsuite/bug-i66.pl! @src/cmbuild@ !testsuite/bug-i66.sto!
 1 exercise  bug/degen-pair-struct  !testsuite/bug-degen-pair.pl! @src/cmbuild@ !testsuite/bug-degen-pair.sto!
 1 exercise  bug/sscons-ext-wuss    !testsuite/sscons-exterior-wuss.pl! @src/cmbuild@ @src/cmalign@ @src/cmemit@
 1 exercise  bug/eweight-bracket    !testsuite/bug-eweight-bracket.pl! @src/cmbuild@ !testsuite/bug-eweight-bracket.sto!
-1 exercise  cmbuild/entropy-filter  !testsuite/i-entropy-filter-choice.pl! @src/cmbuild@ !testsuite/RIBOSUM85-60.mat!
+1 exercise  bug/clen-maxm           !testsuite/bug-clen-maxm.pl! @src/cmstat@ !testsuite/4.c.cm!
 1 exercise  iss21-cmbuild-rf-pb   !testsuite/iss21-cmbuild-rf-msaweight-pb.py! @@ !! %OUTFILES%
 1 exercise  iss33-trunc-pipeline  !testsuite/iss33-trunc-pipeline.pl! @src/cmsearch@ !testsuite/iss33.cm! !testsuite/iss33.fa!
 1 exercise  iss34-bld-frg-slf-ins !testsuite/iss34-bld-frg-slf-ins.pl! @src/cmbuild@ !testsuite/iss34.sto!
@@ -122,9 +137,11 @@
 1  exercise    search/v       @src/cmsearch@ -Z 1000 %VAULT.C.CM% !testsuite/emitted-tRNA.fa!
 1  exercise    search/s       @src/cmsearch@ -Z 1000 %SRP.C.CM% !testsuite/emitted-tRNA.fa!
 1  exercise    search/4       @src/cmsearch@ -Z 1000 %4.C.CM% !testsuite/emitted-tRNA.fa!
-1  exercise    search/4F3     @src/cmsearch@ -Z 1000 --trmF3 --noali --hmmonly %4.C.CM% !testsuite/emitted-tRNA.fa!
+1  exercise    search/4F3     @src/cmsearch@ -Z 1000 --hmmwindows --noali --hmmonly %4.C.CM% !testsuite/emitted-tRNA.fa!
+1  exercise    search/4hg     @src/cmsearch@ -Z 1000 --hmmonly -g %4.C.CM% !testsuite/emitted-tRNA.fa!
 1  exercise    search/4f      @src/cmsearch@ -Z 1000 --fmt 3 --tblout %4.C.FMT3.TBLOUT% %4.C.CM% !testsuite/emitted-tRNA.fa!
 1  exercise    search/zbp     @src/cmsearch@ -Z 1000 %ZBP.C.CM% !testsuite/emitted-snR75.fa!
+1  exercise    search/zbp/g   @src/cmsearch@ -Z 1000 -g %ZBP.C.CM% !testsuite/emitted-snR75.fa!
 1  exercise    search/t/A     @src/cmsearch@ -Z 1000 -A %TRNA.AMSA% %TRNA.C.CM% !testsuite/emitted-tRNA.fa!
 1  exercise    search/4/A     @src/cmsearch@ -Z 1000 -A %4.AMSA% %4.C.CM% !testsuite/1k-4.fa!
 1  exercise    search/zbp/A   @src/cmsearch@ -Z 1000 -A %ZBP.AMSA% %ZBP.C.CM% !testsuite/1k-snR75.fa!
@@ -165,10 +182,12 @@
 1  prep        cleanup/4C     rm -f %4.C.CM%.*
 1  exercise    scan/5C        @src/cmscan@ --fmt 2 --tblout %5.C.TBLOUT% --oskip --oclan --clanin !testsuite/5.claninfo! -Z 1000 %5.C.CM% !testsuite/emitted-tRNA.fa!
 1  exercise    scan/5C3       @src/cmscan@ --fmt 3 --tblout %5.C.3.TBLOUT% -Z 1000 %5.C.CM% !testsuite/emitted-tRNA.fa!
-1  exercise    scan/5CF3      @src/cmscan@ --trmF3 --noali --hmmonly -Z 1000 %5.C.CM% !testsuite/emitted-tRNA.fa!
+1  exercise    scan/5CF3      @src/cmscan@ --hmmwindows --noali --hmmonly -Z 1000 %5.C.CM% !testsuite/emitted-tRNA.fa!
+1  exercise    scan/5Chg      @src/cmscan@ --hmmonly -g -Z 1000 %5.C.CM% !testsuite/emitted-tRNA.fa!
 1  prep        cleanup/5C     rm -f %5.C.CM%.*
 1  exercise    scan/se        @src/cmscan@ --hmmonly %SE.CM% !testsuite/se.fa!
-1  exercise    scan/seF3      @src/cmscan@ --trmF3 --noali --hmmonly %SE.CM% !testsuite/se.fa!
+1  exercise    scan/seF3      @src/cmscan@ --hmmwindows --noali --hmmonly %SE.CM% !testsuite/se.fa!
+1  exercise    scan/sehg      @src/cmscan@ --hmmonly -g %SE.CM% !testsuite/se.fa!
 1  prep        cleanup/se     rm -f %SE.CM%.*
 
 # cmemit exercises
@@ -242,6 +261,8 @@
 
 1  exercise  align/t/1          @src/cmalign@ %TRNA.CM% !testsuite/emitted-tRNA.fa!
 1  exercise  align/t/2          @src/cmalign@ -g %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align/t/hg         @src/cmalign@ --hmm -g %TRNA.CM% !testsuite/emitted-tRNA.fa!
+1  exercise  align/t/hgnt       @src/cmalign@ --hmm -g --notrunc %TRNA.CM% !testsuite/emitted-tRNA.fa!
 
 2  exercise  align/v/1          @src/cmalign@ %VAULT.CM% !testsuite/vault.fa!
 2  exercise  align/v/2          @src/cmalign@ -g %VAULT.CM% !testsuite/vault.fa!
@@ -318,8 +339,3 @@
 1  exercise  cp9/rp              @src/cp9-test@ --psionly %RP.CM%
 2  exercise  cp9/ssu             @src/cp9-test@ --psionly %SSU.CM%
 
-# sub_cm-test exercises (sub CM construction validation) 
-1  exercise  sub/trna1           @src/sub_cm-test@ %TRNA.CM%
-1  exercise  sub/rp              @src/sub_cm-test@ %RP.CM%
-2  exercise  sub/ssu             @src/sub_cm-test@ %SSU.CM%
-1  exercise  sub/trna2           @src/sub_cm-test@ --exhaust %TRNA.CM%

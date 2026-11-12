@@ -132,7 +132,7 @@ ILogsumNI_diff(int s1a, int s1b, int s2a, int s2b, int db)
     return  (d <= LOGSUM_TBL) ? s2a + s2b : s2a + s2b + ilogsum_lookup[-d];
 } 
 
-static float flogsum_lookup[LOGSUM_TBL];
+float flogsum_lookup[LOGSUM_TBL];
 
 void
 FLogsumInit(void)
@@ -155,17 +155,7 @@ LogSum2(float s1, float s2)
   return  (min == -eslINFINITY || (max-min) >= 23.f) ? max : max + flogsum_lookup[(int)((max-min)*INTSCALE)];
 } 
 
-/* yes LogSum2 and FLogsum are identical, this is for backwards compatibility */
-float
-FLogsum(float s1, float s2)
-{
-  const float max = ESL_MAX(s1, s2);
-  const float min = ESL_MIN(s1, s2);
-#if 0
-  return (min == -eslINFINITY || (max-min) >= 23.f) ? max : max + sreLOG2(1.0 + sreEXP2(min-max));  /* EPN: While debugging. Replaces logsum table with analytical calculation. Remember to remove! */
-#endif
-  return  (min == -eslINFINITY || (max-min) >= 23.f) ? max : max + flogsum_lookup[(int)((max-min)*INTSCALE)];
-} 
+/* FLogsum() is now static inline in infernal.h; definition removed from this file. */
 
 #if 0
 /**********************************************************************************

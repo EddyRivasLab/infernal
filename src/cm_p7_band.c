@@ -9,16 +9,101 @@
 #include "config.h"
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <math.h>
+#include <float.h>
+#include <limits.h>
+#include <stdint.h>
 #include <assert.h>
 
+#include <xmmintrin.h>
+#include <emmintrin.h>
+#include <smmintrin.h>
+
 #include "easel.h"
+#include "esl_random.h"
+#include "esl_sq.h"
 #include "esl_sse.h"
+#ifdef HMMER_THREADS
+#include "esl_threads.h"
+#include "esl_workqueue.h"
+#endif
 #include "esl_vectorops.h"
 
 #include "hmmer.h"
+#include "p7_gbands.h"
+#include "p7_gmxb.h"
 
 #include "infernal.h"
+
+/* Function:  pn_match_bands_enforce_monotone()
+ * Incept:    EPN, 2026-04-24
+ *
+ * Purpose:   Enforce a monotone reachability sweep on the match-state
+ *            HMM bands pn_min_m[k] and pn_max_m[k], k=1..M.
+ *
+ *            After: pn_min_m[k] <= min(pn_min_m[k..M])
+ *                   pn_max_m[k] >= max(pn_max_m[1..k])
+ *
+ *            Rationale: when pn_min/max_m come from p7-banded F/B
+ *            posteriors, cells outside the p7 Viterbi diagonal band
+ *            have zero mass, so pn_min_m[k] at downstream nodes can
+ *            exclude envelope positions that are reachable via valid
+ *            HMM paths whose match/delete layout differs from the p7
+ *            Viterbi trace. The sweep relaxes only the match bands and
+ *            only where a predecessor/successor bound was strictly
+ *            tighter. Unset entries (pn_min_m[k]==-1) are skipped.
+ *
+ *            If <do_print> is TRUE, emits one line to stderr:
+ *              pnmono[<ctx>] M=.. L=.. sum_width_before=.. sum_width_after=.. delta=..
+ *
+ * Returns:   (void). pn_min_m/pn_max_m are updated in place.
+ */
+void
+pn_match_bands_enforce_monotone(int *pn_min_m, int *pn_max_m, int M, int L,
+                                int do_print, const char *ctx)
+{
+  int k;
+  long sum_before = 0, sum_after = 0;
+
+  if(do_print) {
+    for(k = 1; k <= M; k++) {
+      if(pn_min_m[k] != -1) sum_before += (pn_max_m[k] - pn_min_m[k] + 1);
+    }
+  }
+
+  /* Reachability: M_k must precede M_{k+1}. So:
+   *   pn_min_m[k] <= pn_min_m[k'] for all k' > k  (earliest-start non-decreasing in k)
+   *   pn_max_m[k] <= pn_max_m[k'] for all k' > k  (latest-start also non-decreasing)
+   * If p7-banded posteriors leave a downstream node pn_min_m[k']=p0 but an
+   * upstream node pn_min_m[k]=p1 with p1 > p0, that violates reachability.
+   * Relax: sweep right-to-left, widen pn_min_m[k] down to min(pn_min_m[k..M]).
+   * Symmetrically: sweep left-to-right, widen pn_max_m[k] up to max(pn_max_m[1..k]). */
+  {
+    int running_min = L + 2;
+    for(k = M; k >= 1; k--) {
+      if(pn_min_m[k] != -1 && pn_min_m[k] < running_min) running_min = pn_min_m[k];
+      if(pn_min_m[k] != -1 && running_min < pn_min_m[k])  pn_min_m[k] = running_min;
+    }
+  }
+  {
+    int running_max = -1;
+    for(k = 1; k <= M; k++) {
+      if(pn_max_m[k] > running_max) running_max = pn_max_m[k];
+      if(pn_max_m[k] != -1 && running_max > pn_max_m[k]) pn_max_m[k] = running_max;
+    }
+  }
+
+  if(do_print) {
+    for(k = 1; k <= M; k++) {
+      if(pn_min_m[k] != -1) sum_after += (pn_max_m[k] - pn_min_m[k] + 1);
+    }
+    fprintf(stderr, "pnmono[%s] M=%d L=%d sum_width_before=%ld sum_width_after=%ld delta=%ld\n",
+            ctx ? ctx : "?", M, L, sum_before, sum_after, sum_after - sum_before);
+  }
+}
+
 
 /* Function:  p7_gmx_Match2DMatrix()
  * Synopsis:  Copy the dp match cells of a generic matrix 
@@ -29,7 +114,7 @@
  * Purpose:   Dump matrix <gx> to stream <fp> for diagnostics.
  */
 int
-p7_gmx_Match2DMatrix(P7_GMX *gx, int do_diff, ESL_DMATRIX **ret_D, double *ret_min, double *ret_max)
+cm_p7_gmx_Match2DMatrix(P7_GMX *gx, int do_diff, ESL_DMATRIX **ret_D, double *ret_min, double *ret_max)
 {
   int i, k;
   ESL_DMATRIX *D;
@@ -102,7 +187,7 @@ p7_gmx_Match2DMatrix(P7_GMX *gx, int do_diff, ESL_DMATRIX **ret_D, double *ret_m
  * Xref:      
  */
 int
-my_dmx_Visualize(FILE *fp, ESL_DMATRIX *D, double min, double max, double min2fill)
+cm_dmx_Visualize(FILE *fp, ESL_DMATRIX *D, double min, double max, double min2fill)
 {
    int    nshades   = 18;
    double cyan[]    = { 1.00, 1.00, 0.90, 0.75, 0.57, 0.38, 0.24, 0.13, 0.03,
@@ -220,7 +305,7 @@ my_dmx_Visualize(FILE *fp, ESL_DMATRIX *D, double min, double max, double min2fi
 #define CP9TSC(s,k) (tsc[(k) * cp9O_NTRANS + (s)])
 
 int
-my_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, const P7_GMX *gx, P7_TRACE *tr, int **ret_i2k, int **ret_k2i, float **ret_isc, int **ret_iconflict)
+cm_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, const P7_GMX *gx, P7_TRACE *tr, int **ret_i2k, int **ret_k2i, float **ret_isc, int **ret_iconflict)
 {
   int     status = eslOK;
   int     i;			/* position in seq (1..L) */
@@ -295,7 +380,7 @@ my_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, const P7_GMX *g
 	status = p7_trace_Append(tr, p7T_M, k-1, i-1);
 	/*if(k2i[(k-1)] != -1) { status = eslEINCOMPAT; printf("! discontiguous trace k2i[k-1=%d] != -1 (%d) i-1 = %d\n", k-1, k2i[(k-1)], i-1); goto ERROR;} */
 	/*if(i2k[(i-1)] != -1) { status = eslEINCOMPAT; printf("! discontiguous trace i2k[i-1=%d] != -1 (%d) k-1 = %d\n", i-1, i2k[(i-1)], k-1); goto ERROR;} */
-	if(i2k[(i-1)] != -1 || k2i[(k-1)] != -1) { 
+	if(i2k[(i-1)] != -1 || k2i[(k-1)] != -1) {
 	  iconflict[(k2i[(k-1)])] = TRUE; /* eventually remove pin kmer that included k we *thought* pinned i-1 */
 	  iconflict[(i-1)]        = TRUE; /* eventually remove pin kmer that includes k we currently think pins i-1 */
 	}
@@ -512,10 +597,10 @@ prune_i2k(int *i2k, int *iconflict, float *isc, int L, double **phi, float min_s
 	  for(j = (i - n); j < i; j++) i2k[j] = -1; /* remove the n-mer */
 	  mcprob = 1.;
 	}
-	else if (do_end && n >= min_len) { /* n >= min_len, remove those within do_end of end */
-	  for(j = (i - n);        j < (i - (n+1)) + min_end; j++) i2k[j] = -1; /* remove the part of the n-mer within nend residues of the beginning edge */
-	  for(j = (i - min_end);  j < i;                     j++) i2k[j] = -1; /* remove the part of the n-mer within nend residues of the end edge */
-	} 
+	else if (do_end && n > 0 && n >= min_len) { /* n >= min_len, remove those within do_end of end */
+	  for(j = (i - n); j < ESL_MIN(i, (i - (n+1)) + min_end); j++) i2k[j] = -1; /* remove the part of the n-mer within min_end residues of the beginning edge */
+	  for(j = ESL_MAX(1, i - min_end); j < i; j++) i2k[j] = -1;                   /* remove the part of the n-mer within min_end residues of the end edge */
+	}
 	if(i2k[i] == -1) { /* position i is not pinned */
 	  mcprob = 1.;  
 	  n = 0; 
@@ -536,8 +621,12 @@ prune_i2k(int *i2k, int *iconflict, float *isc, int L, double **phi, float min_s
 	}
       }
     }
-    /* deal with possibility that last n residues were an n-mer, with n < min_len */
-    if(n > 0 && n < min_len) { for(j = (i - n); j < i; j++) i2k[j] = -1; /* remove the n-mer */}
+    /* deal with possibility that last n residues were an n-mer ending at position L */
+    if(n > 0 && n < min_len) { for(j = (i - n); j < i; j++) i2k[j] = -1; }
+    else if(do_end && n > 0 && n >= min_len) {
+      for(j = (i - n); j < ESL_MIN(i, (i - (n+1)) + min_end); j++) i2k[j] = -1;
+      for(j = ESL_MAX(1, i - min_end); j < i; j++) i2k[j] = -1;
+    }
   }
 
   return eslOK;
@@ -565,7 +654,7 @@ prune_i2k(int *i2k, int *iconflict, float *isc, int L, double **phi, float min_s
  *
  */
 int
-p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_kmin, int **ret_kmax, int *ret_ncells)
+cm_p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_kmin, int **ret_kmax, int *ret_ncells)
 {
   int     status;
 
@@ -578,34 +667,87 @@ p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_kmin, int
   ESL_ALLOC(kmax, sizeof(int) * (L+1));
 
   /* traverse residues left to right to get kmins */
-  for(i = 0; i <= L; i++) { 
-    if(i2k[i] != -1) { 
-      if(kn >= i2k[i] && kn > 1) { 
-	ESL_FAIL(eslFAIL, errbuf, "p7_pins2bands() error i: %d, i2k[i]: %d but current kn: %d\n", i, i2k[i], kn); 
+  for(i = 0; i <= L; i++) {
+    if(i2k[i] != -1) {
+      if(kn >= i2k[i] && kn > 1) {
+	i2k[i] = -1; /* non-monotone pin from multi-segment MSV trace; remove and continue */
       }
-      kn = ESL_MAX(1, i2k[i] - pad);
+      else {
+	kn = ESL_MAX(1, i2k[i] - pad);
+      }
     }
     kmin[i] = kn;
   }
 
   /* traverse nodes right to left to get imaxs */
-  for(i = L; i >= 0; i--) { 
-    if(i2k[i] != -1) { 
-      if(kx <= i2k[i] && kx < L) ESL_FAIL(eslFAIL, errbuf, "p7_pins2bands() error: i: %d, i2k[i]: %d but current kx: %d\n", i, i2k[i], kx); 
-      kx = ESL_MIN(M, i2k[i] + pad);
+  for(i = L; i >= 0; i--) {
+    if(i2k[i] != -1) {
+      if(kx <= i2k[i] && kx < M) { i2k[i] = -1; } /* non-monotone pin; remove and continue */
+      else                        { kx = ESL_MIN(M, i2k[i] + pad); }
     }
     kmax[i] = kx;
   }
 
   /* M_0 == B state, which must start the parse with i == 0 */
-  kmin[0] = 0; 
+  kmin[0] = 0;
 
-  /* get number of cells if wanted */
-  int ncells;
-  if(ret_ncells != NULL) { 
-    ncells = 0;
-    for(i = 1; i <= L; i++) ncells += kmax[i] - kmin[i] + 1;
-    *ret_ncells = ncells;
+  /* D-state bridge: ensure the band at each emitting position i
+   * extends far enough in k to reach the next emitting position's k
+   * via delete states. Without this, deletion runs in the trace
+   * (M_k(i) → D_{k+1} → ... → M_{k'}(i+1)) can't propagate through
+   * the banded Forward DP because the D-state columns k+1..k'-1
+   * aren't in the band at row i.
+   *
+   * Fix: for each pair of consecutive pins (i with k) and (i' with k'),
+   * if k' > kmax[i], widen kmax[i] to k' (and also kmax at any
+   * intermediate unpinned rows between i and i'). Symmetrically,
+   * if k < kmin[i'], widen kmin[i'] down to k.
+   */
+  {
+    int prev_pin_i = -1, prev_pin_k = -1;
+    for(i = 0; i <= L; i++) {
+      if(i2k[i] != -1) {
+        if(prev_pin_i >= 0) {
+          /* Bridge from previous pin to current pin */
+          int pk = prev_pin_k;
+          int ck = i2k[i];
+          if(ck > pk) {
+            /* Need D-state columns pk+1..ck at rows prev_pin_i..i-1 */
+            int j;
+            for(j = prev_pin_i; j < i; j++) {
+              if(kmax[j] < ck) kmax[j] = ESL_MIN(M, ck);
+            }
+          }
+          if(pk > ck) {
+            /* Reverse: need D-state columns ck..pk-1 at rows prev_pin_i+1..i */
+            int j;
+            for(j = prev_pin_i + 1; j <= i; j++) {
+              if(kmin[j] > ck) kmin[j] = ESL_MAX(1, ck);
+            }
+          }
+        }
+        prev_pin_i = i;
+        prev_pin_k = i2k[i];
+      }
+    }
+  }
+
+  /* get number of cells if wanted.
+   * Brief 26_0628-027: accumulate in int64. At genome scale (M~L~1.5e5, and sparse
+   * anchors -> wide bands) the true cell count reaches ~1e10, overflowing the
+   * int32 accumulator and wrapping to <=0, which would spuriously trip the
+   * caller's ncells==0 fallback. ret_ncells stays int (every caller uses it
+   * only as a >0/==0 discriminator + debug avg_bw; it never sizes memory), so
+   * we saturate the returned value at INT_MAX and emit the true int64 count on
+   * a debug line for genome-scale band-size measurement. */
+  if(ret_ncells != NULL) {
+    int64_t ncells64 = 0;
+    for(i = 1; i <= L; i++) ncells64 += (int64_t)(kmax[i] - kmin[i] + 1);
+    if(ncells64 > (int64_t) INT_MAX) {
+      *ret_ncells = INT_MAX;
+    } else {
+      *ret_ncells = (int) ncells64;
+    }
   }
 
   if(ret_kmin != NULL) { *ret_kmin = kmin; } else free(kmin);
@@ -615,6 +757,923 @@ p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_kmin, int
  ERROR:
   ESL_FAIL(status, errbuf, "p7_pins2bands() memory error.");
   return status; /* NEVERREACHED */
+}
+
+/* Function: cm_p7_bands_ReachModelEnd()
+ * Incept:   EPN, Mon Oct  5 2026 (w/Claude)
+ *
+ * Purpose:  Widen the last row of a p7 band, kmax[L], to node M.
+ *
+ *           Call this on a p7 band before it is used for alignment
+ *           in a configuration that can end a parse only at node M:
+ *           glocal, non-truncated alignment (cmalign -g --notrunc).
+ *           There the last residue's row must reach node M through
+ *           delete states. The pin->band converters (p7_pins2bands()
+ *           and p7_pins2bands_nodepad()) set kmax[L] = i2k[L] + pad
+ *           when the last pin is on row L itself, which leaves node
+ *           M outside the band and admits no parse at all (briefs
+ *           26_0821-099, 26_0821-100). Row 0 needs no counterpart:
+ *           every band builder sets kmin[0] = 0.
+ *
+ *           Local or truncated configurations can end the parse
+ *           before node M and must not call this; their bands are
+ *           left exactly as built. A band that already admits a
+ *           glocal non-truncated parse has kmax[L] == M, so this is
+ *           a no-op for it.
+ *
+ * Args:     kmax - [0.i..L] = k, max node k for residue i; may be NULL
+ *           L    - length of sequence
+ *           M    - number of nodes in the HMM
+ *
+ * Returns:  void
+ */
+void
+cm_p7_bands_ReachModelEnd(int *kmax, int L, int M)
+{
+  if(kmax != NULL && L >= 0 && kmax[L] < M) kmax[L] = M;
+}
+
+/* Function: p7_pins2bands_nodepad()
+ * Date:     EPN*, Sat Apr  5 2026
+ *
+ * Purpose:  Same as p7_pins2bands() but uses a per-node pad array
+ *           <nodepad> instead of a single pad value. nodepad[k] is
+ *           the pad for node k.
+ *
+ * Args:     i2k      - the input pin array, modified (pruned) in place
+ *           errbuf   - for error messages
+ *           L        - length of current sequence
+ *           M        - number of nodes in the HMM
+ *           nodepad  - [0..M] per-node pad array
+ *           hopback  - if >0, dilate band per residue with min/max of i2k
+ *                      across the 2*hopback+1-pin window (D1 strategy).
+ *                      Vit pins are monotone in (i,k); the dilation is
+ *                      computed in O(L) with a sliding window over the
+ *                      pinned positions in trace order. 0 = off (no-op).
+ *           alpha    - brief 26_0628-043: distance-scaled slack coefficient for the
+ *                      interpolated-ramp inter-pin band (brief 26_0628-042); see
+ *                      RAMP_SLACK_ALPHA comment below. Callers that don't
+ *                      expose a tunable knob should pass 0.75 (brief 26_0628-042's
+ *                      validated default) to preserve prior behavior.
+ *                      A negative alpha skips the interpolated ramp, so every
+ *                      inter-pin gap keeps the flat band (brief 26_0821-096:
+ *                      kmerchain's default unless --p7kmerchain-ramp).
+ *           ret_kmin - [0.i..L] = k, min node k for residue i
+ *           ret_kmax - [0.i..L] = k, max node k for residue i
+ *           ret_ncells - number of cells within bands, to return
+ *
+ * Return:   <eslOK> on success.
+ *
+ */
+int
+cm_p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad,
+                      int hopback, double alpha,
+                      int **ret_kmin, int **ret_kmax, int *ret_ncells)
+{
+  int     status;
+
+  int i;
+  int kn = 0;
+  int kx = M;
+  int *kmin, *kmax;
+
+  ESL_ALLOC(kmin, sizeof(int) * (L+1));
+  ESL_ALLOC(kmax, sizeof(int) * (L+1));
+
+  /* traverse residues left to right to get kmins */
+  for(i = 0; i <= L; i++) {
+    if(i2k[i] != -1) {
+      if(kn >= i2k[i] && kn > 1) {
+	i2k[i] = -1; /* non-monotone pin from multi-segment MSV trace; remove and continue */
+      }
+      else {
+	kn = ESL_MAX(1, i2k[i] - nodepad[i2k[i]]);
+      }
+    }
+    kmin[i] = kn;
+  }
+
+  /* traverse nodes right to left to get imaxs */
+  for(i = L; i >= 0; i--) {
+    if(i2k[i] != -1) {
+      if(kx <= i2k[i] && kx < M) { i2k[i] = -1; } /* non-monotone pin; remove and continue */
+      else                        { kx = ESL_MIN(M, i2k[i] + nodepad[i2k[i]]); }
+    }
+    kmax[i] = kx;
+  }
+
+  /* M_0 == B state, which must start the parse with i == 0 */
+  kmin[0] = 0;
+
+  /* D-state bridge (same as p7_pins2bands): widen bands between consecutive
+   * pins to allow delete-state transitions through the banded Forward DP. */
+  {
+    int prev_pin_i = -1, prev_pin_k = -1;
+    for(i = 0; i <= L; i++) {
+      if(i2k[i] != -1) {
+        if(prev_pin_i >= 0) {
+          int pk = prev_pin_k;
+          int ck = i2k[i];
+          if(ck > pk) {
+            int j;
+            for(j = prev_pin_i; j < i; j++) {
+              if(kmax[j] < ck) kmax[j] = ESL_MIN(M, ck);
+            }
+          }
+          if(pk > ck) {
+            int j;
+            for(j = prev_pin_i + 1; j <= i; j++) {
+              if(kmin[j] > ck) kmin[j] = ESL_MAX(1, ck);
+            }
+          }
+        }
+        prev_pin_i = i;
+        prev_pin_k = i2k[i];
+      }
+    }
+  }
+
+  /* Interpolated ramp (brief 26_0628-042). The base scans + bridge block above give
+   * every residue in a gap between two consecutive pins the SAME flat band,
+   * [prev_pin_k - pad, next_pin_k + pad] -- cost O(gap_len * gap_k) per gap,
+   * quadratic when both are large (kmerchain's typical sparse-anchor output;
+   * see brief 26_0628-041). Replace that flat band on interior rows of long gaps
+   * with a band centered on the linear interpolation between the two
+   * bracketing pins, widened only by nodepad (the same local-wiggle margin
+   * used at a pin itself) -- not by the full model distance spanned by the
+   * gap. This assumes the true path's k-trajectory across a long gap tracks
+   * close to the diagonal implied by the two pins, which is reasonable for
+   * kmerchain anchors specifically because they were chained on near-zero
+   * diagonal drift in the first place (p7_Seq2BandsKmerChain's gapc chain
+   * cost penalizes exactly the drift this ramp assumes is small).
+   *
+   * Short gaps are deliberately left flat (untouched): with few interior
+   * rows the flat cost is cheap anyway, and a short gap carrying a large
+   * model jump is exactly the "one real deletion run concentrated in a
+   * single row" case the D-state bridge above exists to protect -- the ramp
+   * does not attempt to prove correctness for that case, so it stays out of
+   * its way. The gap_len > 2*pad_here threshold ties "short" to the same
+   * nodepad tunable already used for the pin margin itself, rather than an
+   * arbitrary constant.
+   */
+  {
+    int prev_pin_i = -1, prev_pin_k = -1;
+    for(i = 0; i <= L; i++) {
+      if(i2k[i] != -1) {
+        if(prev_pin_i >= 0) {
+          int pi = prev_pin_i, pk = prev_pin_k;
+          int ci = i,          ck = i2k[i];
+          int gap_len  = ci - pi;
+          int pad_here = ESL_MAX(nodepad[pk], nodepad[ck]);
+          if (alpha >= 0. && ck != pk && gap_len > 2 * pad_here) { /* alpha < 0: ramp off, keep the flat band (brief 26_0821-096) */
+            /* RAMP_SLACK_ALPHA: empirically bracketed (brief 26_0628-042), not derived
+             * from a correctness proof -- pure nodepad-width margin (alpha=0)
+             * measurably WORSENED one real panel case (norovirus MT372469.1,
+             * --p7band --p7kmerchain: bit score 1358.60 -> 1168.35, a true
+             * regression, not just a placement difference), because a long
+             * on-diagonal gap can still contain a real, non-uniformly placed
+             * indel that pure linear interpolation clips. Growing the margin
+             * by alpha per residue of distance from the nearer bracketing pin
+             * (capped, since d is bounded by gap_len/2) recovers that case
+             * (1358.60 -> 1352.56 at alpha=0.75, within this thread's
+             * established ~0.2%-noise tolerance) while still cutting ncells
+             * substantially versus the flat default (2.6M vs 4.7M on that same
+             * gap -- alpha=0 gave 1.4M but wasn't safe). This is a tunable
+             * correctness/speed tradeoff, not a proven-safe bound either --
+             * see brief 26_0628-042's summary "Design reasoning" section. brief 26_0628-043:
+             * alpha is now a caller-supplied parameter (default 0.75 preserved
+             * at every call site; only --p7kmerchain's cmalign call site
+             * exposes it as a runtime option, --p7kmerchain-alpha; since brief
+             * 26_0821-096 that call site runs the ramp only under --p7kmerchain-ramp).
+             */
+            int j;
+            for(j = pi + 1; j < ci; j++) {
+              double frac = (double) (j - pi) / (double) gap_len;
+              double kexp = (double) pk + frac * (double) (ck - pk);
+              int d = (j - pi); if (ci - j < d) d = ci - j; /* distance to nearer anchor */
+              int slack = (int) (alpha * (double) d);
+              int klo = (int) floor(kexp);
+              int khi = (int) ceil(kexp);
+              if (klo < 0) klo = 0; if (klo > M) klo = M;
+              if (khi < 0) khi = 0; if (khi > M) khi = M;
+              kmin[j] = ESL_MAX(1, klo - nodepad[klo] - slack);
+              kmax[j] = ESL_MIN(M, khi + nodepad[khi] + slack);
+            }
+          }
+        }
+        prev_pin_i = i;
+        prev_pin_k = i2k[i];
+      }
+    }
+  }
+
+  /* D1 hop-back dilation pass.
+   * For each pinned residue i, take min/max of i2k across the 2*hopback+1
+   * window of pinned positions centered on i (clipped at trace ends), and
+   * widen kmin[i]/kmax[i] to that range. Vit pins are monotone in (i,k),
+   * so the window-min is i2k of the (hopback)th preceding pinned position,
+   * and the window-max is i2k of the (hopback)th following pinned position.
+   * O(L) total. hopback==0 is a no-op.
+   */
+  if (hopback > 0) {
+    int *pin_pos = NULL;   /* [0..npin-1] residue index of each pinned position, in trace order */
+    int  npin = 0;
+    int  p;
+    ESL_ALLOC(pin_pos, sizeof(int) * (L+2));
+    for (i = 0; i <= L; i++) {
+      if (i2k[i] != -1) { pin_pos[npin++] = i; }
+    }
+    for (p = 0; p < npin; p++) {
+      int lo = p - hopback; if (lo < 0)       lo = 0;
+      int hi = p + hopback; if (hi > npin-1)  hi = npin - 1;
+      int kw_min = i2k[pin_pos[lo]];
+      int kw_max = i2k[pin_pos[hi]];
+      int ii = pin_pos[p];
+      int new_kmin = ESL_MAX(1, kw_min);
+      int new_kmax = ESL_MIN(M, kw_max);
+      if (kmin[ii] > new_kmin) kmin[ii] = new_kmin;
+      if (kmax[ii] < new_kmax) kmax[ii] = new_kmax;
+    }
+    free(pin_pos);
+  }
+
+  /* get number of cells if wanted.
+   * Brief 26_0628-027: accumulate in int64. At genome scale (M~L~1.5e5, and sparse
+   * anchors -> wide bands) the true cell count reaches ~1e10, overflowing the
+   * int32 accumulator and wrapping to <=0, which would spuriously trip the
+   * caller's ncells==0 fallback. ret_ncells stays int (every caller uses it
+   * only as a >0/==0 discriminator + debug avg_bw; it never sizes memory), so
+   * we saturate the returned value at INT_MAX and emit the true int64 count on
+   * a debug line for genome-scale band-size measurement. */
+  if(ret_ncells != NULL) {
+    int64_t ncells64 = 0;
+    for(i = 1; i <= L; i++) ncells64 += (int64_t)(kmax[i] - kmin[i] + 1);
+    if(ncells64 > (int64_t) INT_MAX) {
+      *ret_ncells = INT_MAX;
+    } else {
+      *ret_ncells = (int) ncells64;
+    }
+  }
+
+  if(ret_kmin != NULL) { *ret_kmin = kmin; } else free(kmin);
+  if(ret_kmax != NULL) { *ret_kmax = kmax; } else free(kmax);
+  return eslOK;
+
+ ERROR:
+  ESL_FAIL(status, errbuf, "p7_pins2bands_nodepad() memory error.");
+  return status; /* NEVERREACHED */
+}
+
+/* brief 26_0628-045/26_0628-047: small-M gate for kmerchain (also gated the earlier
+ * best-window-anchor deriver before its removal by brief 26_0628-066).
+ * Root cause (rmark4 MIR2655 and 4 other catastrophic-loss families, all
+ * M=84-400): at this M range these divergent structural-RNA test families
+ * have too little exact-match identity to the model's argmax consensus for
+ * k-mer seeding to work -- often 0-1 true k=10 matches exist anywhere in the
+ * whole model, outnumbered by coincidental short-k-mer collisions that
+ * chain/cluster together and out-compete the lone true anchor. This is the
+ * SAME mechanism brief 26_0628-022 root-caused and gated for the cmsearch fast-anchor
+ * path (norovirus's non-repeat coincidental-collision residual); brief 26_0628-045
+ * ported brief 26_0628-022's validated M<4,000 threshold here as a hardcoded,
+ * default-on constant. Brief 26_0628-047 replaced that with a real, user-facing,
+ * OFF-BY-DEFAULT cmalign option (--p7kmerchain-mgate <M>, cm->p7_kmerchain_mgate,
+ * 0=off) -- fires (M < threshold) only when the user opts in, same gating
+ * logic as before. Below the threshold, the deriver immediately reports
+ * "no anchor" (ret_ncells=0), and the caller falls back per brief 26_0628-047's new
+ * shared fallback-selection mechanism (default --p7ibv; see cmalign.c). */
+
+/* brief 26_0628-046: per-query signal gate for kmerchain (also gated the
+ * earlier best-window-anchor deriver before its removal by brief 26_0628-066).
+ * Fires (returns TRUE) iff mink>0 and the longest exact match between the
+ * query and the model consensus, `maxlen` (the longest merged seed run, 0 if
+ * none), is shorter than mink -- i.e. there is no exact-match content long
+ * enough to carry real signal, independent of M. Disabled (mink<=0, default)
+ * by construction returns FALSE. See brief 26_0628-046 for the mechanism/rationale.
+ *
+ * Until brief 26_0821-124 this tested per-k seed tiers {10,15,20,25,30} for
+ * zero hits. A k-mer hit of length k exists iff an exact match of length >= k
+ * exists, so for mink at a tier value the two tests are the same; for other
+ * values the old test rounded mink up to the next tier (and always fired
+ * above 30). */
+static int
+kmer_ngate_fires(int maxlen, int mink)
+{
+  if (mink <= 0) return FALSE;
+  return (maxlen < mink);
+}
+
+typedef struct { uint64_t code; int pos; } kmw_kmer_t; /* a target k-mer occurrence */
+typedef struct { int j, t, k; }            kmw_hit_t;  /* model j / target t / k-length */
+
+static int kmw_kmer_cmp(const void *a, const void *b) {
+  uint64_t ca = ((const kmw_kmer_t *)a)->code, cb = ((const kmw_kmer_t *)b)->code;
+  return (ca > cb) - (ca < cb);
+}
+/* first index in sorted arr[0..n-1] whose code >= key */
+static int kmw_lower_bound(const kmw_kmer_t *arr, int n, uint64_t key) {
+  int lo = 0, hi = n;
+  while (lo < hi) { int mid = (lo+hi)/2; if (arr[mid].code < key) lo = mid+1; else hi = mid; }
+  return lo;
+}
+
+/* encode digital k-mer of length k (<=31) at v[pos] (2 bits/residue).
+ * *ok=0 if any residue is degenerate (>3, i.e. not a canonical ACGU). */
+static uint64_t kmw_encode(const ESL_DSQ *v, int pos, int k, int *ok) {
+  uint64_t code = 0; int o;
+  for (o = 0; o < k; o++) {
+    ESL_DSQ r = v[pos+o];
+    if (r > 3) { *ok = 0; return 0; }
+    code |= ((uint64_t) r) << (2*o);
+  }
+  *ok = 1;
+  return code;
+}
+
+/*****************************************************************
+ * Brief 26_0628-027: k-mer seed-and-chain (minimap2/BLAST-style) guide-deriver for
+ * genome-scale (>40kb) anchoring.
+ *
+ * An earlier deriver (brief 26_0628-026, removed by brief 26_0628-066) picked the
+ * single best 200nt model window and seeded only from it -- which at genome scale
+ * (a) is fooled by repeat-driven false diagonals (HSV locks onto an internal
+ * repeat block) and (b) cannot span a genome from one anchor (HSV 41% / MPXV 88%
+ * coverage). This deriver instead collects ALL k-mer seeds genome-wide and chains
+ * them by GLOBAL diagonal/colinearity consistency. A repeat block's seeds are
+ * internally consistent with each other but NOT colinear with the sequence-
+ * spanning chain elsewhere, so a standard colinear chaining DP structurally
+ * out-competes an isolated repeat block with a chain that covers far more of the
+ * genome.
+ *
+ * Reuses the k-mer index infrastructure from that earlier deriver unchanged
+ * (kmw_encode / kmw_kmer_cmp / kmw_lower_bound; seeds of length KMC_SEED_K) and feeds
+ * the winning chain's pins through the SAME unmodified p7_pins2bands_nodepad
+ * consumer.
+ *****************************************************************/
+
+/* chaining-DP tunables (first-pass, minimap2-style; deliberately un-tuned).
+ * KMC_MAX_ITER is the only bound on the chaining DP's work. A max query gap
+ * (30000) and a max implied indel per link (10000) were removed in brief
+ * 26_0821-124: on 624 genome-scale cells (brief 26_0821-119) the query-gap
+ * limit never changed an alignment, and the indel limit changed only one,
+ * where it was wrong (a genome with 12,288 nt of extra repeat copies: the
+ * true link was refused and the chain started 2,332 model positions late).
+ * The linear gap cost already charges 1,500 bits for a 10 kb indel, and the
+ * indel limit bounded no work (it skipped a predecessor after counting it
+ * against KMC_MAX_ITER). */
+#define KMC_MAX_ITER  5000    /* max predecessors examined per anchor (DP cap)    */
+#define KMC_SEED_K    10      /* seed k-mer length (<=31 => uint64-encodable)     */
+#define KMC_MIN_ANCHOR 10     /* min merged exact-match length to keep an anchor  */
+                               /* brief 26_0628-029: lowered 20->10 (=smallest indexed k) to */
+                               /* admit far more anchors on sparse-anchor genomes    */
+                               /* (MPXV: 56->79 chain anchors, avg_bw 1223->279.6,   */
+                               /* peak RSS 12.95G->4.73G), zero accuracy cost.       */
+#define KMC_GAP_LIN   0.15    /* linear gap cost, bits per residue of |diagonal   */
+                              /* change|; was 0.01 x a "representative k" of 15  */
+#define KMC_GAP_LOG   0.5     /* log2 gap-cost coefficient                        */
+
+/* a raw k-mer seed as a query interval on a diagonal: d = model_j - query_t,
+ * query positions [tlo,thi]. Point seeds are merged along a diagonal into
+ * maximal exact-match anchors (BLAST/minimap2-style) to collapse the multi-k
+ * and per-position seed redundancy before chaining. */
+typedef struct { int d, tlo, thi; } kmc_ival_t;
+
+/* sort intervals by diagonal d ascending, then query start tlo ascending. */
+static int kmc_ival_cmp(const void *a, const void *b) {
+  const kmc_ival_t *x = (const kmc_ival_t *)a, *y = (const kmc_ival_t *)b;
+  if (x->d   != y->d)   return (x->d   > y->d)   - (x->d   < y->d);
+  return (x->tlo > y->tlo) - (x->tlo < y->tlo);
+}
+
+/* sort anchors by query position t ascending, tiebreak model j ascending. */
+static int kmc_seed_cmp(const void *a, const void *b) {
+  const kmw_hit_t *x = (const kmw_hit_t *)a, *y = (const kmw_hit_t *)b;
+  if (x->t != y->t) return (x->t > y->t) - (x->t < y->t);
+  return (x->j > y->j) - (x->j < y->j);
+}
+
+/* an anchor's END coordinates (query te, model je) plus its index in the
+ * start-sorted seeds[] array, for the chaining DP's end-ordered predecessor
+ * scan (brief 26_0821-117/26_0821-118). */
+typedef struct { int te, je, idx; } kmc_end_t;
+
+/* sort anchor ends by query end te ascending, tiebreak model end je, then index. */
+static int kmc_end_cmp(const void *a, const void *b) {
+  const kmc_end_t *x = (const kmc_end_t *)a, *y = (const kmc_end_t *)b;
+  if (x->te  != y->te)  return (x->te  > y->te)  - (x->te  < y->te);
+  if (x->je  != y->je)  return (x->je  > y->je)  - (x->je  < y->je);
+  return (x->idx > y->idx) - (x->idx < y->idx);
+}
+
+/* sort anchors by model start j / by query start t (for kmc_anchor_contested()). */
+static int kmc_seed_jcmp(const void *a, const void *b) {
+  const kmw_hit_t *x = (const kmw_hit_t *)a, *y = (const kmw_hit_t *)b;
+  return (x->j > y->j) - (x->j < y->j);
+}
+static int kmc_seed_tcmp(const void *a, const void *b) {
+  const kmw_hit_t *x = (const kmw_hit_t *)a, *y = (const kmw_hit_t *)b;
+  return (x->t > y->t) - (x->t < y->t);
+}
+
+/* Function: kmc_anchor_contested()
+ * Incept:   EPN, Sat Oct 17 2026 (w/Claude)
+ *
+ * Purpose:  Decide whether chain anchor <a> is contested at a chain link:
+ *           some other anchor, on a different diagonal and overlapping the
+ *           link's junction box [qlo,qhi] (query) x [mlo,mhi] (model), covers
+ *           all of <a>'s model positions (another query copy of the same model
+ *           segment) or all of its query residues (another model copy). That
+ *           is an equally long alternative copy, so <a> is no evidence for
+ *           where the indel at that link goes. Partial overlaps do not count:
+ *           in a large junction box, chance 10-mers overlap nearly every
+ *           anchor (brief 26_0821-125).
+ *
+ * Args:     a     - the chain anchor
+ *           byj   - all <n> anchors, sorted by model start j
+ *           byt   - all <n> anchors, sorted by query start t
+ *           n     - number of anchors
+ *           maxk  - an upper bound on any anchor's length
+ *           qlo, qhi, mlo, mhi - the junction box
+ *
+ * Returns:  TRUE if contested, FALSE if not.
+ */
+static int
+kmc_anchor_contested(const kmw_hit_t *a, const kmw_hit_t *byj, const kmw_hit_t *byt, int n, int maxk,
+                     int qlo, int qhi, int mlo, int mhi)
+{
+  int pass, da = a->j - a->t;
+  for (pass = 0; pass < 2; pass++) {
+    const kmw_hit_t *arr = (pass == 0) ? byj : byt;
+    int lo  = (pass == 0) ? a->j : a->t, hi = lo + a->k - 1;
+    int key = lo - maxk + 1, l = 0, h = n, p;
+    /* first anchor that could reach <a>'s start */
+    while (l < h) { int mid = (l+h)/2; if (((pass == 0) ? arr[mid].j : arr[mid].t) < key) l = mid+1; else h = mid; }
+    for (p = l; p < n; p++) {
+      const kmw_hit_t *x = &arr[p];
+      int s = (pass == 0) ? x->j : x->t;
+      if (s > lo) break;                                   /* starts after <a>: cannot cover it */
+      if (s + x->k - 1 < hi)                   continue;   /* must cover the whole anchor */
+      if (x->j - x->t == da)                   continue;   /* same diagonal: not a copy   */
+      if (x->t + x->k - 1 < qlo || x->t > qhi) continue;   /* outside the junction box    */
+      if (x->j + x->k - 1 < mlo || x->j > mhi) continue;
+      return TRUE;
+    }
+  }
+  return FALSE;
+}
+
+/* Function: p7_Seq2BandsKmerChain()
+ * Date:     Brief 26_0628-027, 2026-07-03
+ *
+ * Purpose:  Derive p7 bands from a genome-wide k-mer seed-and-chain instead of
+ *           a single best window. Collect all k-mer seeds (model vs target),
+ *           chain them by global colinearity/diagonal consistency (O(N^2)-with-
+ *           bounded-lookback DP), backtrack the single best chain, emit its
+ *           seeds as multi-segment sparse pins, then the UNMODIFIED
+ *           p7_pins2bands_nodepad.
+ *
+ * Args:     cm         - covariance model (uses cm->fp7 for consensus, cm->p7bpad)
+ *           errbuf     - for error messages
+ *           dsq        - digital target sequence, 1..L
+ *           L          - length of dsq
+ *           nodepad    - [0..M] per-node pad array, or NULL for uniform cm->p7bpad
+ *           do_trunc   - brief 26_0628-033: CM_ALIGN_TRUNC flag, mirrors the other p7 band derivers'
+ *                        do_trunc argument for signature-shape consistency. Unused
+ *                        internally: this deriver chains exact k-mer seeds against
+ *                        the raw consensus, with no begin/end-anywhere (Tgm) score
+ *                        DP. The band it returns is NOT mode-neutral, though: the
+ *                        pin->band converter ends row L at i2k[L] + pad when the
+ *                        last pin is on row L, which admits no glocal
+ *                        non-truncated parse. Alignment callers in that mode
+ *                        widen row L with cm_p7_bands_ReachModelEnd() (briefs
+ *                        26_0821-099, 26_0821-100).
+ *           ret_i2k/ret_kmin/ret_kmax    - RETURN band arrays (caller frees)
+ *           ret_ncells - RETURN total banded cells (saturated int; 0 => no
+ *                        usable chain, caller falls back to unbanded Viterbi).
+ *           ret_rawpins - optional (NULL-able) RETURN [0..L]: the chain's pins
+ *                        before junction slack unpins any (every residue of every
+ *                        chain anchor; -1 = unpinned), caller frees. Set only when
+ *                        a band is returned (ncells > 0), else NULL. cmalign's
+ *                        local-mode EL check needs these, not <ret_i2k>: the slack
+ *                        blanks the anchor residues next to a large indel, which
+ *                        are what bound an alternative local end (briefs
+ *                        26_0821-128/26_0821-132).
+ *
+ * Return:   eslOK on success (including the ncells=0 "no chain" case).
+ */
+int
+cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad,
+                      int do_trunc,
+                      int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells,
+                      double *ret_a_s, double *ret_b_s, double *ret_bd_s, int **ret_rawpins)
+{
+  int status = eslOK;
+  (void) do_trunc; /* brief 26_0628-033: no-op, see function header comment */
+  int M = cm->fp7->M;
+  int K = cm->abc->K;
+  ESL_DSQ    *cons  = NULL;         /* model consensus, digital, cons[1..M]   */
+  kmc_ival_t *ival  = NULL;         /* raw seed intervals, pre-merge          */
+  int         nival = 0, ivalcap = 0;
+  kmw_hit_t  *seeds = NULL;         /* merged maximal-exact-match anchors      */
+  int         nseed = 0, seedcap = 0;
+  int         maxrun = 0;           /* longest merged seed run (= longest exact match) */
+  kmw_kmer_t *idx   = NULL;         /* target k-mer index                     */
+  float      *f     = NULL;         /* best chain score ending at anchor i     */
+  int        *pre   = NULL;         /* chain predecessor                      */
+  kmc_end_t  *eord  = NULL;         /* anchor ends, sorted by query end        */
+  kmw_hit_t  *byj   = NULL;         /* anchors sorted by model start (junction slack) */
+  kmw_hit_t  *byt   = NULL;         /* anchors sorted by query start (junction slack) */
+  int        *nopin = NULL;         /* [1..L+1] unpinned-row difference array  */
+  int        *chain = NULL;         /* backtracked chain (anchor indices)      */
+  int        *i2k   = NULL, *kmin = NULL, *kmax = NULL;
+  int        *rawpins = NULL;       /* pins before junction slack, for <ret_rawpins> */
+  int        *local_nodepad = NULL;
+  int j, x, i;
+  /* brief 26_0628-059 (extended 2026-07-11, brief 26_0430-190 follow-up): optional
+   * stage a/b/bd timing -- a = seed finding (raw hits + merge), b = colinear
+   * chaining DP + backtrack + pin emission, bd = converting the winning
+   * chain's pins into HMM bands (the p7_pins2bands_nodepad call). If we bail
+   * before reaching the chaining DP (M-gate/N-gate/no anchors), all elapsed
+   * time is attributed to stage a. If we reach the chaining DP but bail
+   * before pins2bands (alloc failure), the remainder is attributed to b and
+   * bd is 0. */
+  struct timespec _stagea_t0, _stageb_t0, _stagebd_t0, _stage_texit;
+  int _stageb_t0_set = FALSE, _stagebd_t0_set = FALSE;
+  if (ret_a_s != NULL) clock_gettime(CLOCK_MONOTONIC, &_stagea_t0);
+
+  *ret_i2k = NULL; *ret_kmin = NULL; *ret_kmax = NULL; *ret_ncells = 0;
+  if (ret_rawpins != NULL) *ret_rawpins = NULL;
+  if (cm->p7_kmerchain_mgate > 0 && M < cm->p7_kmerchain_mgate) {
+    status = eslOK;   /* brief 26_0628-045/26_0628-047 opt-in small-M gate; caller falls back per brief 26_0628-047's fallback mechanism */
+    goto CLEANUP;     /* brief 26_0628-059: route through CLEANUP so stage a/b timing (if requested) still gets filled in */
+  }
+
+  /* 1. model consensus (argmax match emission per node) */
+  ESL_ALLOC(cons, sizeof(ESL_DSQ) * (M+2));
+  cons[0] = eslDSQ_SENTINEL; cons[M+1] = eslDSQ_SENTINEL;
+  for (j = 1; j <= M; j++) {
+    int argmax = 0; float best = cm->fp7->mat[j][0];
+    for (x = 1; x < K; x++) if (cm->fp7->mat[j][x] > best) { best = cm->fp7->mat[j][x]; argmax = x; }
+    cons[j] = (ESL_DSQ) argmax;
+  }
+
+  /* 2. collect ALL k-mer seeds genome-wide as (diagonal, query-interval) records.
+   *    A raw genome-scale seed count is ~1e5-1e6, dominated by per-position
+   *    redundancy -- far too many for an O(N^2) chain. We collect each seed as
+   *    a query interval on its diagonal, then merge contiguous/overlapping
+   *    intervals per diagonal into maximal exact-match anchors, which collapses
+   *    the redundancy by ~1-2 orders of magnitude and yields chain-anchors that
+   *    are colinear match blocks.
+   *
+   *    Only one seed length, KMC_SEED_K, is used. Seeds of k=15,20,25,30 were
+   *    also collected until brief 26_0821-124, but every exact match of length
+   *    k > KMC_SEED_K is covered by overlapping KMC_SEED_K-mers on the same
+   *    diagonal, so after the merge the anchors were identical (brief
+   *    26_0821-119: identical alignments on 624 genome-scale cells). The
+   *    perk= field of the #KMERCHAIN line keeps its format, with 0 for the
+   *    retired tiers. */
+  if (KMC_SEED_K <= M && KMC_SEED_K <= L) {
+    int k = KMC_SEED_K, ntgt = 0, t, p;
+    ESL_ALLOC(idx, sizeof(kmw_kmer_t) * (L - k + 1));
+    for (t = 1; t <= L - k + 1; t++) {
+      int ok; uint64_t code = kmw_encode(dsq, t, k, &ok);
+      if (ok) { idx[ntgt].code = code; idx[ntgt].pos = t; ntgt++; }
+    }
+    qsort(idx, ntgt, sizeof(kmw_kmer_t), kmw_kmer_cmp);
+    for (j = 1; j <= M - k + 1; j++) {
+      int ok; uint64_t code = kmw_encode(cons, j, k, &ok);
+      if (!ok) continue;
+      for (p = kmw_lower_bound(idx, ntgt, code); p < ntgt && idx[p].code == code; p++) {
+        int tt = idx[p].pos;
+        if (nival == ivalcap) {
+          int newcap = ivalcap ? ivalcap*2 : 8192;
+          void *tmp = realloc(ival, sizeof(kmc_ival_t) * newcap);
+          if (tmp == NULL) { status = eslEMEM; goto ERROR; }
+          ival = tmp; ivalcap = newcap;
+        }
+        ival[nival].d = j - tt; ival[nival].tlo = tt; ival[nival].thi = tt + k - 1;
+        nival++;
+      }
+    }
+    free(idx); idx = NULL;
+  }
+
+  /* merge intervals per diagonal into maximal exact-match anchors. Sort by
+   * (diagonal, tlo); an anchor extends while the next interval on the same
+   * diagonal overlaps or abuts (tlo <= cur_thi + 1). Keep anchors of length
+   * >= KMC_MIN_ANCHOR to drop isolated short (mostly spurious) matches. */
+  if (nival > 0) {
+    qsort(ival, nival, sizeof(kmc_ival_t), kmc_ival_cmp);
+    int r = 0;
+    while (r < nival) {
+      int d = ival[r].d, tlo = ival[r].tlo, thi = ival[r].thi;
+      int s = r + 1;
+      while (s < nival && ival[s].d == d && ival[s].tlo <= thi + 1) {
+        if (ival[s].thi > thi) thi = ival[s].thi;
+        s++;
+      }
+      int len = thi - tlo + 1;
+      if (len > maxrun) maxrun = len;
+      if (len >= KMC_MIN_ANCHOR) {
+        if (nseed == seedcap) {
+          int newcap = seedcap ? seedcap*2 : 4096;
+          void *tmp = realloc(seeds, sizeof(kmw_hit_t) * newcap);
+          if (tmp == NULL) { status = eslEMEM; goto ERROR; }
+          seeds = tmp; seedcap = newcap;
+        }
+        seeds[nseed].j = tlo + d; seeds[nseed].t = tlo; seeds[nseed].k = len;
+        nseed++;
+      }
+      r = s;
+    }
+  }
+  /* brief 26_0628-046: per-query longest-exact-match signal gate (unvalidated,
+   * default off -- see kmer_ngate_fires() header comment). Checked right after
+   * the seed collection/merge above, independent of the M-gate above. */
+  if (kmer_ngate_fires(maxrun, cm->p7_kmerchain_mink)) {
+    status = eslOK; goto CLEANUP;
+  }
+
+  /* brief 26_0628-045: dump every pre-chain anchor (not just the winning chain), gated
+   * by BRIEF045_SEEDDUMP (silent no-op by default, same convention as brief
+   * 041's BRIEF041_CHAINDUMP). Lets us see whether a given model region has
+   * ANY candidate anchor at all, vs has one that the chaining DP rejected. */
+  free(ival); ival = NULL;
+
+  if (nseed == 0) {   /* no anchors: caller falls back to unbanded Viterbi */
+    status = eslOK; goto CLEANUP;
+  }
+
+  /* 3. colinear chaining DP. Sort anchors by query t (tiebreak model j). For
+   *    anchor i, the best predecessor j has t_j<t_i and model_j<model_i
+   *    (strictly colinear); link score = f[j] + overlap-adjusted match(i) -
+   *    gap_cost, where gap_cost penalizes the implied indel |diag_i - diag_j|
+   *    (minimap2-style).
+   *
+   *    Anchors are variable-length merged exact matches, not fixed-width
+   *    seeds, so the DP works in anchor END coordinates (brief
+   *    26_0821-117/26_0821-118):
+   *    - credit: i is credited only with its residues beyond j's END,
+   *      min(te_i - te_j, je_i - je_j, k_i). (minimap2's min(gap, w) term
+   *      assumes fixed-width seeds keyed by their end. Applied to start
+   *      coordinates it undercounted any anchor longer than its start-to-start
+   *      gap, so one long exact anchor outscored the whole chain behind it
+   *      and the chain started there.)
+   *    - predecessor order: predecessors are walked in decreasing query-END
+   *      order, starting from the last anchor ending before i ends, so a long
+   *      predecessor that ends right next to i is seen first, not last.
+   *      Anchors that start at or after i (contained in i, or not processed
+   *      yet) are walked past without counting against KMC_MAX_ITER.
+   *    KMC_MAX_ITER bounds the predecessors examined per anchor, so the DP is
+   *    O(N * MAX_ITER). It is the DP's only bound (see KMC_MAX_ITER). */
+  if (ret_a_s != NULL) { clock_gettime(CLOCK_MONOTONIC, &_stageb_t0); _stageb_t0_set = TRUE; }
+  qsort(seeds, nseed, sizeof(kmw_hit_t), kmc_seed_cmp);
+  ESL_ALLOC(f,   sizeof(float) * nseed);
+  ESL_ALLOC(pre, sizeof(int)   * nseed);
+  int   best_end = 0;
+  float best_sc  = -1.0;
+  double glin      = KMC_GAP_LIN;
+  double glog      = KMC_GAP_LOG;
+  int    max_iter  = KMC_MAX_ITER;
+  ESL_ALLOC(eord, sizeof(kmc_end_t) * nseed);
+  for (i = 0; i < nseed; i++) {
+    eord[i].te  = seeds[i].t + seeds[i].k - 1;
+    eord[i].je  = seeds[i].j + seeds[i].k - 1;
+    eord[i].idx = i;
+  }
+  qsort(eord, nseed, sizeof(kmc_end_t), kmc_end_cmp);
+  for (i = 0; i < nseed; i++) {
+    int   ti = seeds[i].t, ji = seeds[i].j, di = ji - ti;
+    int   tei = ti + seeds[i].k - 1, jei = ji + seeds[i].k - 1;   /* i's end */
+    float fi = (float) seeds[i].k;   /* base weight = chain-start contribution */
+    int   pi = -1;
+    int   e, jj, iter = 0;
+    int   lo = 0, hi = nseed;        /* binary search: first e with eord[e].te >= tei */
+    while (lo < hi) { int mid = (lo + hi) / 2; if (eord[mid].te < tei) lo = mid + 1; else hi = mid; }
+    for (e = lo - 1; e >= 0; e--) {
+      jj = eord[e].idx;
+      int qgap = ti - seeds[jj].t;
+      if (qgap <= 0) continue;                  /* need strictly increasing query start; not counted */
+      if (++iter > max_iter) break;             /* bound predecessors examined per anchor */
+      int rgap = ji - seeds[jj].j;
+      if (rgap <= 0) continue;                  /* need strictly increasing model pos (colinear) */
+      int dgap = di - (seeds[jj].j - seeds[jj].t); if (dgap < 0) dgap = -dgap;
+      int re = jei - eord[e].je;                /* i's model residues beyond j's end */
+      if (re <= 0) continue;                    /* i's model span contained in j's */
+      int qe = tei - eord[e].te;                /* > 0: j ends before i ends */
+      int mn = qe < re ? qe : re;
+      int match = mn < seeds[i].k ? mn : seeds[i].k;   /* overlap-adjusted, end coordinates */
+      float gapc  = (dgap > 0) ? (glin*(double)dgap + glog*log2((double)dgap)) : 0.0;
+      float sc    = f[jj] + (float) match - gapc;
+      if (sc > fi) { fi = sc; pi = jj; }
+    }
+    f[i] = fi; pre[i] = pi;
+    if (fi > best_sc) { best_sc = fi; best_end = i; }
+  }
+
+  free(eord); eord = NULL;
+
+  /* 4. backtrack the single best chain */
+  ESL_ALLOC(chain, sizeof(int) * nseed);
+  int nc = 0;
+  for (i = best_end; i != -1; i = pre[i]) chain[nc++] = i;   /* reversed (end->start) */
+  /* chain[0..nc-1] is end..start; reverse to start..end */
+  for (i = 0; i < nc/2; i++) { int tmp = chain[i]; chain[i] = chain[nc-1-i]; chain[nc-1-i] = tmp; }
+
+  /* 5. emit multi-segment pins from every seed in the winning chain, leaving
+   *    junction slack unpinned (briefs 26_0821-117/26_0821-118, bounded in
+   *    briefs 26_0821-119/26_0821-125/26_0821-126).
+   *
+   *    At a chain link whose diagonal changes by n = |dgap| (an implied indel
+   *    of n residues), the CM's best placement of the indel can lie anywhere in
+   *    a stretch that scales with n (equivalent placements, repeat copies), so
+   *    query rows near the junction are left unpinned. How far the slack reaches
+   *    is decided by copy-uniqueness, not anchor length: walking outward from
+   *    the junction, an anchor is passed over (unpinned) while another anchor in
+   *    the junction box covers it entirely (kmc_anchor_contested(): an equally
+   *    long alternative copy, e.g. a duplicated segment), and the first
+   *    uncontested anchor keeps all but min(n, length) of its residues. The
+   *    slack never exceeds n rows on either side of the junction, and never
+   *    falls below min(n, length) residues of the adjacent anchor. The query
+   *    rows between an out-and-back detour's two jumps are also unpinned (see
+   *    below). With no full-length repeat copy in any junction box and no
+   *    detour, this unpins the same rows as the earlier rule: the last
+   *    min(n, length) residues of the left anchor and the first min(n, length)
+   *    of the right anchor (the two can differ only where adjacent anchors
+   *    overlap in the query). The rule has no constant: n and the anchors
+   *    themselves bound it. (Unpinning every row within n of each junction instead fixes the
+   *    same misses but costs ~(2n)^2 band cells per link, brief 26_0821-119.) */
+  ESL_ALLOC(i2k, sizeof(int) * (L+1));
+  esl_vec_ISet(i2k, L+1, -1);
+  ESL_ALLOC(nopin, sizeof(int) * (L+2));
+  esl_vec_ISet(nopin, L+2, 0);
+  if (nc > 1) {
+    int c;
+    ESL_ALLOC(byj, sizeof(kmw_hit_t) * nseed);
+    ESL_ALLOC(byt, sizeof(kmw_hit_t) * nseed);
+    memcpy(byj, seeds, sizeof(kmw_hit_t) * nseed);
+    memcpy(byt, seeds, sizeof(kmw_hit_t) * nseed);
+    qsort(byj, nseed, sizeof(kmw_hit_t), kmc_seed_jcmp);
+    qsort(byt, nseed, sizeof(kmw_hit_t), kmc_seed_tcmp);
+
+    /* junction slack, link by link */
+    for (c = 1; c < nc; c++) {
+      const kmw_hit_t *A = &seeds[chain[c-1]], *B = &seeds[chain[c]];
+      int dd = (B->j - B->t) - (A->j - A->t); if (dd < 0) dd = -dd;
+      if (dd == 0) continue;
+      int te  = A->t + A->k - 1;   /* left junction: end of left anchor     */
+      int ts  = B->t;              /* right junction: start of right anchor */
+      int jle = A->j + A->k - 1;   /* model end of left anchor              */
+      int qlo = te - dd + 1, qhi = B->t + dd - 1, mlo = jle - dd + 1, mhi = B->j + dd - 1;   /* junction box */
+      int ext_l = 0, ext_r = 0, x;
+      /* right extent: walk across contested anchors */
+      for (x = c; x < nc; x++) {
+        const kmw_hit_t *a = &seeds[chain[x]];
+        if (! kmc_anchor_contested(a, byj, byt, nseed, maxrun, qlo, qhi, mlo, mhi)) break;
+        ext_r = a->t + a->k - ts;
+        if (ext_r >= dd) break;
+      }
+      if (x < nc && ext_r < dd) ext_r = seeds[chain[x]].t + ESL_MIN(dd, seeds[chain[x]].k) - ts;   /* in-anchor slack on the first uncontested anchor */
+      ext_r = ESL_MIN(dd, ESL_MAX(ext_r, ESL_MIN(dd, B->k)));
+      /* left extent: the mirror image */
+      for (x = c-1; x >= 0; x--) {
+        const kmw_hit_t *a = &seeds[chain[x]];
+        if (! kmc_anchor_contested(a, byj, byt, nseed, maxrun, qlo, qhi, mlo, mhi)) break;
+        ext_l = te - a->t + 1;
+        if (ext_l >= dd) break;
+      }
+      if (x >= 0 && ext_l < dd) ext_l = te - seeds[chain[x]].t - seeds[chain[x]].k + ESL_MIN(dd, seeds[chain[x]].k) + 1;
+      ext_l = ESL_MIN(dd, ESL_MAX(ext_l, ESL_MIN(dd, A->k)));
+
+      int a1 = ESL_MAX(1, te - ext_l + 1), b1 = te;
+      int a2 = ts,                         b2 = ESL_MIN(L, ts + ext_r - 1);
+      if (a1 <= b1) { nopin[a1]++; nopin[b1+1]--; }
+      if (a2 <= b2) { nopin[a2]++; nopin[b2+1]--; }
+    }
+    free(byj); byj = NULL;
+    free(byt); byt = NULL;
+
+    /* Out-and-back detours: links c1 < c2 whose jumps have opposite signs,
+     * where the chain after c2 is closer to its diagonal before c1 than either
+     * jump, and the anchors between them span no more than |dd1| + |dd2| (the
+     * two links' n-row windows meet). Which copy such a detour visits is a
+     * choice, not evidence, so every query row between the two jumps is
+     * unpinned. Only the first such c2 per c1 is taken; c2 is scanned only
+     * while the detour spans at most |dd1| + the largest jump on the chain. */
+    {
+      int c1, c2, maxdd = 0;
+      for (c = 1; c < nc; c++) {
+        int d2 = (seeds[chain[c]].j - seeds[chain[c]].t) - (seeds[chain[c-1]].j - seeds[chain[c-1]].t);
+        if (d2 < 0) d2 = -d2;
+        if (d2 > maxdd) maxdd = d2;
+      }
+      for (c1 = 1; c1 < nc; c1++) {
+        int d0  = seeds[chain[c1-1]].j - seeds[chain[c1-1]].t;
+        int dd1 = (seeds[chain[c1]].j - seeds[chain[c1]].t) - d0;
+        int ts1 = seeds[chain[c1]].t;
+        if (dd1 == 0) continue;
+        for (c2 = c1+1; c2 < nc; c2++) {
+          int dd2   = (seeds[chain[c2]].j - seeds[chain[c2]].t) - (seeds[chain[c2-1]].j - seeds[chain[c2-1]].t);
+          int te2   = seeds[chain[c2-1]].t + seeds[chain[c2-1]].k - 1;
+          int inner = te2 - ts1 + 1;
+          int net   = (seeds[chain[c2]].j - seeds[chain[c2]].t) - d0;
+          if (inner > abs(dd1) + maxdd) break;
+          if (dd2 == 0) continue;
+          if ((dd1 > 0) != (dd2 > 0) && abs(net) < ESL_MIN(abs(dd1), abs(dd2)) && inner <= abs(dd1) + abs(dd2)) {
+            nopin[ts1]++; nopin[te2+1]--;
+            break;
+          }
+        }
+      }
+    }
+  }
+  /* pin every chain-anchor residue on a row that is not unpinned */
+  {
+    int c, o, q, run = 0;
+    for (c = 0; c < nc; c++) {
+      int jj = seeds[chain[c]].j, tt = seeds[chain[c]].t, kk = seeds[chain[c]].k;
+      for (o = 0; o < kk; o++) {
+        int T = tt + o, J = jj + o;
+        if (T >= 1 && T <= L && J >= 1 && J <= M && i2k[T] == -1) i2k[T] = J;
+      }
+    }
+    if (ret_rawpins != NULL) {   /* the pins before junction slack, for the caller */
+      ESL_ALLOC(rawpins, sizeof(int) * (L+1));
+      memcpy(rawpins, i2k, sizeof(int) * (L+1));
+    }
+    for (q = 1; q <= L; q++) { run += nopin[q]; if (run > 0) i2k[q] = -1; }
+    free(nopin); nopin = NULL;
+  }
+
+  /* report pin span (reach) -- directly comparable to brief 26_0628-026's cover= */
+  {
+    int npin = 0, tmin = L+1, tmax = 0;
+    for (i = 1; i <= L; i++) if (i2k[i] != -1) { npin++; if (i < tmin) tmin = i; if (i > tmax) tmax = i; }
+  }
+
+  /* 6. pins -> bands via the UNMODIFIED consumer */
+  if (ret_bd_s != NULL) { clock_gettime(CLOCK_MONOTONIC, &_stagebd_t0); _stagebd_t0_set = TRUE; }
+  if (nodepad == NULL) {
+    int k2;
+    ESL_ALLOC(local_nodepad, sizeof(int) * (M+1));
+    for (k2 = 0; k2 <= M; k2++) local_nodepad[k2] = cm->p7bpad;
+    nodepad = local_nodepad;
+  }
+  /* brief 26_0821-096: the interpolated ramp is OFF by default here -- the band
+   * between consecutive anchors is the flat [pk-pad, ck+pad] rectangle, the only
+   * band that provably contains every path through both anchors. The ramp clips
+   * real indels that are unevenly placed within a long anchor gap, which can
+   * leave the band with no complete parse at all. --p7kmerchain-ramp
+   * (cm->p7_kmerchain_ramp) restores it, with brief 26_0628-043's
+   * --p7kmerchain-alpha slack (default 0.75); a negative alpha tells
+   * p7_pins2bands_nodepad() to skip the ramp. */
+  if ((status = p7_pins2bands_nodepad(i2k, errbuf, L, M, nodepad, 0,
+                                      (cm->p7_kmerchain_ramp ? cm->p7_kmerchain_ramp_alpha : -1.0),
+                                      &kmin, &kmax, ret_ncells)) != eslOK) goto ERROR;
+
+  *ret_i2k = i2k; *ret_kmin = kmin; *ret_kmax = kmax;
+  i2k = kmin = kmax = NULL;   /* handed off to caller */
+  if (ret_rawpins != NULL && *ret_ncells > 0) { *ret_rawpins = rawpins; rawpins = NULL; }
+
+ CLEANUP:
+  if (idx)           free(idx);
+  if (ival)          free(ival);
+  if (seeds)         free(seeds);
+  if (f)             free(f);
+  if (pre)           free(pre);
+  if (eord)          free(eord);
+  if (byj)           free(byj);
+  if (byt)           free(byt);
+  if (nopin)         free(nopin);
+  if (chain)         free(chain);
+  if (cons)          free(cons);
+  if (local_nodepad) free(local_nodepad);
+  if (i2k)           free(i2k);
+  if (kmin)          free(kmin);
+  if (kmax)          free(kmax);
+  if (rawpins)       free(rawpins);
+  if (ret_a_s != NULL) {
+    clock_gettime(CLOCK_MONOTONIC, &_stage_texit);
+    if (_stagebd_t0_set) {
+      *ret_a_s  = (_stageb_t0.tv_sec  - _stagea_t0.tv_sec)  + (_stageb_t0.tv_nsec  - _stagea_t0.tv_nsec)  / 1e9;
+      *ret_b_s  = (_stagebd_t0.tv_sec - _stageb_t0.tv_sec)  + (_stagebd_t0.tv_nsec - _stageb_t0.tv_nsec)  / 1e9;
+      if (ret_bd_s != NULL)
+        *ret_bd_s = (_stage_texit.tv_sec - _stagebd_t0.tv_sec) + (_stage_texit.tv_nsec - _stagebd_t0.tv_nsec) / 1e9;
+    } else if (_stageb_t0_set) {
+      *ret_a_s = (_stageb_t0.tv_sec - _stagea_t0.tv_sec) + (_stageb_t0.tv_nsec - _stagea_t0.tv_nsec) / 1e9;
+      *ret_b_s = (_stage_texit.tv_sec - _stageb_t0.tv_sec) + (_stage_texit.tv_nsec - _stageb_t0.tv_nsec) / 1e9;
+      if (ret_bd_s != NULL) *ret_bd_s = 0.;
+    } else {
+      *ret_a_s = (_stage_texit.tv_sec - _stagea_t0.tv_sec) + (_stage_texit.tv_nsec - _stagea_t0.tv_nsec) / 1e9;
+      *ret_b_s = 0.;
+      if (ret_bd_s != NULL) *ret_bd_s = 0.;
+    }
+  }
+  return status;
+
+ ERROR:
+  if (errbuf != NULL) snprintf(errbuf, eslERRBUFSIZE, "p7_Seq2BandsKmerChain() memory error");
+  goto CLEANUP;
+}
 
 #if 0
   /* if we want to get imin/imax instead of kmin/kmax */
@@ -663,7 +1722,6 @@ p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_kmin, int
   if(ret_imin != NULL) { *ret_imin = imin; } else free(imin);
   if(ret_imax != NULL) { *ret_imax = imax; } else free(imax);
 #endif
-}
 
 /* Function: DumpP7Bands()
  * Incept:   EPN, Thu Aug 14 08:45:54 2008
@@ -826,9 +1884,9 @@ cp9_ForwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *k
       kn = ESL_MAX(kn, (kmin[i-1]+1)); /* start at first cell from which we can look back to a valid cell at *mx[i-1][k-1] */
       kx = ESL_MIN(kmax[i], kmax[i-1]+1);
 
-      /* NOT SURE ABOUT THIS AND HOW IT COUPLES WITH BLOCK ABOVE kmin[i] == 0 */ 
-      for (kpcur = 0;            kpcur < (kn - kmin[i]);   kpcur++) mmx[i][kpcur] = -INFTY; /* impossible to reach these guys */
-      for (kpcur = kx-kmin[i]+1; kpcur <= kmax[i]-kmin[i]; kpcur++) mmx[i][kpcur] = -INFTY; /* impossible to reach these guys */
+      /* NOT SURE ABOUT THIS AND HOW IT COUPLES WITH BLOCK ABOVE kmin[i] == 0 */
+      for (kpcur = 0; kpcur < ESL_MIN(kn-kmin[i], kmax[i]-kmin[i]+1); kpcur++) mmx[i][kpcur] = -INFTY; /* impossible to reach these guys */
+      for (kpcur = ESL_MAX(0,kx-kmin[i]+1); kpcur <= kmax[i]-kmin[i]; kpcur++) mmx[i][kpcur] = -INFTY; /* impossible to reach these guys */
 
       kpcur = kn - kmin[i]; /* unnec, loop above ends with this */
       kpprv = kn - kmin[i-1];
@@ -843,11 +1901,11 @@ cp9_ForwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *k
 	/* FIX ME: inefficient! check B->M_K transition */
 	if(INBAND(i-1, 0)) { /* if i-1 is in k == 0's band */
 	  assert(kmin[(i-1)] == 0);
-	  if(mmx[i-1][0] != -INFTY) 
+	  if(mmx[i-1][0] != -INFTY)
 	   sc = ILogsum(sc, mmx[i-1][0] + CP9TSC(cp9O_BM,k));
 	}
 
-	if(sc != -INFTY) { 
+	if(sc != -INFTY) {
 	  mmx[i][kpcur] = sc + msc[k];
 	  /* E state update */
 	  endsc = ILogsum(endsc, mmx[i][kpcur] + CP9TSC(cp9O_ME,k));
@@ -863,8 +1921,8 @@ cp9_ForwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *k
       kn = ESL_MAX(kmin[i], kmin[i-1]);
       kx = ESL_MIN(kmax[i], kmax[i-1]);
 
-      for (kpcur = 0;            kpcur < (kn - kmin[i]);   kpcur++) imx[i][kpcur] = -INFTY; /* impossible to reach these guys */
-      for (kpcur = kx-kmin[i]+1; kpcur <= kmax[i]-kmin[i]; kpcur++) imx[i][kpcur] = -INFTY; /* impossible to reach these guys */
+      for (kpcur = 0; kpcur < ESL_MIN(kn-kmin[i], kmax[i]-kmin[i]+1); kpcur++) imx[i][kpcur] = -INFTY; /* impossible to reach these guys */
+      for (kpcur = ESL_MAX(0,kx-kmin[i]+1); kpcur <= kmax[i]-kmin[i]; kpcur++) imx[i][kpcur] = -INFTY; /* impossible to reach these guys */
 
       kpcur = kn - kmin[i]; /* unnec, loop above ends with this */
       kpprv = kn - kmin[i-1];
@@ -1053,12 +2111,12 @@ cp9_ForwardP7B_OLD_WITH_EL(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, i
       kn = ESL_MAX(kn, (kmin[i-1]+1)); /* start at first cell from which we can look back to a valid cell at *mx[i-1][k-1] */
       kx = ESL_MIN(kmax[i], kmax[i-1]+1);
 
-      /* NOT SURE ABOUT THIS AND HOW IT COUPLES WITH BLOCK ABOVE kmin[i] == 0 */ 
-      for (kpcur = 0;            kpcur < (kn - kmin[i]);   kpcur++) mmx[i][kpcur] = -INFTY; /* impossible to reach these guys */
-      for (kpcur = kx-kmin[i]+1; kpcur <= kmax[i]-kmin[i]; kpcur++) mmx[i][kpcur] = -INFTY; /* impossible to reach these guys */
+      /* NOT SURE ABOUT THIS AND HOW IT COUPLES WITH BLOCK ABOVE kmin[i] == 0 */
+      for (kpcur = 0; kpcur < ESL_MIN(kn-kmin[i], kmax[i]-kmin[i]+1); kpcur++) mmx[i][kpcur] = -INFTY; /* impossible to reach these guys */
+      for (kpcur = ESL_MAX(0,kx-kmin[i]+1); kpcur <= kmax[i]-kmin[i]; kpcur++) mmx[i][kpcur] = -INFTY; /* impossible to reach these guys */
 
-      for (kpcur = 0;            kpcur < (kn - kmin[i]);   kpcur++) elmx[i][kpcur] = -INFTY; /* impossible to reach these guys */
-      for (kpcur = kx-kmin[i]+1; kpcur <= kmax[i]-kmin[i]; kpcur++) elmx[i][kpcur] = -INFTY; /* impossible to reach these guys */
+      for (kpcur = 0; kpcur < ESL_MIN(kn-kmin[i], kmax[i]-kmin[i]+1); kpcur++) elmx[i][kpcur] = -INFTY; /* impossible to reach these guys */
+      for (kpcur = ESL_MAX(0,kx-kmin[i]+1); kpcur <= kmax[i]-kmin[i]; kpcur++) elmx[i][kpcur] = -INFTY; /* impossible to reach these guys */
 
       kpcur = kn - kmin[i]; /* unnec, loop above ends with this */
       kpprv = kn - kmin[i-1];
@@ -1097,13 +2155,13 @@ cp9_ForwardP7B_OLD_WITH_EL(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, i
 
 	/* el state */
 	sc = -INFTY;
-	if((cp9->flags & CPLAN9_EL) && cp9->has_el[k]) /* not all HMM nodes have an EL state (for ex: 
+	if((cp9->flags & CPLAN9_EL) && cp9->has_el[k]) /* not all HMM nodes have an EL state (for ex:
 								  HMM nodes that map to right half of a MATP_MP) */
 	  {
-	    if(mmx[i][kpcur] != -INFTY) { 
+	    sc = mmx[i][kpcur] + CP9TSC(cp9O_MEL,k); /* M_k -> EL_k transition */
+	    if(INBAND(i-1, k)) { /* EL_k self-loop: only if k was in band at previous row */
 	      kpprv_el = k - kmin[(i-1)];
-	      sc = ILogsum(mmx[i][kpcur]  + CP9TSC(cp9O_MEL,k), /* transitioned from cur node's match state */
-			   elmx[i-1][kpprv_el] + el_selfsc);      /* transitioned from cur node's EL state emitted ip on transition */
+	      sc = ILogsum(sc, elmx[i-1][kpprv_el] + el_selfsc);
 	    }
 	  }
 	elmx[i][kpcur] = sc;
@@ -1113,8 +2171,8 @@ cp9_ForwardP7B_OLD_WITH_EL(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, i
       kn = ESL_MAX(kmin[i], kmin[i-1]);
       kx = ESL_MIN(kmax[i], kmax[i-1]);
 
-      for (kpcur = 0;            kpcur < (kn - kmin[i]);   kpcur++) imx[i][kpcur] = -INFTY; /* impossible to reach these guys */
-      for (kpcur = kx-kmin[i]+1; kpcur <= kmax[i]-kmin[i]; kpcur++) imx[i][kpcur] = -INFTY; /* impossible to reach these guys */
+      for (kpcur = 0; kpcur < ESL_MIN(kn-kmin[i], kmax[i]-kmin[i]+1); kpcur++) imx[i][kpcur] = -INFTY; /* impossible to reach these guys */
+      for (kpcur = ESL_MAX(0,kx-kmin[i]+1); kpcur <= kmax[i]-kmin[i]; kpcur++) imx[i][kpcur] = -INFTY; /* impossible to reach these guys */
 
       kpcur = kn - kmin[i]; /* unnec, loop above ends with this */
       kpprv = kn - kmin[i-1];
@@ -1234,7 +2292,7 @@ cp9_BackwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *
   if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_BackwardP7B, dsq is NULL.");
   if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_BackwardP7B, mx is NULL.\n");
   if(mx->M != cp9->M)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_BackwardP7B, mx->M != cm->clen.\n");
-  if(cp9->flags & CPLAN9_EL)       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_BackwardP7B, cp9 EL flag up!\n");
+  /* EL states are handled in the body of this function (unlike cp9_ForwardP7B) */
     
   M = cp9->M;
 
@@ -1362,7 +2420,7 @@ cp9_BackwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *
 	  imx[i][kpcur]  = imx[i+1][kpprv] + CP9TSC(cp9O_II,M);
 	  imx[i][kpcur] += cp9->isc[dsq[i]][M];
       
-	  dmx[i][M]  = imx[i+1][kpprv] + CP9TSC(cp9O_DI,M); 
+	  dmx[i][kpcur]  = imx[i+1][kpprv] + CP9TSC(cp9O_DI,M);
 	}
 	else { 
 	  mmx[i][kpcur] = imx[i][kpcur] = dmx[i][kpcur] = -INFTY;
@@ -1392,8 +2450,8 @@ cp9_BackwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *
       kn = ESL_MAX(kn, 1); /* kn can't go all the way down to 0, that's a special case, handled outside the main loop */
       kx = ESL_MIN(kmax[i], kmax[i+1]-1);
 
-      for (kpcur = 0;            kpcur < (kn - kmin[i]);   kpcur++) mmx[i][kpcur] = imx[i][kpcur] = dmx[i][kpcur] = elmx[i][kpcur] = -INFTY; /* impossible to reach these guys */
-      for (kpcur = kx-kmin[i]+1; kpcur <= kmax[i]-kmin[i]; kpcur++) mmx[i][kpcur] = imx[i][kpcur] = dmx[i][kpcur] = elmx[i][kpcur] = -INFTY; /* impossible to reach these guys */
+      for (kpcur = 0; kpcur < ESL_MIN(kn-kmin[i], kmax[i]-kmin[i]+1); kpcur++) mmx[i][kpcur] = imx[i][kpcur] = dmx[i][kpcur] = elmx[i][kpcur] = -INFTY; /* impossible to reach these guys */
+      for (kpcur = ESL_MAX(0,kx-kmin[i]+1); kpcur <= kmax[i]-kmin[i]; kpcur++) mmx[i][kpcur] = imx[i][kpcur] = dmx[i][kpcur] = elmx[i][kpcur] = -INFTY; /* impossible to reach these guys */
 
       kpcur = kx - kmin[i]; /* unnec, loop above ends with this */
       kpprv = kx - kmin[i+1];
@@ -1403,7 +2461,7 @@ cp9_BackwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *
 	   * we're going backwards so we have to work out of order
 	   * we could get around this by storing the nodes each EL goes TO
 	   * in an el_to_ct[] vector. */
-	  if(cp9->flags & CPLAN9_EL) {
+	  if((cp9->flags & CPLAN9_EL) && INBAND(i+1, k)) { /* M_k at i+1 must be in band (k can be kmin[i+1]-1, giving kpprv = -1) */
 	    for(c = 0; c < cp9->el_from_ct[k]; c++) { /* el_from_ct[k] holds # ELs that can go to M_k */
 	      if(INBAND(i, cp9->el_from_idx[k][c])) { 
 		kpcur_el = cp9->el_from_idx[k][c] - kmin[i];
@@ -1416,13 +2474,20 @@ cp9_BackwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *
 	  /* Finish off elmx[i][k] with possibility of coming from self (EL_k), 
 	   * elmx[i][k] will have been filled by block above for ks > current k,
 	   * no M_k -> EL_k' with k' > k */
-	  if(INBAND(i+1, k)) { 
+	  if(INBAND(i+1, k)) {
 	    if((cp9->flags & CPLAN9_EL) && (cp9->has_el[k]))
-	      elmx[i][k] = ILogsum(elmx[i][kpcur], elmx[i+1][kpprv] + cp9->el_selfsc);
+	      elmx[i][kpcur] = ILogsum(elmx[i][kpcur], elmx[i+1][kpprv] + cp9->el_selfsc);
 	  }
 	  mmx[i][kpcur] = mmx[i+1][kpprv+1] + CP9TSC(cp9O_MM,k);
 	  imx[i][kpcur] = mmx[i+1][kpprv+1] + CP9TSC(cp9O_IM,k);
 	  dmx[i][kpcur] = mmx[i+1][kpprv+1] + CP9TSC(cp9O_DM,k);
+
+	  /* Fold M_k <- EL_k for this interior row's general k, mirroring the k==M
+	   * special case above (~line 2269) which already does this. The omission
+	   * here dates to the original 2008/2011 kernel.
+	   * (briefs 26_0316-036, 26_0430-288) */
+	  if((cp9->flags & CPLAN9_EL) && (cp9->has_el[k]))
+	    mmx[i][kpcur] = ILogsum(mmx[i][kpcur], elmx[i][kpcur] + CP9TSC(cp9O_MEL,k));
 	}
 
       /*********************************************************/
@@ -1614,7 +2679,615 @@ cp9_BackwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *
   /**********************************************************************************/
   /* End of Backward recursion */
   
+  if(ret_sc != NULL) *ret_sc = Scorify(mmx[i][0]);
   ESL_DPRINTF1(("#DEBUG: cp9_BackwardP7B() return score: %10.4f\n", Scorify(mmx[i][0])));
+  return eslOK;
+}
+
+
+/*****************************************************************
+ * Float-precision P7-banded CP9 F/B/Posterior triple.
+ *
+ * Mechanical mirrors of cp9_ForwardP7B, cp9_BackwardP7B, cp9_PosteriorP7B
+ * above. ILogsum -> p7_FLogsum, -INFTY -> -eslINFINITY, int sentinels ->
+ * float sentinels, all model scores read on the fly via Scorify().
+ *
+ * Used only by the truncated cmalign --p7band band derivation path
+ * (cp9_IterateSeq2BandsP7B do_trunc=TRUE branch).
+ *****************************************************************/
+
+int
+cp9_ForwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc)
+{
+  int          status;
+  int          i;
+  int          k;
+  float      **mmx;
+  float      **imx;
+  float      **dmx;
+  float      **elmx;
+  float       *erow;
+  int          M;
+  int          kp, kn, kx, kpcur, kpprv;
+
+  if(cp9 == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardP7BF, cp9 is NULL.\n");
+  if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardP7BF, dsq is NULL.");
+  if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardP7BF, mx is NULL.\n");
+  if(mx->M != cp9->M)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardP7BF, mx->M != cp9->M.\n");
+  if(kmin == NULL || kmax == NULL)     ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardP7BF, kmin/kmax NULL.\n");
+  /* EL states handled below via CPLAN9_EL guard, mirroring cp9_ForwardP7B_OLD_WITH_EL. */
+
+  M = cp9->M;
+  int const *tsc = cp9->otsc;
+
+  if((status = GrowCP9FMatrix(mx, errbuf, L, M, kmin, kmax, &mmx, &imx, &dmx, &elmx, &erow)) != eslOK) return status;
+
+  /* Init zero row */
+  mmx[0][0] = 0.;
+  imx[0][0] = -eslINFINITY;
+  dmx[0][0] = -eslINFINITY;
+  elmx[0][0]= -eslINFINITY;
+  erow[0]   = -eslINFINITY;
+
+  float sc;
+  i = 0;
+  kn = ESL_MAX(1, kmin[0]);
+  kp = kn - kmin[0];
+  for (k = kn; k <= kmax[0]; k++, kp++) {
+    assert(kp >= 0);
+    mmx[0][kp] = imx[0][kp] = elmx[0][kp] = -eslINFINITY;
+    sc = -eslINFINITY;
+    if(kp > 0) {
+      sc = FLogsum(FLogsum(mmx[0][kp-1] + Scorify(CP9TSC(cp9O_MD,k-1)),
+				 imx[0][kp-1] + Scorify(CP9TSC(cp9O_ID,k-1))),
+		      dmx[0][kp-1] + Scorify(CP9TSC(cp9O_DD,k-1)));
+    }
+    dmx[0][kp] = sc;
+  }
+  erow[0] = -eslINFINITY;
+  if(INBAND(0, M)) { erow[0] = dmx[0][M] + Scorify(CP9TSC(cp9O_DM,M)); }
+
+  for (i = 1; i <= L; i++) {
+      int const *isc_i = cp9->isc[dsq[i]];
+      int const *msc_i = cp9->msc[dsq[i]];
+      float endsc = -eslINFINITY;
+      float sc;
+
+      if(kmin[i] == 0) {
+	mmx[i][0]  = -eslINFINITY;
+	dmx[i][0]  = -eslINFINITY;
+	elmx[i][0] = -eslINFINITY;
+	sc = FLogsum(FLogsum(mmx[i-1][0] + Scorify(CP9TSC(cp9O_MI,0)),
+				   imx[i-1][0] + Scorify(CP9TSC(cp9O_II,0))),
+			dmx[i-1][0] + Scorify(CP9TSC(cp9O_DI,0)));
+	imx[i][0] = sc + Scorify(isc_i[0]);
+	kn = 1;
+      }
+      else {
+	kn = kmin[i];
+      }
+
+      /* match */
+      kn = ESL_MAX(kn, (kmin[i-1]+1));
+      kx = ESL_MIN(kmax[i], kmax[i-1]+1);
+
+      for (kpcur = 0; kpcur < ESL_MIN(kn-kmin[i], kmax[i]-kmin[i]+1); kpcur++) mmx[i][kpcur] = -eslINFINITY;
+      for (kpcur = ESL_MAX(0,kx-kmin[i]+1); kpcur <= kmax[i]-kmin[i]; kpcur++) mmx[i][kpcur] = -eslINFINITY;
+
+      for (kpcur = 0; kpcur < ESL_MIN(kn-kmin[i], kmax[i]-kmin[i]+1); kpcur++) elmx[i][kpcur] = -eslINFINITY;
+      for (kpcur = ESL_MAX(0,kx-kmin[i]+1); kpcur <= kmax[i]-kmin[i]; kpcur++) elmx[i][kpcur] = -eslINFINITY;
+
+      kpcur = kn - kmin[i];
+      kpprv = kn - kmin[i-1];
+      for (k = kn; k <= kx; k++, kpcur++, kpprv++) {
+	assert((kpprv-1) >= 0);
+
+	sc = FLogsum(FLogsum(mmx[i-1][kpprv-1] + Scorify(CP9TSC(cp9O_MM,k-1)),
+				   imx[i-1][kpprv-1] + Scorify(CP9TSC(cp9O_IM,k-1))),
+			dmx[i-1][kpprv-1] + Scorify(CP9TSC(cp9O_DM,k-1)));
+
+	if(INBAND(i-1, 0)) {
+	  assert(kmin[(i-1)] == 0);
+	  if(mmx[i-1][0] != -eslINFINITY)
+	    sc = FLogsum(sc, mmx[i-1][0] + Scorify(CP9TSC(cp9O_BM,k)));
+	}
+
+	if (cp9->flags & CPLAN9_EL) {
+	  int c_el, kpprv_el;
+	  for (c_el = 0; c_el < cp9->el_from_ct[k]; c_el++) {
+	    if (INBAND(i-1, cp9->el_from_idx[k][c_el])) {
+	      kpprv_el = cp9->el_from_idx[k][c_el] - kmin[i-1];
+	      sc = FLogsum(sc, elmx[i-1][kpprv_el]);
+	    }
+	  }
+	}
+
+	if(sc != -eslINFINITY) {
+	  mmx[i][kpcur] = sc + Scorify(msc_i[k]);
+	  endsc = FLogsum(endsc, mmx[i][kpcur] + Scorify(CP9TSC(cp9O_ME,k)));
+	}
+	else {
+	  mmx[i][kpcur] = -eslINFINITY;
+	}
+
+	{
+	  float el_sc = -eslINFINITY;
+	  if ((cp9->flags & CPLAN9_EL) && cp9->has_el[k]) {
+	    el_sc = mmx[i][kpcur] + Scorify(CP9TSC(cp9O_MEL, k)); /* M_k -> EL_k */
+	    if (INBAND(i-1, k)) {                                  /* EL self-loop */
+	      int kpprv_el = k - kmin[i-1];
+	      el_sc = FLogsum(el_sc, elmx[i-1][kpprv_el] + Scorify(cp9->el_selfsc));
+	    }
+	  }
+	  elmx[i][kpcur] = el_sc;
+	}
+      }
+
+      /* brief 26_0430-134: BM (B->M_k) coverage fix per brief 26_0430-130 phase 3.
+       * The match loop above fills only k in [kn,kx], clipped by the diagonal
+       * MM-predecessor bound (kx=ESL_MIN(kmax[i],kmax[i-1]+1) at :1979).  The
+       * begin transition B=(i-1,0)->M_k and the EL-from-into-M contributions do
+       * not need that diagonal predecessor, but folding them inside the match
+       * loop gates them on it.  When row 0 is pinned by IBV (kmax[0]=0), row 1
+       * enters only M_1, dropping begin mass into M_2..M_M that cp9_BackwardP7BF
+       * counts over the full child band -> F<B asymmetry (brief 26_0430-130).
+       *
+       * Fix: a dedicated pass over the full row band [max(1,kmin[i]),kmax[i]]
+       * MINUS the [kn,kx] range already handled by the match loop (skip to avoid
+       * double-count).  These supplementary cells have no in-band diagonal
+       * predecessor (low range k<=kmin[i-1], high range k>kmax[i-1]+1), so sc
+       * starts at -inf; we add begin + EL-from-into-M and fold the result into
+       * endsc (M->E) and elmx (M->EL) exactly as the match loop does.  Runs
+       * BEFORE the delete recursion and erow accumulation so they observe the
+       * corrected mmx[i][k]/endsc/elmx.  Gated on INBAND(i-1,0) && mmx[i-1][0] !=
+       * -inf (begin mass present).  kn/kx still hold the match-loop values here
+       * (the insert loop reassigns them below).  :1979 stays UNCHANGED.
+       */
+      if(INBAND(i-1, 0) && mmx[i-1][0] != -eslINFINITY) {
+	int k_lo = ESL_MAX(1, kmin[i]);
+	int k_hi = kmax[i];
+	for (k = k_lo; k <= k_hi; k++) {
+	  if(k >= kn && k <= kx) continue;   /* already filled by the match loop */
+	  kpcur = k - kmin[i];
+
+	  sc = mmx[i-1][0] + Scorify(CP9TSC(cp9O_BM,k));  /* begin; diagonal predecessor out of band here */
+
+	  if (cp9->flags & CPLAN9_EL) {
+	    int c_el, kpprv_el;
+	    for (c_el = 0; c_el < cp9->el_from_ct[k]; c_el++) {
+	      if (INBAND(i-1, cp9->el_from_idx[k][c_el])) {
+		kpprv_el = cp9->el_from_idx[k][c_el] - kmin[i-1];
+		sc = FLogsum(sc, elmx[i-1][kpprv_el]);
+	      }
+	    }
+	  }
+
+	  if(sc != -eslINFINITY) {
+	    mmx[i][kpcur] = sc + Scorify(msc_i[k]);
+	    endsc = FLogsum(endsc, mmx[i][kpcur] + Scorify(CP9TSC(cp9O_ME,k)));
+	  }
+	  else {
+	    mmx[i][kpcur] = -eslINFINITY;
+	  }
+
+	  {
+	    float el_sc = -eslINFINITY;
+	    if ((cp9->flags & CPLAN9_EL) && cp9->has_el[k]) {
+	      el_sc = mmx[i][kpcur] + Scorify(CP9TSC(cp9O_MEL, k)); /* M_k -> EL_k */
+	      if (INBAND(i-1, k)) {                                  /* EL self-loop */
+		int kpprv_el = k - kmin[i-1];
+		el_sc = FLogsum(el_sc, elmx[i-1][kpprv_el] + Scorify(cp9->el_selfsc));
+	      }
+	    }
+	    elmx[i][kpcur] = el_sc;
+	  }
+	}
+      }
+
+      /* insert */
+      kn = ESL_MAX(kmin[i], kmin[i-1]);
+      kx = ESL_MIN(kmax[i], kmax[i-1]);
+
+      for (kpcur = 0; kpcur < ESL_MIN(kn-kmin[i], kmax[i]-kmin[i]+1); kpcur++) imx[i][kpcur] = -eslINFINITY;
+      for (kpcur = ESL_MAX(0,kx-kmin[i]+1); kpcur <= kmax[i]-kmin[i]; kpcur++) imx[i][kpcur] = -eslINFINITY;
+
+      kpcur = kn - kmin[i];
+      kpprv = kn - kmin[i-1];
+      for (k = kn; k <= kx; k++, kpcur++, kpprv++) {
+	assert(kpprv >= 0);
+	sc = FLogsum(FLogsum(mmx[i-1][kpprv] + Scorify(CP9TSC(cp9O_MI,k)),
+				   imx[i-1][kpprv] + Scorify(CP9TSC(cp9O_II,k))),
+			dmx[i-1][kpprv] + Scorify(CP9TSC(cp9O_DI,k)));
+	if(sc != -eslINFINITY) imx[i][kpcur] = sc + Scorify(isc_i[k]);
+	else                   imx[i][kpcur] = -eslINFINITY;
+      }
+
+      /* delete */
+      kn = kmin[i]+1;
+
+      for (kpcur = 0; kpcur < (kn - kmin[i]); kpcur++) dmx[i][kpcur] = -eslINFINITY;
+      kpcur = kn - kmin[i];
+      for (k = kn; k <= kmax[i]; k++, kpcur++) {
+	sc = FLogsum(FLogsum(mmx[i][kpcur-1] + Scorify(CP9TSC(cp9O_MD,k-1)),
+				   imx[i][kpcur-1] + Scorify(CP9TSC(cp9O_ID,k-1))),
+			dmx[i][kpcur-1] + Scorify(CP9TSC(cp9O_DD,k-1)));
+	dmx[i][kpcur] = sc;
+      }
+
+      if(INBAND(i, M)) {
+	endsc = FLogsum(FLogsum(endsc, dmx[i][M-kmin[i]] + Scorify(CP9TSC(cp9O_DM,M))),
+			   imx[i][M-kmin[i]] + Scorify(CP9TSC(cp9O_IM,M)));
+      }
+
+      erow[i] = endsc;
+
+      if (cp9->flags & CPLAN9_EL) {
+	int c_el;
+	for (c_el = 0; c_el < cp9->el_from_ct[M+1]; c_el++) {
+	  if (INBAND(i, cp9->el_from_idx[M+1][c_el])) {
+	    int kpel = cp9->el_from_idx[M+1][c_el] - kmin[i];
+	    erow[i] = FLogsum(erow[i], elmx[i][kpel]);
+	  }
+	}
+      }
+  }
+
+  *ret_sc = erow[L];
+  return eslOK;
+}
+
+
+int
+cp9_BackwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc)
+{
+  int          status;
+  int          i;
+  int          k;
+  float      **mmx;
+  float      **imx;
+  float      **dmx;
+  float      **elmx;
+  float       *erow;
+  int          c;
+  int          M;
+  int          kpcur, kpprv, kpcur_el;
+  int          kprv, kprvn, kprvx;
+  int          kn, kx;
+
+  if(cp9 == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_BackwardP7BF, cp9 is NULL.\n");
+  if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_BackwardP7BF, dsq is NULL.");
+  if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_BackwardP7BF, mx is NULL.\n");
+  if(mx->M != cp9->M)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_BackwardP7BF, mx->M != cp9->M.\n");
+
+  M = cp9->M;
+  int const *tsc = cp9->otsc;
+
+  if((status = GrowCP9FMatrix(mx, errbuf, L, M, kmin, kmax, &mmx, &imx, &dmx, &elmx, &erow)) != eslOK) return status;
+
+  i = L;
+  kpcur = 0;
+  for (k = kmin[i]; k <= kmax[i]; k++, kpcur++) elmx[i][kpcur] = -eslINFINITY;
+  if(cp9->flags & CPLAN9_EL) {
+    for(c = 0; c < cp9->el_from_ct[cp9->M+1]; c++)
+      if(INBAND(i, cp9->el_from_idx[M+1][c])) {
+	kpcur_el = cp9->el_from_idx[M+1][c] - kmin[i];
+	elmx[i][kpcur_el] = 0.;
+      }
+  }
+
+  if(INBAND(i, M)) {
+    assert(M == kmax[i]);
+    kpcur = M-kmin[i];
+    mmx[i][kpcur]  = 0. +
+      FLogsum(elmx[i][kpcur] + Scorify(CP9TSC(cp9O_MEL, M)),
+		 Scorify(CP9TSC(cp9O_ME,M)));
+    mmx[i][kpcur] += Scorify(cp9->msc[dsq[i]][M]);
+    imx[i][kpcur]  = 0. + Scorify(CP9TSC(cp9O_IM,M));
+    imx[i][kpcur] += Scorify(cp9->isc[dsq[i]][M]);
+    dmx[i][kpcur]  = Scorify(CP9TSC(cp9O_DM,M));
+    kx = M-1;
+    kpcur--;
+  }
+  else { kx = kmax[i]; kpcur = kmax[i]-kmin[i]; }
+
+  for (k = kx; k >= kmin[i]; k--, kpcur--) {
+      mmx[i][kpcur]  = 0 + Scorify(CP9TSC(cp9O_ME,k));
+      if(INBAND(i, k+1)) {
+	mmx[i][kpcur]  = FLogsum(mmx[i][kpcur], dmx[i][kpcur+1] + Scorify(CP9TSC(cp9O_MD,k)));
+      }
+      if(cp9->flags & CPLAN9_EL)
+	mmx[i][kpcur]  = FLogsum(mmx[i][kpcur], elmx[i][kpcur] + Scorify(CP9TSC(cp9O_MEL,k)));
+      mmx[i][kpcur] += Scorify(cp9->msc[dsq[i]][k]);
+
+      if(INBAND(i, k+1)) {
+	imx[i][kpcur]  = dmx[i][kpcur+1] + Scorify(CP9TSC(cp9O_ID,k));
+	imx[i][kpcur] += Scorify(cp9->isc[dsq[i]][k]);
+
+	dmx[i][kpcur]  = dmx[i][kpcur+1] + Scorify(CP9TSC(cp9O_DD,k));
+      }
+      else {
+	imx[i][kpcur] = -eslINFINITY;
+	dmx[i][kpcur] = -eslINFINITY;
+      }
+  }
+
+  if(INBAND(i, 0)) {
+    mmx[i][0]  = dmx[i][1] + Scorify(CP9TSC(cp9O_MD,0));
+    imx[i][0]  = dmx[i][1] + Scorify(CP9TSC(cp9O_ID,0));
+    imx[i][0] += Scorify(cp9->isc[dsq[i]][0]);
+
+    dmx[i][0]   = -eslINFINITY;
+    elmx[i][0]  = -eslINFINITY;
+  }
+
+  for (i = L-1; i >= 1; i--) {
+      kpcur = 0;
+      for (k = kmin[i]; k <= kmax[i]; k++, kpcur++) elmx[i][kpcur] = -eslINFINITY;
+
+      if(INBAND(i, M)) {
+	kpcur = M-kmin[i];
+	if((cp9->flags & CPLAN9_EL) && (cp9->has_el[M]))
+	  elmx[i][kpcur] = elmx[i][kpcur] + Scorify(cp9->el_selfsc);
+
+	if(INBAND(i+1, M)) {
+	  kpprv = M-kmin[i+1];
+	  mmx[i][kpcur]  = imx[i+1][kpprv] + Scorify(CP9TSC(cp9O_MI,M));
+	  mmx[i][kpcur] += Scorify(cp9->msc[dsq[i]][M]);
+
+	  imx[i][kpcur]  = imx[i+1][kpprv] + Scorify(CP9TSC(cp9O_II,M));
+	  imx[i][kpcur] += Scorify(cp9->isc[dsq[i]][M]);
+
+	  dmx[i][kpcur]  = imx[i+1][kpprv] + Scorify(CP9TSC(cp9O_DI,M));
+	}
+	else {
+	  mmx[i][kpcur] = imx[i][kpcur] = dmx[i][kpcur] = -eslINFINITY;
+	}
+
+	if((cp9->flags & CPLAN9_EL) && (cp9->has_el[M]))
+	  mmx[i][kpcur] = FLogsum(mmx[i][kpcur], elmx[i][kpcur] + Scorify(CP9TSC(cp9O_MEL,M)));
+
+	if(INBAND(i+1, M)) {
+	  if(cp9->flags & CPLAN9_EL) {
+	    for(c = 0; c < cp9->el_from_ct[M]; c++)
+	      if(INBAND(i, cp9->el_from_idx[M][c])) {
+		kpcur_el = cp9->el_from_idx[M][c] - kmin[i];
+		elmx[i][kpcur_el] = FLogsum(elmx[i][kpcur_el], mmx[i+1][kpprv]);
+	      }
+	  }
+	}
+      }
+
+      /* MATCH transitions */
+      kn = ESL_MAX(kmin[i], kmin[i+1]-1);
+      kn = ESL_MAX(kn, 1);
+      kx = ESL_MIN(kmax[i], kmax[i+1]-1);
+
+      for (kpcur = 0; kpcur < ESL_MIN(kn-kmin[i], kmax[i]-kmin[i]+1); kpcur++) mmx[i][kpcur] = imx[i][kpcur] = dmx[i][kpcur] = elmx[i][kpcur] = -eslINFINITY;
+      for (kpcur = ESL_MAX(0,kx-kmin[i]+1); kpcur <= kmax[i]-kmin[i]; kpcur++) mmx[i][kpcur] = imx[i][kpcur] = dmx[i][kpcur] = elmx[i][kpcur] = -eslINFINITY;
+
+      kpcur = kx - kmin[i];
+      kpprv = kx - kmin[i+1];
+      for (k = kx; k >= kn; k--, kpcur--, kpprv--) {
+	  if((cp9->flags & CPLAN9_EL) && INBAND(i+1, k)) { /* M_k at i+1 must be in band (k can be kmin[i+1]-1, giving kpprv = -1) */
+	    for(c = 0; c < cp9->el_from_ct[k]; c++) {
+	      if(INBAND(i, cp9->el_from_idx[k][c])) {
+		kpcur_el = cp9->el_from_idx[k][c] - kmin[i];
+		elmx[i][kpcur_el] = FLogsum(elmx[i][kpcur_el], mmx[i+1][kpprv]);
+	      }
+	    }
+	  }
+
+	  if(INBAND(i+1, k)) {
+	    if((cp9->flags & CPLAN9_EL) && (cp9->has_el[k]))
+	      elmx[i][kpcur] = FLogsum(elmx[i][kpcur], elmx[i+1][kpprv] + Scorify(cp9->el_selfsc));
+	  }
+	  mmx[i][kpcur] = mmx[i+1][kpprv+1] + Scorify(CP9TSC(cp9O_MM,k));
+	  imx[i][kpcur] = mmx[i+1][kpprv+1] + Scorify(CP9TSC(cp9O_IM,k));
+	  dmx[i][kpcur] = mmx[i+1][kpprv+1] + Scorify(CP9TSC(cp9O_DM,k));
+      }
+
+      /* INSERT transitions */
+      kn = ESL_MAX(kmin[i], kmin[i+1]);
+      kn = ESL_MAX(kn, 1);
+      kx = ESL_MIN(kmax[i], kmax[i+1]);
+
+      kpcur = kx - kmin[i];
+      kpprv = kx - kmin[i+1];
+      for (k = kx; k >= kn; k--, kpcur--, kpprv--) {
+	  mmx[i][kpcur] = FLogsum(mmx[i][kpcur], imx[i+1][kpprv] + Scorify(CP9TSC(cp9O_MI,k)));
+	  imx[i][kpcur] = FLogsum(imx[i][kpcur], imx[i+1][kpprv] + Scorify(CP9TSC(cp9O_II,k)));
+	  dmx[i][kpcur] = FLogsum(dmx[i][kpcur], imx[i+1][kpprv] + Scorify(CP9TSC(cp9O_DI,k)));
+      }
+
+      /* DELETE transitions */
+      kn = ESL_MAX(kmin[i], kmin[i]-1);
+      kn = ESL_MAX(kn, 1);
+      kx = ESL_MIN(kmax[i], kmax[i]-1);
+
+      kpcur = kx - kmin[i];
+      for (k = kx; k >= kn; k--, kpcur--) {
+	  mmx[i][kpcur] = FLogsum(mmx[i][kpcur], dmx[i][kpcur+1] + Scorify(CP9TSC(cp9O_MD,k)));
+	  imx[i][kpcur] = FLogsum(imx[i][kpcur], dmx[i][kpcur+1] + Scorify(CP9TSC(cp9O_ID,k)));
+	  dmx[i][kpcur] = FLogsum(dmx[i][kpcur], dmx[i][kpcur+1] + Scorify(CP9TSC(cp9O_DD,k)));
+
+	  if((cp9->flags & CPLAN9_EL) && cp9->has_el[k])
+	    mmx[i][kpcur] = FLogsum(mmx[i][kpcur], elmx[i][kpcur] + Scorify(CP9TSC(cp9O_MEL,k)));
+
+	  mmx[i][kpcur] += Scorify(cp9->msc[dsq[i]][k]);
+	  imx[i][kpcur] += Scorify(cp9->isc[dsq[i]][k]);
+      }
+      for(k = kx+1; k <= kmax[i]; k++) {
+	kpcur = k - kmin[i];
+	if((cp9->flags & CPLAN9_EL) && cp9->has_el[k])
+	  mmx[i][kpcur] = FLogsum(mmx[i][kpcur], elmx[i][kpcur] + Scorify(CP9TSC(cp9O_MEL,k)));
+	mmx[i][kpcur] += Scorify(cp9->msc[dsq[i]][k]);
+	imx[i][kpcur] += Scorify(cp9->isc[dsq[i]][k]);
+      }
+
+      /* k == 0 special case */
+      kpcur = 0;
+      kpprv = 0 - kmin[i+1];
+      if(INBAND(i, 0)) {
+	assert(kmin[i] == 0);
+	dmx[i][kpcur]  = -eslINFINITY;
+	elmx[i][kpcur] = -eslINFINITY;
+
+	imx[i][kpcur] = -eslINFINITY;
+	if(INBAND(i+1, 1)) {
+	  if(mmx[i+1][kpprv+1] != -eslINFINITY)
+	    imx[i][kpcur] = FLogsum(imx[i][kpcur], mmx[i+1][kpprv+1] + Scorify(CP9TSC(cp9O_IM,0)));
+	}
+	if(INBAND(i+1, 0)) {
+	  if(imx[i+1][kpprv] != -eslINFINITY)
+	    imx[i][kpcur] = FLogsum(imx[i][kpcur], imx[i+1][kpprv] + Scorify(CP9TSC(cp9O_II,0)));
+	}
+	if(INBAND(i, 1)) {
+	  if(dmx[i][kpcur+1] != -eslINFINITY)
+	    imx[i][kpcur] = FLogsum(imx[i][kpcur], dmx[i][kpcur+1] + Scorify(CP9TSC(cp9O_ID,0)));
+	}
+
+	kprvn = ESL_MAX(1, kmin[i+1]);
+	kprvx = kmax[i+1];
+	kpprv = kprvx - kmin[i+1];
+	mmx[i][kpcur] = -eslINFINITY;
+	for(kprv = kprvx; kprv >= kprvn; kprv--, kpprv--) {
+	  if(mmx[i+1][kpprv] != -eslINFINITY)
+	    mmx[i][kpcur] = FLogsum(mmx[i][kpcur], (mmx[i+1][kpprv] + Scorify(CP9TSC(cp9O_BM,kprv))));
+	}
+	k = 0;
+	if(INBAND(i+1, 0)) {
+	  kpprv = k - kmin[i+1];
+	  if(imx[i+1][kpprv] != -eslINFINITY) {
+	    mmx[i][kpcur] = FLogsum(mmx[i][kpcur], (imx[i+1][kpprv] + Scorify(CP9TSC(cp9O_MI,0))));
+	  }
+	}
+	if(INBAND(i, 1)) {
+	  if(dmx[i][kpcur+1] != -eslINFINITY) {
+	    mmx[i][kpcur] = FLogsum(mmx[i][kpcur], (dmx[i][kpcur+1] + Scorify(CP9TSC(cp9O_MD,0))));
+	  }
+	}
+      }
+  }
+
+  /* Special case: i == 0 */
+  i = 0;
+  kpcur = k - kmin[0];
+  for (kpcur = 0; kpcur <= kmax[0] - kmin[0]; kpcur++) mmx[i][kpcur] = imx[i][kpcur] = dmx[i][kpcur] = elmx[i][kpcur] = -eslINFINITY;
+
+  if(INBAND(i, M)) {
+    kpcur = M - kmin[i];
+    kpprv = M - kmin[i+1];
+    if(INBAND(i+1, M)) {
+      dmx[i][kpcur]  = imx[i+1][kpprv] + Scorify(CP9TSC(cp9O_DI,M));
+    }
+  }
+
+  kn = ESL_MAX(kmin[i], kmin[i+1]-1);
+  kn = ESL_MAX(kn, 1);
+  kx = ESL_MIN(kmax[i], kmax[i+1]-1);
+  kpcur = kx - kmin[i];
+  kpprv = kx - kmin[i+1];
+  for (k = kx; k >= kn; k--, kpcur--, kpprv--)
+    dmx[i][kpcur]  = mmx[i+1][kpprv+1] + Scorify(CP9TSC(cp9O_DM,k));
+
+  kn = ESL_MAX(kmin[i], kmin[i+1]);
+  kn = ESL_MAX(kn, 1);
+  kx = ESL_MIN(kmax[i], kmax[i+1]);
+  kpcur = kx - kmin[i];
+  kpprv = kx - kmin[i+1];
+  for (k = kx; k >= kn; k--, kpcur--, kpprv--)
+    dmx[i][kpcur] = FLogsum(dmx[i][kpcur], imx[i+1][kpprv] + Scorify(CP9TSC(cp9O_DI,k)));
+
+  kn = ESL_MAX(kmin[i], kmin[i]-1);
+  kn = ESL_MAX(kn, 1);
+  kx = ESL_MIN(kmax[i], kmax[i]-1);
+  kpcur = kx - kmin[i];
+  for (k = kx; k >= kn; k--, kpcur--)
+    dmx[i][kpcur] = FLogsum(dmx[i][kpcur], dmx[i][kpcur+1] + Scorify(CP9TSC(cp9O_DD,k)));
+
+  k = 0;
+  if(INBAND(i, 0)) {
+    assert(kmin[i] == 0);
+    imx[i][0] = -eslINFINITY;
+    dmx[i][0]   = -eslINFINITY;
+    elmx[i][0]  = -eslINFINITY;
+    mmx[i][0] = -eslINFINITY;
+
+    kprvn = ESL_MAX(1, kmin[i+1]);
+    kprvx = kmax[i+1];
+
+    kpcur = 0;
+    kpprv = kprvx - kmin[i+1];
+    mmx[i][kpcur] = -eslINFINITY;
+    for(kprv = kprvx; kprv >= kprvn; kprv--, kpprv--) {
+      if(mmx[i+1][kpprv] != -eslINFINITY)
+	mmx[i][kpcur] = FLogsum(mmx[i][kpcur], (mmx[i+1][kpprv] + Scorify(CP9TSC(cp9O_BM,kprv))));
+    }
+    k = 0;
+    if(INBAND(i+1, 0)) {
+      kpprv = k - kmin[i+1];
+      if(imx[i+1][kpprv] != -eslINFINITY) {
+	mmx[i][kpcur] = FLogsum(mmx[i][kpcur], (imx[i+1][kpprv] + Scorify(CP9TSC(cp9O_MI,0))));
+      }
+    }
+    if(INBAND(i, 1)) {
+      if(dmx[i][kpcur+1] != -eslINFINITY) {
+	mmx[i][kpcur] = FLogsum(mmx[i][kpcur], (dmx[i][kpcur+1] + Scorify(CP9TSC(cp9O_MD,0))));
+      }
+    }
+  }
+
+  if(ret_sc != NULL) *ret_sc = mmx[i][0];
+  return eslOK;
+}
+
+
+int
+cp9_PosteriorP7BF(ESL_DSQ *dsq, char *errbuf, int L, CP9_t *hmm, CP9_FMX *fmx, CP9_FMX *bmx, CP9_FMX *pmx, int *kmin, int *kmax)
+{
+  int i;
+  int k;
+  float sc;
+  int M = hmm->M;
+  int kp, kn, kx;
+
+  if(bmx != pmx) GrowCP9FMatrix(pmx, errbuf, L, M, kmin, kmax, NULL, NULL, NULL, NULL, NULL);
+
+  sc = bmx->mmx[0][0];
+
+  assert(kmin[0] == 0);
+  pmx->mmx[0][0] = fmx->mmx[0][0] + bmx->mmx[0][0] - sc;
+  pmx->imx[0][0] = -eslINFINITY;
+  pmx->dmx[0][0] = -eslINFINITY;
+  i  = 0;
+  kn = ESL_MAX(kmin[i], 1);
+  kx = kmax[i];
+  kp = kn - kmin[i];
+  for (k = kn; k <= kx; k++, kp++) {
+    pmx->mmx[0][kp] = -eslINFINITY;
+    pmx->imx[0][kp] = -eslINFINITY;
+    pmx->dmx[0][kp] = fmx->dmx[0][kp] + bmx->dmx[0][kp] - sc;
+  }
+
+  for (i = 1; i <= L; i++) {
+    k = 0;
+    if(INBAND(i,0)) {
+      kp = k - kmin[i];
+      assert(kp == 0);
+      pmx->mmx[i][kp] = ESL_MAX(fmx->mmx[i][kp] + bmx->mmx[i][kp] - sc, -eslINFINITY);
+      pmx->imx[i][kp] = ESL_MAX(fmx->imx[i][kp] + bmx->imx[i][kp] - Scorify(hmm->isc[dsq[i]][0]) - sc, -eslINFINITY);
+      pmx->dmx[i][kp] = -eslINFINITY;
+    }
+
+    kn = ESL_MAX(kmin[i], 1);
+    kx = kmax[i];
+    kp = kn - kmin[i];
+    for(k = kn; k <= kx; k++, kp++) {
+      pmx->mmx[i][kp] = ESL_MAX(fmx->mmx[i][kp] + bmx->mmx[i][kp] - Scorify(hmm->msc[dsq[i]][k]) - sc, -eslINFINITY);
+      pmx->imx[i][kp] = ESL_MAX(fmx->imx[i][kp] + bmx->imx[i][kp] - Scorify(hmm->isc[dsq[i]][k]) - sc, -eslINFINITY);
+      pmx->dmx[i][kp] = ESL_MAX(fmx->dmx[i][kp] + bmx->dmx[i][kp] - sc, -eslINFINITY);
+    }
+  }
   return eslOK;
 }
 
@@ -1722,35 +3395,33 @@ cp9_CheckFBP7B(CP9_MX *fmx, CP9_MX *bmx, CP9_t *hmm, char *errbuf, float sc, int
  * Date    : EPN, Fri Aug 15 13:43:21 2008
  *
  * Purpose:  Given a CM with precalc'ed CP9 HMM, CP9Map, and HMMER3 plan 7
- *           HMM bands for the CP9 HMM DP matrices, a sequence and 
+ *           HMM bands for the CP9 HMM DP matrices, a sequence and
  *           a CP9Bands_t structure, calculate the CP9 HMM bands and store them
  *           in the CP9Bands_t structure.
- *           
- *           Note: this function was never updated to handle truncated 
- *           alignment.
  *
  * Args:     cm          - the covariance model
  *           errbuf      - char buffer for reporting errors
  *           fmx         - CP9 dp matrix for Forward()
  *           bmx         - CP9 dp matrix for Backward()
  *           pmx         - CP9 dp matrix to fill with posteriors, can == bmx
- *           dsq         - sequence in digitized form
+ *           dsq         - sequence in digitized form (1..L, offset so dsq[1] is first residue)
  *           L           - length of sequence we're aligning (1..L)
  *           cp9b        - PRE-ALLOCATED, the HMM bands for this sequence, filled here.
  *           kmin        - P7 dervied band to enforce: [0.i..L] = k, min node k for residue i
  *           kmax        - P7 derived band to enforce: [0.i..L] = k, min node k for residue i
+ *           i0          - first position in original sequence coords (for cp9_HMM2ijBands)
+ *           j0          - final position in original sequence coords (for cp9_HMM2ijBands)
+ *           pass_idx    - pipeline pass index, determines truncation mode
  *           debug_level - verbosity level for debugging printf()s
  * Return:  eslOK on success;
- * 
+ *
  */
 int
-cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int L, CP9Bands_t *cp9b, int *kmin, int *kmax, int debug_level)
+cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int L, CP9Bands_t *cp9b, int *kmin, int *kmax, int i0, int j0, int pass_idx, int debug_level, int do_pnmono, int do_pnmono_print)
 {
   int   status;
-  int   use_sums;     /* TRUE to fill and use posterior sums during HMM band calc, yields wider bands  */
   float sc;
-  int do_old_hmm2ij;
-  CP9_t *cp9 = NULL;  /* ptr to cp9 HMM (this could be Lcp9, Rcp9, Tcp9 if we update this function to possibly handle truncated alignment) */
+  CP9_t *cp9 = NULL;
 
   /* Contract checks */
   if(cm->cp9map == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2BandsP7B, but cm->cp9map is NULL.\n");
@@ -1758,73 +3429,2195 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
   if(!((cm->align_opts & CM_ALIGN_HBANDED) || (cm->search_opts & CM_SEARCH_HBANDED)))        ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2BandsP7B, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both down, exactly 1 must be up.\n");
   if((cm->search_opts & CM_SEARCH_HMMALNBANDS) && (!(cm->search_opts & CM_SEARCH_HBANDED))) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2BandsP7B, CM_SEARCH_HMMALNBANDS flag raised, but not CM_SEARCH_HBANDED flag, this doesn't make sense\n");
   if(cm->tau > 0.5)      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2BandsP7B, cm->tau (%f) > 0.5, we can't deal.", cm->tau);
-  
-  use_sums = ((cm->align_opts & CM_ALIGN_SUMS) || (cm->search_opts & CM_SEARCH_SUMS)) ? TRUE : FALSE;
-  do_old_hmm2ij = ((cm->align_opts & CM_ALIGN_HMM2IJOLD) || (cm->search_opts & CM_SEARCH_HMM2IJOLD)) ? TRUE : FALSE;
 
-  /* Determine which cp9 HMM to use: If the CM has local begins on, use cm->cp9loc, else use cm->cp9glb */
-  cp9 = cm->cp9;
-  if(cp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Posteriors, relevant cp9 is NULL.\n");
+  switch(pass_idx) {
+    case PLI_PASS_5P_ONLY_FORCE:                cp9 = cm->Rcp9; break;
+    case PLI_PASS_3P_ONLY_FORCE:                cp9 = cm->Lcp9; break;
+    case PLI_PASS_5P_AND_3P_FORCE:
+    case PLI_PASS_5P_AND_3P_ANY:                cp9 = cm->Tcp9; break;
+    default:                                    cp9 = cm->cp9;  break;
+  }
+  if(cp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2BandsP7B, cp9 is NULL (pass_idx %d).\n", pass_idx);
 
-  /* Step 1: Get HMM Forward/Backward DP matrices.
-   * Step 2: F/B       -> HMM bands.
-   * Step 3: HMM bands -> CM bands.
-   */
+  /* Phase 1: P7-banded CP9 Forward + Backward (tau-independent) */
+  if((status = cp9_ForwardP7B_OLD_WITH_EL(cp9, errbuf, fmx, dsq, L, kmin, kmax, &sc)) != eslOK) return status;
+  if((status = cp9_BackwardP7B(cp9, errbuf, bmx, dsq, L, kmin, kmax, NULL)) != eslOK) return status;
 
-  /* Step 1: Get HMM Forward/Backward DP matrices. */
-  if((status = cp9_ForwardP7B (cp9, errbuf, fmx, dsq, L, kmin, kmax, &sc)) != eslOK) return status;
-  if((status = cp9_BackwardP7B(cp9, errbuf, bmx, dsq, L, kmin, kmax, &sc)) != eslOK) return status;
-
-  if(cm->align_opts & CM_ALIGN_CHECKFB) { 
+  if(cm->align_opts & CM_ALIGN_CHECKFB) {
     if((status = cp9_CheckFBP7B(fmx, bmx, cp9, errbuf, sc, 1, L, dsq, kmin, kmax)) != eslOK) return status;
     printf("Forward/Backward matrices checked.\n");
   }
 
+  /* Phase 2: F/B -> HMM bands -> CM bands (tau-dependent).
+   * doing_search=TRUE: this function's sole live caller is cm_pipeline.c's
+   * pli_dispatch_cm_search(), a genuine search context (brief 26_0821-070). */
+  if((status = cp9_FBMatrices2BandsP7B(cm, errbuf, cp9, fmx, bmx, pmx, dsq, cp9b, kmin, kmax,
+				       L, i0, j0, pass_idx, TRUE, debug_level, do_pnmono, do_pnmono_print)) != eslOK) return status;
+  return eslOK;
+}
+
+
+/* Function: cp9_Seq2BandsP7BF()
+ *
+ * Float-precision mirror of cp9_Seq2BandsP7B(). Allocates CP9_FMX matrices,
+ * runs P7-banded float CP9 Forward + Backward, and dispatches to
+ * cp9_FBMatrices2BandsF for posterior + band derivation.
+ *
+ * Currently called only by cp9_IterateSeq2BandsP7B's do_trunc=TRUE branch.
+ * Don't add new callers without auditing — the float path is intentionally
+ * scoped to truncated cmalign --p7band only.
+ */
+int
+cp9_Seq2BandsP7BF(CM_t *cm, char *errbuf, CP9_FMX *fmx, CP9_FMX *bmx, CP9_FMX *pmx, ESL_DSQ *dsq, int L, CP9Bands_t *cp9b, int *kmin, int *kmax, int i0, int j0, int pass_idx, int debug_level, int do_pnmono, int do_pnmono_print)
+{
+  int   status;
+  float sc;
+  CP9_t *cp9 = NULL;
+
+  if(cm->cp9map == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2BandsP7BF, but cm->cp9map is NULL.\n");
+  if(dsq == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2BandsP7BF, dsq is NULL.");
+  if(!((cm->align_opts & CM_ALIGN_HBANDED) || (cm->search_opts & CM_SEARCH_HBANDED)))        ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2BandsP7BF, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both down.\n");
+  if(cm->tau > 0.5)      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2BandsP7BF, cm->tau (%f) > 0.5.", cm->tau);
+
+  switch(pass_idx) {
+    case PLI_PASS_5P_ONLY_FORCE:                cp9 = cm->Rcp9; break;
+    case PLI_PASS_3P_ONLY_FORCE:                cp9 = cm->Lcp9; break;
+    case PLI_PASS_5P_AND_3P_FORCE:
+    case PLI_PASS_5P_AND_3P_ANY:                cp9 = cm->Tcp9; break;
+    default:                                    cp9 = cm->cp9;  break;
+  }
+  if(cp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2BandsP7BF, cp9 is NULL (pass_idx %d).\n", pass_idx);
+
+  if((status = cp9_ForwardP7BF (cp9, errbuf, fmx, dsq, L, kmin, kmax, &sc))   != eslOK) return status;
+  if((status = cp9_BackwardP7BF(cp9, errbuf, bmx, dsq, L, kmin, kmax, NULL))  != eslOK) return status;
+
+  if((status = cp9_FBMatrices2BandsF(cm, errbuf, cp9, fmx, bmx, pmx, dsq, cp9b, kmin, kmax,
+				     L, i0, j0, pass_idx, debug_level, do_pnmono, do_pnmono_print)) != eslOK) return status;
+  return eslOK;
+}
+
+
+/* Function: cp9_FBMatrices2BandsP7B()
+ * Date:     EPN, 2026-04-30
+ *
+ * Purpose:  Phase 2 of p7-banded CP9 band derivation. Given filled P7-banded
+ *           CP9 Forward (fmx) and Backward (bmx) matrices, derive HMM bands
+ *           using cm->tau, then convert to CM bands. This is the tau-dependent
+ *           half that can be iterated by cp9_IterateSeq2BandsP7B().
+ *
+ * Args:     cm          - the CM
+ *           errbuf      - for error messages
+ *           cp9         - the CP9 HMM (cm->cp9, Lcp9, Rcp9, or Tcp9 depending on pass_idx)
+ *           fmx         - filled P7-banded CP9 Forward matrix (read-only)
+ *           bmx         - filled P7-banded CP9 Backward matrix (read-only)
+ *           pmx         - CP9 matrix for posteriors (filled here; must NOT alias bmx if iterating)
+ *           dsq         - digitized sequence (1..L)
+ *           cp9b        - CP9 bands structure (filled here)
+ *           kmin, kmax  - P7-derived per-residue node bands
+ *           L           - sequence length
+ *           i0, j0      - subsequence bounds in original coords
+ *           pass_idx    - pipeline pass index
+ *           doing_search - brief 26_0821-070: TRUE for a search (partial-span
+ *                         hit, bands may be loose), FALSE for an alignment
+ *                         (full i0..j0 span; enables cp9_HMM2ijBands()'s
+ *                         coverage-tightening checks). Passed straight through
+ *                         to cp9_HMM2ijBands{_OLD,}() -- the caller owns this
+ *                         value, this function does not infer it.
+ *           debug_level - verbosity
+ *           do_pnmono, do_pnmono_print - pnmono flags
+ *
+ * Returns:  eslOK on success.
+ */
+int
+cp9_FBMatrices2BandsP7B(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx,
+			ESL_DSQ *dsq, CP9Bands_t *cp9b, int *kmin, int *kmax,
+			int L, int i0, int j0, int pass_idx, int doing_search, int debug_level,
+			int do_pnmono, int do_pnmono_print)
+{
+  int status;
+  int use_sums      = ((cm->align_opts & CM_ALIGN_SUMS) || (cm->search_opts & CM_SEARCH_SUMS)) ? TRUE : FALSE;
+  int do_old_hmm2ij = ((cm->align_opts & CM_ALIGN_HMM2IJOLD) || (cm->search_opts & CM_SEARCH_HMM2IJOLD)) ? TRUE : FALSE;
+  int do_trunc      = cm_pli_PassAllowsTruncation(pass_idx);
+
   /* Step 2: F/B -> HMM bands. */
-  if(use_sums){
+  if(use_sums) {
     printf("USE SUMS!\n");
     exit(1);
   }
   else {
     if((status = cp9_FB2HMMBandsP7B(cp9, errbuf, dsq, fmx, bmx, pmx, cp9b, L, cp9b->hmm_M,
-				    (1.-cm->tau), do_old_hmm2ij, kmin, kmax, debug_level)) != eslOK) return status;
+				    (1.-cm->tau), do_old_hmm2ij, kmin, kmax, debug_level,
+				    do_pnmono, do_pnmono_print)) != eslOK) return status;
     cp9b->tau = cm->tau;
   }
   if(debug_level > 0) cp9_DebugPrintHMMBands(stdout, L, cp9b, cm->tau, 1);
 
-  /* Step 3: HMM bands  ->  CM bands. */
-  if(do_old_hmm2ij) { 
-    if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, 1, L, FALSE, debug_level)) != eslOK) return status;
+  /* Step 2b: Shift HMM bands from 1..L to i0..j0 coordinate system. */
+  if(i0 != 1) {
+    int offset = i0 - 1;
+    int k;
+    for(k = 0; k <= cp9b->hmm_M; k++) {
+      if(cp9b->pn_min_m[k] != -1) { cp9b->pn_min_m[k] += offset; cp9b->pn_max_m[k] += offset; }
+      if(cp9b->pn_min_i[k] != -1) { cp9b->pn_min_i[k] += offset; cp9b->pn_max_i[k] += offset; }
+      if(cp9b->pn_min_d[k] != -1) { cp9b->pn_min_d[k] += offset; cp9b->pn_max_d[k] += offset; }
+    }
+  }
+
+  /* Step 2c: Set truncation candidate valid arrays. */
+  if(do_trunc) {
+    cp9_PredictStartAndEndPositionsP7B(pmx, cp9b, kmin, kmax, i0, j0);
+    if((status = cp9_MarginalCandidatesFromStartEndPositions(cm, cp9b, pass_idx, errbuf)) != eslOK) return status;
   }
   else {
-    if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, 1, L, FALSE, FALSE, debug_level)) != eslOK) return status;
-    /* For debugging, uncomment this block:
-       if((status = cp9_HMM2ijBands(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, doing_search, FALSE, debug_level)) != eslOK) { 
-       ESL_SQ *tmp;
-       tmp = esl_sq_CreateDigitalFrom(cm->abc, "irrelevant", dsq+i0-1, (j0-i0+1), NULL, NULL, NULL);
-       esl_sq_Textize(tmp);
-       printf("HEY! cm: %s\n", cm->name);
-       printf(">irrelevant\n%s\n", tmp->seq);
-       esl_sq_Destroy(tmp);
-       return status; 
-    }
-    */
+    esl_vec_ISet(cp9b->Jvalid, cm->M+1, TRUE);
+    esl_vec_ISet(cp9b->Lvalid, cm->M+1, FALSE);
+    esl_vec_ISet(cp9b->Rvalid, cm->M+1, FALSE);
+    esl_vec_ISet(cp9b->Tvalid, cm->M+1, FALSE);
   }
-  
-  /* Use the CM bands on i and j to get bands on d, specific to j. */
-  /* cp9_GrowHDBands() must be called before ij2d_bands() so hdmin, hdmax are adjusted for new seq */
-  if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) return status; 
-  ij2d_bands(cm, L, cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, FALSE, debug_level);
+
+  /* Step 3: HMM bands -> CM bands.
+   * brief 26_0821-070: doing_search threaded from the caller (not hardcoded).
+   * cp9_FBMatrices2BandsP7B has two call sites: cp9_Seq2BandsP7B (a genuine
+   * search context, passes TRUE) and the INT_P7B_LEGACY diagnostic in
+   * cp9_IterateSeq2BandsP7B's !do_trunc branch (an alignment context, passes
+   * the doing_search already in scope there -- FALSE for cmalign). The old
+   * hardcoded TRUE was correct for the former and wrong for the latter. */
+  if(do_old_hmm2ij) {
+    if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, doing_search, debug_level)) != eslOK) return status;
+  }
+  else {
+    if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, i0, j0, doing_search, do_trunc, debug_level)) != eslOK) return status;
+  }
+  if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) return status;
+  ij2d_bands(cm, cp9b, do_trunc, debug_level);
 
 #if eslDEBUGLEVEL >= 1
-  if((status = cp9_ValidateBands(cm, errbuf, cp9b, 1, L, FALSE)) != eslOK) return status;
+  if((status = cp9_ValidateBands(cm, errbuf, cp9b, i0, j0, do_trunc)) != eslOK) return status;
   ESL_DPRINTF1(("#DEBUG: bands validated.\n"));
 #endif
-  if(debug_level > 0) debug_print_ij_bands(cm); 
-
-  if(debug_level > 0) PrintDPCellsSaved_jd(cm, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, L);
+  if(debug_level > 0) debug_print_ij_bands(cm);
+  if(debug_level > 0) PrintDPCellsSaved_jd(cm, cp9b, L);
 
   return eslOK;
+}
+
+
+/* Function: cp9_IterateSeq2BandsP7B()
+ * Date:     EPN, 2026-04-30
+ *
+ * Purpose:  Like cp9_IterateSeq2Bands(), but uses P7-banded CP9 Forward/Backward.
+ *           Runs P7-banded CP9 F/B once (tau-independent), then iteratively
+ *           tightens tau/thresh until the resulting CM DP matrix fits within
+ *           <size_limit> Mb, or tau reaches <maxtau>.
+ *
+ * Args:     cm          - the CM
+ *           errbuf      - for error messages
+ *           dsq         - digitized sequence (1..L)
+ *           L           - sequence length
+ *           kmin, kmax  - P7-derived per-residue node bands (1..L indexed)
+ *           i0, j0      - subsequence bounds in original coords
+ *           pass_idx    - pipeline pass index
+ *           size_limit  - max allowed CM DP matrix size in Mb
+ *           doing_search - TRUE if bands for search, FALSE for alignment
+ *           do_sample   - TRUE if we'll sample a parsetree
+ *           do_post     - TRUE if we'll do posterior alignment
+ *           maxtau      - max allowed cm->tau value
+ *           do_pnmono, do_pnmono_print - pnmono flags
+ *           ret_Mb      - RETURN: matrix Mb for final bands (can be NULL)
+ *
+ * Returns:  eslOK on success.
+ *           eslERANGE if matrix still exceeds size_limit at maxtau.
+ *
+ * NATURAL PLACE FOR A P7-BAND RATCHET -- deliberately NOT implemented.
+ *
+ *           There are two distinct "matrix too big" problems here and this
+ *           function only ratchets against one of them:
+ *
+ *             (1) the banded CM DP matrix (hbmx_Mb).  Ratcheted below by
+ *                 tightening tau/thresh1/thresh2, and separately handled by
+ *                 the --mxsize engine-escalation ladder (standard -> ckpt ->
+ *                 D&C) in cm_alndata.c.  Covered.
+ *
+ *             (2) the CP9 F/B matrix used to DERIVE the CM bands (cp9mx_Mb).
+ *                 The correct lever for this one is the P7 ENVELOPE, not tau:
+ *                 kmin/kmax restrict which (i,k) cells the CP9 F/B computes.
+ *                 But kmin/kmax arrive here as a FIXED INPUT and are never
+ *                 re-derived, so nothing in this function can reduce (2).
+ *
+ *           A ratchet over kmin/kmax -- tightening the envelope (--p7padplus
+ *           for vitband, --p7ibv-delta for IBV, --p7kmerchain-alpha/KMC_* for
+ *           kmerchain) and re-running the F/B -- would be the structural
+ *           analogue of the tau loop below, and this is where it would go.
+ *
+ *           It is NOT implemented, on purpose (Eric, 2026-09-15).  Reasons,
+ *           so that whoever revisits this does not have to re-derive them:
+ *
+ *             - The checkpointed banded CP9 F/B (cm_p7_band_chk.c, briefs
+ *               26_0430-150/153/154) already gives O(sqrt(L)*avg_bw) working
+ *               memory for (2) and is the default path.  It is ACCURACY-NEUTRAL:
+ *               same computation, same bands, less memory.  Tightening the
+ *               envelope is NOT -- tighter envelopes are measurably less
+ *               contained (brief 26_0821-033: --p7kmerchain, the tightest
+ *               deriver, is the least contained at 9/30 sarscov2, -246 bits).
+ *               So tightening buys memory with accuracy that checkpointing
+ *               gives for free.  Only reach for it if SPEED, not memory, is
+ *               the binding constraint.
+ *
+ *             - It would be a SECOND ratchet nested inside the tau ratchet
+ *               below, over a quantity the tau ratchet's target depends on:
+ *               tightening the envelope changes the CP9 posteriors, which
+ *               changes the CM bands, which moves hbmx_Mb underneath the loop.
+ *               Two coupled feedback loops over the same quantity is where
+ *               non-monotonic behavior comes from, and brief 26_0821-013 was
+ *               already a tau-ratchet non-monotonicity bug (TRIAGE row 1.25c).
+ *
+ *             - A tighter envelope is likelier to exclude the true parse,
+ *               which is exactly the condition that makes the truncated
+ *               HB engines return eslEAMBIGUOUS ("no valid parsetree found").
+ *               So a ratchet built to fix (2) can manufacture a DIFFERENT
+ *               failure downstream.
+ *
+ *           This pipeline is already complex, and everything in it earns its
+ *           place by making very large RNAs alignable.  Do not add this
+ *           without a demonstrated case that checkpointing does not cover.
+ */
+int
+cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, int *kmax,
+			int i0, int j0, int pass_idx, float size_limit,
+			int doing_search, int do_sample, int do_post,
+			double maxtau, int do_pnmono, int do_pnmono_print, float *ret_Mb)
+{
+  int      status;
+  int      do_trunc = cm_pli_PassAllowsTruncation(pass_idx);
+  float    cp9mx_Mb = 0.;
+  float    hbmx_Mb  = 0.;
+  float    tot_Mb;
+  int      tau_at_limit     = FALSE;
+  int      thresh1_at_limit = (do_trunc) ? FALSE : TRUE;
+  int      thresh2_at_limit = (do_trunc) ? FALSE : TRUE;
+  CP9_t   *cp9 = NULL;
+  CP9_FMX *fmx_f = NULL, *bmx_f = NULL, *pmx_f = NULL; /* float matrices, used by do_trunc path */
+  float    sc;
+
+  /* Caller audit: cp9_Seq2BandsP7B and cp9_Seq2BandsP7BF must remain narrow.
+   * STALE AS OF 26_0628-073/074, corrected by brief 26_0821-070: this
+   * function's !do_trunc branch does NOT call cp9_Seq2BandsP7B (indirectly
+   * or otherwise) on any live path -- 26_0628-074 routed !do_trunc through
+   * cp9_IterateSeq2BandsP7BF_chk_multi unconditionally, same as do_trunc.
+   * cp9_Seq2BandsP7B currently has exactly 1 live caller: cm_pipeline.c
+   * (search/scan, untouched).
+   * cp9_Seq2BandsP7BF has 0 live callers: the do_trunc branch below returns
+   * unconditionally before reaching it (see the do_trunc block's own
+   * comments). The float entry point is intentionally unreachable from
+   * cmscan / cmsearch / cmalign in production.
+   */
+
+  /* Contract checks */
+  if(cm->cp9map == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_IterateSeq2BandsP7B, cm->cp9map is NULL.");
+  if(dsq == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_IterateSeq2BandsP7B, dsq is NULL.");
+  if(cm->tau > 0.5)      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_IterateSeq2BandsP7B, cm->tau (%f) > 0.5.", cm->tau);
+
+  switch(pass_idx) {
+    case PLI_PASS_5P_ONLY_FORCE:                cp9 = cm->Rcp9; break;
+    case PLI_PASS_3P_ONLY_FORCE:                cp9 = cm->Lcp9; break;
+    case PLI_PASS_5P_AND_3P_FORCE:
+    case PLI_PASS_5P_AND_3P_ANY:                cp9 = cm->Tcp9; break;
+    default:                                    cp9 = cm->cp9;  break;
+  }
+  if(cp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_IterateSeq2BandsP7B, cp9 is NULL (pass_idx %d).", pass_idx);
+
+  if(do_trunc) {
+    /* brief 26_0430-150 (144-B Phase 2): checkpointed banded CP9 float F/B for the
+     * truncated path (--p7ibv-ckpt, or CP9_CKPT env). Byte-identical bands in
+     * O(sqrt(L)*avg_bw) memory. Wired BEFORE the float matrices below are
+     * allocated; the tau-ratchet recomputes the checkpointed float F/B each
+     * bump (no cached pmx), instrumented via #CP9_CKPTF_TAU. */
+    /* brief 26_0430-187 (2026-07-05): temporary, pragmatic reroute. The float non-ckpt
+     * F/B below (cp9_ForwardP7BF/cp9_BackwardP7BF/cp9_FBMatrices2BandsF) was
+     * shown (briefs 26_0430-185/26_0430-186) to lose Fwd=Bwd consistency and collapse
+     * numerically on genuinely-truncated genome-scale sequences (L~147K,
+     * ~15x past its documented L=10K validation bound), producing garbage
+     * per-node bands. The checkpointed double-precision twin (brief 26_0430-154) is
+     * already validated correct at both sub-genome and genome scale. Rather
+     * than write a second, parallel double-precision non-checkpointed kernel
+     * right now, we force ALL do_trunc traffic through the checkpointed
+     * double path unconditionally, regardless of --p7ibv-ckpt/CP9_CKPT. This
+     * CP9-level F/B is already p7-banded (small footprint either way), so
+     * this costs at most some recomputation overhead, not memory. The float
+     * non-ckpt code below is intentionally left in place, unmodified, but is
+     * now dead code for do_trunc pending a real double-precision
+     * non-checkpointed rewrite (a wanted future item, out of scope here). */
+    if(TRUE) {
+      /* brief 26_0430-167 (tau-ratchet single-pass): the old while(1) loop recomputed the
+       * WHOLE checkpointed float F/B on every bump (up to ~26 passes). The F/B is
+       * tau/thresh-independent (brief 26_0430-166 Q3), so the driver runs it ONCE: step 0
+       * via the single-call path (zero overhead for the common 0-bump case), and
+       * if that doesn't fit, ONE multi-threshold F/B sweep over the whole ratchet
+       * grid + scan-and-pick. Output is byte-identical to the old loop. */
+      int nbump = 0;
+      /* NATURAL PLACE FOR A P7-BAND RATCHET (see this function's header, and
+       * do not build it without reading that first): kmin/kmax go in here
+       * UNCHANGED and are never re-derived.  A loop around this call that
+       * tightened the envelope and re-ran the F/B is what would reduce the
+       * CP9 band-derivation matrix (cp9mx_Mb) -- the one size the tau loop
+       * below cannot touch.  Deliberately not implemented; the checkpointed
+       * F/B already covers it accuracy-neutrally. */
+      status = cp9_IterateSeq2BandsP7BF_chk_multi(cm, errbuf, cp9, dsq, L, kmin, kmax, i0, j0,
+                                                  pass_idx, size_limit, doing_search, do_sample,
+                                                  do_post, maxtau, do_pnmono, do_pnmono_print,
+                                                  &nbump, &hbmx_Mb);
+      if(status != eslOK && status != eslERANGE) goto ERROR;
+      if(ret_Mb != NULL) *ret_Mb = hbmx_Mb;
+      return status; /* eslOK or eslERANGE, exactly as the old loop returned */
+    }
+
+    /* Float path: use float-DP CP9 F/B/Posterior to avoid the ~3% per-cell
+     * precision drift that destabilizes pocc-based sp/ep prediction in
+     * truncated mode. Allocate local float matrices; we do NOT reuse
+     * cm->cp9_mx / cm->cp9_bmx (those are int CP9_MX). */
+    if((fmx_f = CreateCP9FMatrix(1, cp9->M)) == NULL) ESL_XFAIL(eslEMEM, errbuf, "cp9_IterateSeq2BandsP7B: OOM allocating fmx_f");
+    if((bmx_f = CreateCP9FMatrix(1, cp9->M)) == NULL) ESL_XFAIL(eslEMEM, errbuf, "cp9_IterateSeq2BandsP7B: OOM allocating bmx_f");
+    if((pmx_f = CreateCP9FMatrix(1, cp9->M)) == NULL) ESL_XFAIL(eslEMEM, errbuf, "cp9_IterateSeq2BandsP7B: OOM allocating pmx_f");
+
+    /* Phase 1: float P7-banded F/B (tau-independent), run once. */
+    if((status = cp9_ForwardP7BF (cp9, errbuf, fmx_f, dsq, L, kmin, kmax, &sc))   != eslOK) goto ERROR;
+    if((status = cp9_BackwardP7BF(cp9, errbuf, bmx_f, dsq, L, kmin, kmax, NULL))  != eslOK) goto ERROR;
+
+    /* Phase 2: iterate tau/thresh until matrix fits. */
+    while(1) {
+      if((status = cp9_FBMatrices2BandsF(cm, errbuf, cp9, fmx_f, bmx_f, pmx_f, dsq, cm->cp9b,
+					 kmin, kmax, L, i0, j0, pass_idx, 0, do_pnmono, do_pnmono_print)) != eslOK) goto ERROR;
+      if(doing_search) {
+	if(do_trunc) { if((status = cm_tr_hb_mx_SizeNeeded(cm, errbuf, cm->cp9b, j0-i0+1, NULL, NULL, NULL, NULL, &hbmx_Mb)) != eslOK) goto ERROR; }
+	else         { if((status = cm_hb_mx_SizeNeeded   (cm, errbuf, cm->cp9b, j0-i0+1, NULL, &hbmx_Mb)) != eslOK) goto ERROR; }
+      }
+      else {
+	if(do_trunc) { status = cm_TrAlignSizeNeededHB(cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &cp9mx_Mb, &hbmx_Mb, &tot_Mb); }
+	else         { status = cm_AlignSizeNeededHB  (cm, errbuf, j0-i0+1, size_limit, do_sample, do_post, NULL, NULL, NULL, &cp9mx_Mb, &hbmx_Mb, &tot_Mb); }
+	if(status != eslOK && status != eslERANGE) goto ERROR;
+      }
+      if(hbmx_Mb < size_limit)                                  break;
+      if(tau_at_limit && thresh1_at_limit && thresh2_at_limit)  break;
+      if(! tau_at_limit) { cm->tau *= TAU_MULTIPLIER; if(cm->tau >= maxtau) { cm->tau = maxtau; tau_at_limit = TRUE; } }
+      if(! thresh1_at_limit) { cm->cp9b->thresh1 += DELTA_CP9BANDS_THRESH1; if(cm->cp9b->thresh1 >= MAX_CP9BANDS_THRESH1) { cm->cp9b->thresh1 = MAX_CP9BANDS_THRESH1; thresh1_at_limit = TRUE; } }
+      if(! thresh2_at_limit) { cm->cp9b->thresh2 -= DELTA_CP9BANDS_THRESH2; if(cm->cp9b->thresh2 <= MIN_CP9BANDS_THRESH2) { cm->cp9b->thresh2 = MIN_CP9BANDS_THRESH2; thresh2_at_limit = TRUE; } }
+    }
+
+    FreeCP9FMatrix(fmx_f); fmx_f = NULL;
+    FreeCP9FMatrix(bmx_f); bmx_f = NULL;
+    FreeCP9FMatrix(pmx_f); pmx_f = NULL;
+    if(ret_Mb != NULL) *ret_Mb = hbmx_Mb;
+    if(hbmx_Mb > size_limit) return eslERANGE;
+    return eslOK;
+  }
+
+  /* Non-truncated path (brief 26_0628-073 diagnosis, brief 26_0628-074 fix):
+   * route band derivation through the SAME double-precision checkpointed CP9
+   * F/B that the do_trunc path uses (cp9_IterateSeq2BandsP7BF_chk_multi),
+   * regardless of do_trunc. The legacy int CP9 F/B (cp9_ForwardP7B_OLD_WITH_EL
+   * / cp9_BackwardP7B / cp9_FBMatrices2BandsP7B) computed diffuse posterior
+   * occupancies for low-bp-density models, producing cp9b bands up to ~7500x
+   * wider than this kernel on the identical p7 input (norovirus: 170M vs 22.5K
+   * hd_needed) and a 20-3800x --notrunc slowdown (briefs 26_0628-072/26_0628-073).
+   * The double-ckpt kernel honors tau exactly as --trunc mode already does;
+   * banded parses then score slightly lower (brief 26_0628-073 measured -0.16 to
+   * -0.89 bits, alignment span preserved, no clipping) -- the correct, expected
+   * consequence of banding, signed off in brief 26_0628-074.
+   *
+   * Both the int-ckpt escape hatch (--p7ibv-ckpt / CP9_CKPT) and the default int
+   * path are removed here; like do_trunc, this path now ignores --p7ibv-ckpt /
+   * CP9_CKPT (the double-ckpt kernel is itself checkpointed, so their
+   * O(sqrt(L)*avg_bw) memory goal is still met). The int helper functions stay
+   * defined -- cp9_IterateSeq2BandsP7BF_chk_multi calls cp9_ForwardP7B_OLD_WITH_EL
+   * / cp9_BackwardP7B internally. */
+  {
+    int nbump = 0;
+    status = cp9_IterateSeq2BandsP7BF_chk_multi(cm, errbuf, cp9, dsq, L, kmin, kmax, i0, j0,
+                                                pass_idx, size_limit, doing_search, do_sample,
+                                                do_post, maxtau, do_pnmono, do_pnmono_print,
+                                                &nbump, &hbmx_Mb);
+    if(status != eslOK && status != eslERANGE) goto ERROR;
+    if(ret_Mb != NULL) *ret_Mb = hbmx_Mb;
+    return status;
+  }
+
+ ERROR:
+  if(fmx_f) FreeCP9FMatrix(fmx_f);
+  if(bmx_f) FreeCP9FMatrix(bmx_f);
+  if(pmx_f) FreeCP9FMatrix(pmx_f);
+  if(ret_Mb != NULL) *ret_Mb = 0.;
+  return status;
+}
+
+
+/* Function: p7banded_post_to_cp9bands
+ * Date    : EPN, 2026-03-26
+ *
+ * Purpose:  Derive CP9 HMM bands from p7 glocal banded Forward and Backward
+ *           posterior probabilities, bypassing CP9 Forward/Backward entirely.
+ *
+ *           For each CP9 node k and state type (M/I/D), scans the banded
+ *           (i,k) cells and includes position i in the band for node k if
+ *           the posterior probability exceeds <thresh>:
+ *
+ *             post_M(i,k) = expf(gxfb->dp[...M...] + gxbb->dp[...M...] - fwdsc)
+ *
+ *           The p7 glocal F and B matrices are computed during F5 (envelope
+ *           definition) and are already available in pli->gxfb / pli->gxbb.
+ *           This approach gives tighter bands than the Viterbi-inversion in
+ *           the former p7bands_to_cp9bands() because posteriors concentrate probability
+ *           mass near the most likely alignment path, while still bypassing
+ *           the O(L*M) CP9 F/B DP.
+ *
+ *           Delete bands are set equal to match bands for each node k (D
+ *           states do not emit, so we mirror the match coverage).
+ *
+ *           The i=0 special case is handled as in the former p7bands_to_cp9bands():
+ *           M_0 (begin state) is always at position 0; D_k for k in the first
+ *           band row may be active at position 0.
+ *
+ * Args:     cm          - the covariance model
+ *           errbuf      - char buffer for reporting errors
+ *           gxfb        - p7 banded glocal Forward matrix (from F5)
+ *           gxbb        - p7 banded glocal Backward matrix (from F5)
+ *           fwdsc       - Forward score in nats (from p7_GForwardBanded)
+ *           bnd         - band structure for gxfb/gxbb (passed explicitly to avoid use-after-free;
+ *                         caller keeps it alive via pli->p7bnd)
+ *           ws          - absolute start of the window that gxfb/gxbb were computed over
+ *                         (1-indexed in original sequence); used to map window-relative
+ *                         gxfb rows to absolute/envelope positions
+ *           L           - length of target subsequence (= j0 - i0 + 1)
+ *           cp9b        - PRE-ALLOCATED CP9 bands, filled here
+ *           i0          - first position (absolute) of the envelope
+ *           j0          - final position (absolute) of the envelope
+ *           pass_idx    - pipeline pass index, determines truncation mode
+ *           thresh      - posterior probability threshold (e.g. 1e-5):
+ *                         include position i for node k if post(i,k) >= thresh
+ *           debug_level - verbosity level for debugging printf()s
+ *
+ * Returns:  eslOK on success
+ */
+int
+p7banded_post_to_cp9bands(CM_t *cm, char *errbuf,
+			  P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc,
+			  P7_GBANDS *bnd, int ws, int L, CP9Bands_t *cp9b, int i0, int j0,
+			  int pass_idx, float thresh, int debug_level)
+{
+  int          status;
+  int          g, i, k;
+  int          M            = cp9b->hmm_M;
+  int          do_old_hmm2ij;
+  int          do_trunc;
+  CP9_t       *cp9;
+  int          ia, ib;
+  int          kac, kbc;
+  int         *bnd_ip;
+  int         *bnd_kp;
+  float const *fwd_dp;
+  float const *bck_dp;
+  float        log_thresh;
+  float        fM, bM, fI, bI;
+  int          nk;
+  int          first_kac, first_kbc; /* band of first row, for i=0 D_k handling */
+  float       *pocc = NULL;          /* [0..M] per-node match-posterior occupancy */
+
+  /* Contract checks */
+  if(cm->cp9map == NULL)
+    ESL_FAIL(eslEINCOMPAT, errbuf, "p7banded_post_to_cp9bands: cm->cp9map is NULL.\n");
+  if(!((cm->align_opts & CM_ALIGN_HBANDED) || (cm->search_opts & CM_SEARCH_HBANDED)))
+    ESL_FAIL(eslEINCOMPAT, errbuf, "p7banded_post_to_cp9bands: neither CM_ALIGN_HBANDED nor CM_SEARCH_HBANDED is set.\n");
+  if(cm->tau > 0.5)
+    ESL_FAIL(eslEINCOMPAT, errbuf, "p7banded_post_to_cp9bands: cm->tau (%f) > 0.5.\n", cm->tau);
+  if(gxfb == NULL || gxbb == NULL)
+    ESL_FAIL(eslEINCOMPAT, errbuf, "p7banded_post_to_cp9bands: gxfb or gxbb is NULL.\n");
+  if(bnd == NULL)
+    ESL_FAIL(eslEINCOMPAT, errbuf, "p7banded_post_to_cp9bands: bnd is NULL.\n");
+  if(bnd->nrow == 0)
+    ESL_FAIL(eslEINCOMPAT, errbuf, "p7banded_post_to_cp9bands: bnd has no banded rows.\n");
+
+  ESL_ALLOC(pocc, sizeof(float) * (M + 1));
+  for(k = 0; k <= M; k++) pocc[k] = 0.0f;
+
+  do_old_hmm2ij = ((cm->align_opts & CM_ALIGN_HMM2IJOLD) || (cm->search_opts & CM_SEARCH_HMM2IJOLD)) ? TRUE : FALSE;
+  do_trunc      = cm_pli_PassAllowsTruncation(pass_idx);
+
+  switch(pass_idx) {
+    case PLI_PASS_5P_ONLY_FORCE:                cp9 = cm->Rcp9; break;
+    case PLI_PASS_3P_ONLY_FORCE:                cp9 = cm->Lcp9; break;
+    case PLI_PASS_5P_AND_3P_FORCE:
+    case PLI_PASS_5P_AND_3P_ANY:                cp9 = cm->Tcp9; break;
+    default:                                    cp9 = cm->cp9;  break;
+  }
+  if(cp9 == NULL)
+    ESL_FAIL(eslEINCOMPAT, errbuf, "p7banded_post_to_cp9bands: cp9 is NULL (pass_idx %d).\n", pass_idx);
+
+  log_thresh = logf(thresh);
+
+  /* Initialize all bands to "unset" sentinel values */
+  for(k = 0; k <= M; k++) {
+    cp9b->pn_min_m[k] = L + 2;
+    cp9b->pn_max_m[k] = -1;
+    cp9b->pn_min_i[k] = L + 2;
+    cp9b->pn_max_i[k] = -1;
+    cp9b->pn_min_d[k] = L + 2;
+    cp9b->pn_max_d[k] = -1;
+  }
+
+  /* Main posterior sweep over banded (i,k) cells.
+   * Walk fwd->dp and bck->dp in parallel (same P7_GBANDS layout).
+   * bnd is passed explicitly (not via gxfb->bnd) to avoid use-after-free
+   * when the caller transfers bnd ownership to pli->p7bnd. */
+  bnd_ip = bnd->imem;
+  bnd_kp = bnd->kmem;
+  fwd_dp = gxfb->dp;
+  bck_dp = gxbb->dp;
+
+  /* Record first row's band for i=0 D_k handling below */
+  first_kac = bnd->kmem[0];
+  first_kbc = bnd->kmem[1];
+
+  for(g = 0; g < bnd->nseg; g++) {
+    ia = *bnd_ip++;
+    ib = *bnd_ip++;
+
+    for(i = ia; i <= ib; i++) {
+      kac = *bnd_kp++;
+      kbc = *bnd_kp++;
+      nk  = kbc - kac + 1;
+
+      /* Convert window-relative row i to absolute position, then to
+       * envelope-relative position ep (1-indexed within [i0..j0]).
+       * Skip rows outside the envelope. */
+      int abs_i = ws + i - 1;
+      int ep    = abs_i - i0 + 1;   /* 1-indexed within envelope */
+      if(abs_i >= i0 && abs_i <= j0) {
+	for(k = kac; k <= kbc; k++) {
+	  fM = fwd_dp[(k-kac)*p7G_NSCELLS + p7G_M];
+	  bM = bck_dp[(k-kac)*p7G_NSCELLS + p7G_M];
+	  pocc[k] += expf(fM + bM - fwdsc);
+
+	  if(fM + bM - fwdsc > log_thresh) {
+	    if(ep < cp9b->pn_min_m[k]) cp9b->pn_min_m[k] = ep;
+	    if(ep > cp9b->pn_max_m[k]) cp9b->pn_max_m[k] = ep;
+	    /* Delete bands mirror match bands */
+	    if(k > 0) {
+	      if(ep < cp9b->pn_min_d[k]) cp9b->pn_min_d[k] = ep;
+	      if(ep > cp9b->pn_max_d[k]) cp9b->pn_max_d[k] = ep;
+	    }
+	  }
+
+	  if(k < M) {
+	    fI = fwd_dp[(k-kac)*p7G_NSCELLS + p7G_I];
+	    bI = bck_dp[(k-kac)*p7G_NSCELLS + p7G_I];
+	    if(fI + bI - fwdsc > log_thresh) {
+	      if(ep < cp9b->pn_min_i[k]) cp9b->pn_min_i[k] = ep;
+	      if(ep > cp9b->pn_max_i[k]) cp9b->pn_max_i[k] = ep;
+	    }
+	  }
+	}
+      }
+      fwd_dp += nk * p7G_NSCELLS;
+      bck_dp += nk * p7G_NSCELLS;
+    }
+  }
+
+  /* Handle i=0 special case (as in the former p7bands_to_cp9bands()):
+   *   M_0 (begin state) is always at position 0.
+   *   D_k for k in first_kac..first_kbc may be active at position 0
+   *   (entering the model via begin -> delete transitions). */
+  cp9b->pn_min_m[0] = cp9b->pn_max_m[0] = 0;
+  for(k = first_kac; k <= first_kbc; k++) {
+    if(k > 0) {
+      if(0 < cp9b->pn_min_d[k]) cp9b->pn_min_d[k] = 0;
+      if(0 > cp9b->pn_max_d[k]) cp9b->pn_max_d[k] = 0;
+    }
+  }
+
+  /* Convert unset states to -1 sentinel */
+  for(k = 0; k <= M; k++) {
+    if(cp9b->pn_min_m[k] > cp9b->pn_max_m[k]) cp9b->pn_min_m[k] = cp9b->pn_max_m[k] = -1;
+    if(cp9b->pn_min_i[k] > cp9b->pn_max_i[k]) cp9b->pn_min_i[k] = cp9b->pn_max_i[k] = -1;
+    if(cp9b->pn_min_d[k] > cp9b->pn_max_d[k]) cp9b->pn_min_d[k] = cp9b->pn_max_d[k] = -1;
+  }
+  cp9b->pn_min_d[0] = cp9b->pn_max_d[0] = -1; /* D_0 does not exist */
+
+  cp9b->tau = cm->tau;
+
+  /* Shift HMM bands from 1..L to i0..j0 coordinate system if needed */
+  if(i0 != 1) {
+    int offset = i0 - 1;
+    for(k = 0; k <= M; k++) {
+      if(cp9b->pn_min_m[k] != -1) { cp9b->pn_min_m[k] += offset; cp9b->pn_max_m[k] += offset; }
+      if(cp9b->pn_min_i[k] != -1) { cp9b->pn_min_i[k] += offset; cp9b->pn_max_i[k] += offset; }
+      if(cp9b->pn_min_d[k] != -1) { cp9b->pn_min_d[k] += offset; cp9b->pn_max_d[k] += offset; }
+    }
+  }
+
+  /* Set truncation candidate valid arrays using cp9-style thresh1/thresh2 sweep.
+   * pocc[k] was accumulated above (unconditionally) as Σ_i exp(fM+bM-fwdsc).
+   * Mirrors p7pn_bands_to_cp9cm_bands and hmmband.c:cp9_PredictStartAndEndPositions. */
+  if(do_trunc) {
+    cp9b->sp1 = cp9b->sp2 = -1;
+    for(k = 1; k <= M; k++) {
+      if(cp9b->pn_min_m[k] == -1 && cp9b->pn_min_i[k] == -1 && cp9b->pn_min_d[k] == -1) continue;
+      if(cp9b->sp1 == -1 && pocc[k] > cp9b->thresh1) cp9b->sp1 = k;
+      if(cp9b->sp2 == -1 && pocc[k] > cp9b->thresh2) cp9b->sp2 = k;
+      if(cp9b->sp1 != -1 && cp9b->sp2 != -1) break;
+    }
+    if(cp9b->sp1 == -1) cp9b->sp1 = M + 1;
+    if(cp9b->sp2 == -1) cp9b->sp2 = M + 1;
+
+    if(cp9b->sp1 == M + 1 && cp9b->sp2 == M + 1) {
+      cp9b->ep1 = cp9b->ep2 = 0;
+    } else {
+      cp9b->ep1 = cp9b->ep2 = -1;
+      for(k = M; k >= 1; k--) {
+        if(cp9b->pn_min_m[k] == -1 && cp9b->pn_min_i[k] == -1 && cp9b->pn_min_d[k] == -1) continue;
+        if(cp9b->ep1 == -1 && pocc[k] > cp9b->thresh1) cp9b->ep1 = k;
+        if(cp9b->ep2 == -1 && pocc[k] > cp9b->thresh2) cp9b->ep2 = k;
+        if(cp9b->ep1 != -1 && cp9b->ep2 != -1) break;
+      }
+      if(cp9b->ep1 == -1) cp9b->ep1 = 0;
+      if(cp9b->ep2 == -1) cp9b->ep2 = 0;
+    }
+
+    if(cp9b->sp1 == M + 1) {
+      cp9b->Rmarg_imin = i0; cp9b->Rmarg_imax = j0;
+    } else {
+      int rmin = INT_MAX, rmax = INT_MIN;
+      if(cp9b->sp1 != (M+1) && cp9b->pn_min_m[cp9b->sp1] >= 0) rmin = ESL_MIN(rmin, cp9b->pn_min_m[cp9b->sp1]);
+      if(cp9b->sp1 != (M+1) && cp9b->pn_min_i[cp9b->sp1] >= 0) rmin = ESL_MIN(rmin, cp9b->pn_min_i[cp9b->sp1]);
+      if(cp9b->sp1 != (M+1) && cp9b->pn_min_d[cp9b->sp1] >= 0) rmin = ESL_MIN(rmin, cp9b->pn_min_d[cp9b->sp1]);
+      if(cp9b->sp2 != (M+1) && cp9b->pn_min_m[cp9b->sp2] >= 0) rmin = ESL_MIN(rmin, cp9b->pn_min_m[cp9b->sp2]);
+      if(cp9b->sp2 != (M+1) && cp9b->pn_min_i[cp9b->sp2] >= 0) rmin = ESL_MIN(rmin, cp9b->pn_min_i[cp9b->sp2]);
+      if(cp9b->sp2 != (M+1) && cp9b->pn_min_d[cp9b->sp2] >= 0) rmin = ESL_MIN(rmin, cp9b->pn_min_d[cp9b->sp2]);
+      if(rmin == INT_MAX || cp9b->sp1 == (M+1) || cp9b->sp2 == (M+1)) rmin = i0;
+      cp9b->Rmarg_imin = ESL_MAX(i0, ESL_MIN(j0 + 1, rmin));
+
+      if(cp9b->sp1 != (M+1) && cp9b->pn_max_m[cp9b->sp1] >= 0) rmax = ESL_MAX(rmax, cp9b->pn_max_m[cp9b->sp1]);
+      if(cp9b->sp1 != (M+1) && cp9b->pn_max_i[cp9b->sp1] >= 0) rmax = ESL_MAX(rmax, cp9b->pn_max_i[cp9b->sp1]);
+      if(cp9b->sp1 != (M+1) && cp9b->pn_max_d[cp9b->sp1] >= 0) rmax = ESL_MAX(rmax, cp9b->pn_max_d[cp9b->sp1]);
+      if(cp9b->sp2 != (M+1) && cp9b->pn_max_m[cp9b->sp2] >= 0) rmax = ESL_MAX(rmax, cp9b->pn_max_m[cp9b->sp2]);
+      if(cp9b->sp2 != (M+1) && cp9b->pn_max_i[cp9b->sp2] >= 0) rmax = ESL_MAX(rmax, cp9b->pn_max_i[cp9b->sp2]);
+      if(cp9b->sp2 != (M+1) && cp9b->pn_max_d[cp9b->sp2] >= 0) rmax = ESL_MAX(rmax, cp9b->pn_max_d[cp9b->sp2]);
+      if(rmax == INT_MIN || cp9b->sp1 == (M+1) || cp9b->sp2 == (M+1)) rmax = j0 + 1;
+      cp9b->Rmarg_imax = ESL_MAX(i0, ESL_MIN(j0 + 1, rmax));
+    }
+
+    if(cp9b->ep1 == 0) {
+      cp9b->Lmarg_jmin = i0 - 1; cp9b->Lmarg_jmax = j0;
+    } else {
+      int lmin = INT_MAX, lmax = INT_MIN;
+      if(cp9b->ep1 != 0 && cp9b->pn_min_m[cp9b->ep1] >= 0) lmin = ESL_MIN(lmin, cp9b->pn_min_m[cp9b->ep1]);
+      if(cp9b->ep1 != 0 && cp9b->pn_min_i[cp9b->ep1] >= 0) lmin = ESL_MIN(lmin, cp9b->pn_min_i[cp9b->ep1]);
+      if(cp9b->ep1 != 0 && cp9b->pn_min_d[cp9b->ep1] >= 0) lmin = ESL_MIN(lmin, cp9b->pn_min_d[cp9b->ep1] - 1);
+      if(cp9b->ep2 != 0 && cp9b->pn_min_m[cp9b->ep2] >= 0) lmin = ESL_MIN(lmin, cp9b->pn_min_m[cp9b->ep2]);
+      if(cp9b->ep2 != 0 && cp9b->pn_min_i[cp9b->ep2] >= 0) lmin = ESL_MIN(lmin, cp9b->pn_min_i[cp9b->ep2]);
+      if(cp9b->ep2 != 0 && cp9b->pn_min_d[cp9b->ep2] >= 0) lmin = ESL_MIN(lmin, cp9b->pn_min_d[cp9b->ep2] - 1);
+      if(lmin == INT_MAX || cp9b->ep1 == 0 || cp9b->ep2 == 0) lmin = i0 - 1;
+      cp9b->Lmarg_jmin = ESL_MAX(i0 - 1, ESL_MIN(j0, lmin));
+
+      if(cp9b->ep1 != 0 && cp9b->pn_max_m[cp9b->ep1] >= 0) lmax = ESL_MAX(lmax, cp9b->pn_max_m[cp9b->ep1]);
+      if(cp9b->ep1 != 0 && cp9b->pn_max_i[cp9b->ep1] >= 0) lmax = ESL_MAX(lmax, cp9b->pn_max_i[cp9b->ep1]);
+      if(cp9b->ep1 != 0 && cp9b->pn_max_d[cp9b->ep1] >= 0) lmax = ESL_MAX(lmax, cp9b->pn_max_d[cp9b->ep1] - 1);
+      if(cp9b->ep2 != 0 && cp9b->pn_max_m[cp9b->ep2] >= 0) lmax = ESL_MAX(lmax, cp9b->pn_max_m[cp9b->ep2]);
+      if(cp9b->ep2 != 0 && cp9b->pn_max_i[cp9b->ep2] >= 0) lmax = ESL_MAX(lmax, cp9b->pn_max_i[cp9b->ep2]);
+      if(cp9b->ep2 != 0 && cp9b->pn_max_d[cp9b->ep2] >= 0) lmax = ESL_MAX(lmax, cp9b->pn_max_d[cp9b->ep2] - 1);
+      if(lmax == INT_MIN || cp9b->ep1 == 0 || cp9b->ep2 == 0) lmax = j0;
+      cp9b->Lmarg_jmax = ESL_MAX(i0 - 1, ESL_MIN(j0, lmax));
+    }
+
+    if((status = cp9_MarginalCandidatesFromStartEndPositions(cm, cp9b, pass_idx, errbuf)) != eslOK) goto ERROR;
+  } else {
+    esl_vec_ISet(cp9b->Jvalid, cm->M + 1, TRUE);
+    esl_vec_ISet(cp9b->Lvalid, cm->M + 1, FALSE);
+    esl_vec_ISet(cp9b->Rvalid, cm->M + 1, FALSE);
+    esl_vec_ISet(cp9b->Tvalid, cm->M + 1, FALSE);
+  }
+
+  /* HMM bands -> CM ij bands.
+   * brief 26_0821-069: this function (p7banded_post_to_cp9bands) has no
+   * callers anywhere in src/*.c as of this brief (verified by grep) -- it is
+   * declared in infernal.h but dead code. Left as-is rather than "fixed":
+   * there is no live call site to determine a correct doing_search value
+   * from, and no way to test a change to unreachable code on a landing
+   * candidate. */
+  if(do_old_hmm2ij) {
+    if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, TRUE, debug_level)) != eslOK) goto ERROR;
+  } else {
+    if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, i0, j0, TRUE, do_trunc, debug_level)) != eslOK) goto ERROR;
+  }
+
+  /* CM ij bands -> CM d bands */
+  if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) goto ERROR;
+  ij2d_bands(cm, cp9b, do_trunc, debug_level);
+
+#if eslDEBUGLEVEL >= 1
+  if((status = cp9_ValidateBands(cm, errbuf, cp9b, i0, j0, do_trunc)) != eslOK) goto ERROR;
+  ESL_DPRINTF1(("#DEBUG: p7banded_post_to_cp9bands bands validated.\n"));
+#endif
+  if(debug_level > 0) debug_print_ij_bands(cm);
+
+  free(pocc);
+  return eslOK;
+
+ ERROR:
+  if(pocc) free(pocc);
+  return status;
+}
+
+
+/* Function: p7banded_post_to_pn_bands
+ * Date    : EPN, 2026-03-26
+ *
+ * Purpose:  Phase 1 of p7banded_post_to_cp9bands: sweep the banded Forward/
+ *           Backward matrices and fill per-node pn_min/max arrays.
+ *
+ *           Extracted so that the posterior sweep can be run at F5 time
+ *           (while gxfb/gxbb are valid) and the results stored per envelope,
+ *           decoupling them from the later CYK dispatch where gxfb/gxbb may
+ *           already point to a different window.
+ *
+ * Args:     gxfb      - p7 banded glocal Forward matrix (log-space)
+ *           gxbb      - p7 banded glocal Backward matrix (log-space)
+ *           fwdsc     - Forward score in nats
+ *           bnd       - band structure for gxfb/gxbb
+ *           ws        - absolute start of the window (1-indexed)
+ *           M         - number of HMM nodes (= length of pn_* arrays - 1)
+ *           i0        - first absolute position of the envelope
+ *           j0        - final absolute position of the envelope
+ *           thresh    - posterior probability threshold
+ *           L         - envelope length (j0 - i0 + 1)
+ *           pn_min_m  - [0..M] pre-allocated output: min match position
+ *           pn_max_m  - [0..M] pre-allocated output: max match position
+ *           pn_min_i  - [0..M] pre-allocated output: min insert position
+ *           pn_max_i  - [0..M] pre-allocated output: max insert position
+ *           pn_min_d  - [0..M] pre-allocated output: min delete position
+ *           pn_max_d  - [0..M] pre-allocated output: max delete position
+ *           pocc      - [0..M] pre-allocated OR NULL: per-node match-posterior
+ *                       occupancy sum (pocc[k] = Σ_i exp(fM+bM-fwdsc)).  Used
+ *                       downstream by p7pn_bands_to_cp9cm_bands together with
+ *                       cp9b->thresh1/thresh2 to compute sp1/sp2/ep1/ep2
+ *                       (mimics the cp9 path's cp9_PredictStartAndEndPositions).
+ *                       Pass NULL if the caller does not want it.
+ *
+ *           Positions are stored in 1..L (envelope-relative) coordinates.
+ *           Unset nodes have pn_min[k] = pn_max[k] = -1.
+ *           Node 0 match band is always set to 0 (begin state special case).
+ *
+ * Returns:  eslOK on success.
+ */
+int
+p7banded_post_to_pn_bands(P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc,
+                           P7_GBANDS *bnd, int ws, int M, int i0, int j0,
+                           float thresh, int L,
+                           int *pn_min_m, int *pn_max_m,
+                           int *pn_min_i, int *pn_max_i,
+                           int *pn_min_d, int *pn_max_d,
+                           float *pocc,
+                           int do_pnmono, int do_pnmono_print)
+{
+  int          g, i, k;
+  int          ia, ib;
+  int          kac, kbc;
+  int         *bnd_ip;
+  int         *bnd_kp;
+  float const *fwd_dp;
+  float const *bck_dp;
+  float        log_thresh;
+  float        fM, bM, fI, bI;
+  int          nk;
+  int          first_kac, first_kbc;
+  int          abs_i, ep;
+
+  log_thresh = logf(thresh);
+
+  for(k = 0; k <= M; k++) {
+    pn_min_m[k] = L + 2;
+    pn_max_m[k] = -1;
+    pn_min_i[k] = L + 2;
+    pn_max_i[k] = -1;
+    pn_min_d[k] = L + 2;
+    pn_max_d[k] = -1;
+  }
+  if(pocc != NULL) { for(k = 0; k <= M; k++) pocc[k] = 0.0f; }
+
+  bnd_ip    = bnd->imem;
+  bnd_kp    = bnd->kmem;
+  fwd_dp    = gxfb->dp;
+  bck_dp    = gxbb->dp;
+  first_kac = bnd->kmem[0];
+  first_kbc = bnd->kmem[1];
+
+  for(g = 0; g < bnd->nseg; g++) {
+    ia = *bnd_ip++;
+    ib = *bnd_ip++;
+    for(i = ia; i <= ib; i++) {
+      kac = *bnd_kp++;
+      kbc = *bnd_kp++;
+      nk  = kbc - kac + 1;
+      abs_i = ws + i - 1;
+      ep    = abs_i - i0 + 1;
+      if(abs_i >= i0 && abs_i <= j0) {
+        for(k = kac; k <= kbc; k++) {
+          fM = fwd_dp[(k-kac)*p7G_NSCELLS + p7G_M];
+          bM = bck_dp[(k-kac)*p7G_NSCELLS + p7G_M];
+          if(fM + bM - fwdsc > log_thresh) {
+            if(ep < pn_min_m[k]) pn_min_m[k] = ep;
+            if(ep > pn_max_m[k]) pn_max_m[k] = ep;
+            if(k > 0) {
+              if(ep < pn_min_d[k]) pn_min_d[k] = ep;
+              if(ep > pn_max_d[k]) pn_max_d[k] = ep;
+            }
+          }
+          if(pocc != NULL) pocc[k] += expf(fM + bM - fwdsc);
+          if(k < M) {
+            fI = fwd_dp[(k-kac)*p7G_NSCELLS + p7G_I];
+            bI = bck_dp[(k-kac)*p7G_NSCELLS + p7G_I];
+            if(fI + bI - fwdsc > log_thresh) {
+              if(ep < pn_min_i[k]) pn_min_i[k] = ep;
+              if(ep > pn_max_i[k]) pn_max_i[k] = ep;
+            }
+          }
+        }
+      }
+      fwd_dp += nk * p7G_NSCELLS;
+      bck_dp += nk * p7G_NSCELLS;
+    }
+  }
+
+  /* i=0 special case: begin state M_0 always at position 0;
+   * D_k for k in first band row may be active at position 0. */
+  pn_min_m[0] = pn_max_m[0] = 0;
+  for(k = first_kac; k <= first_kbc; k++) {
+    if(k > 0) {
+      if(0 < pn_min_d[k]) pn_min_d[k] = 0;
+      if(0 > pn_max_d[k]) pn_max_d[k] = 0;
+    }
+  }
+
+  /* I_0 and I_M (5'/3' flanking CP9 inserts) have no p7 counterparts
+   * (p7 uses N and C states), so the posterior sweep never populates
+   * their bands. Derive tight bounds from the adjacent match bands:
+   * I_0 emits before M_1, I_M emits after M_M. Without this,
+   * cp9_HMM2ijBands pins ROOT_IL/IR to envelope edges and the CM
+   * pays mis-match penalty for flanking residues.
+   */
+  if (pn_max_m[1] >= 1) {
+    pn_min_i[0] = 1;
+    pn_max_i[0] = pn_max_m[1] - 1;
+  }
+  if (pn_min_m[M] >= 1 && pn_min_m[M] <= L) {
+    pn_min_i[M] = pn_min_m[M] + 1;
+    pn_max_i[M] = L;
+  }
+
+  /* Convert unset entries to -1 sentinel */
+  for(k = 0; k <= M; k++) {
+    if(pn_min_m[k] > pn_max_m[k]) pn_min_m[k] = pn_max_m[k] = -1;
+    if(pn_min_i[k] > pn_max_i[k]) pn_min_i[k] = pn_max_i[k] = -1;
+    if(pn_min_d[k] > pn_max_d[k]) pn_min_d[k] = pn_max_d[k] = -1;
+  }
+  pn_min_d[0] = pn_max_d[0] = -1; /* D_0 does not exist */
+
+  if(do_pnmono) pn_match_bands_enforce_monotone(pn_min_m, pn_max_m, M, L, do_pnmono_print, "post_thresh");
+
+  return eslOK;
+}
+
+
+/* Function: p7banded_post_to_pn_bands_tau
+ * Date    : EPN*, Sat Apr  5 2026
+ *
+ * Purpose:  Cumulative-tau variant of p7banded_post_to_pn_bands().
+ *           Instead of a hard posterior probability threshold, trims
+ *           per-node bands using a cumulative probability fraction
+ *           <tau>.  For each node k, the band is set so that at most
+ *           tau/2 of the total posterior mass is excluded from each
+ *           side (left and right).
+ *
+ *           Three passes over the banded F/B matrices:
+ *             Pass 1 (forward): compute total_m[k] and total_i[k]
+ *                    via log-sum-exp, and save per-row metadata
+ *                    (dp pointer offsets, kac/kbc, abs_i) for reverse.
+ *             Pass 2 (forward): left-trim — accumulate per-node
+ *                    probability from left, set pn_min when cumsum
+ *                    reaches tau/2.
+ *             Pass 3 (backward): right-trim — walk rows in reverse
+ *                    using saved pointers, set pn_max when cumsum
+ *                    from right reaches tau/2.
+ *
+ * Args:     gxfb      - p7 banded glocal Forward matrix (log-space)
+ *           gxbb      - p7 banded glocal Backward matrix (log-space)
+ *           fwdsc     - Forward score in nats
+ *           bnd       - band structure for gxfb/gxbb
+ *           ws        - absolute start of the window (1-indexed)
+ *           M         - number of HMM nodes
+ *           i0        - first absolute position of the envelope
+ *           j0        - final absolute position of the envelope
+ *           tau       - cumulative probability fraction to trim
+ *           L         - envelope length (j0 - i0 + 1)
+ *           pn_min_m  - [0..M] pre-allocated output: min match position
+ *           pn_max_m  - [0..M] pre-allocated output: max match position
+ *           pn_min_i  - [0..M] pre-allocated output: min insert position
+ *           pn_max_i  - [0..M] pre-allocated output: max insert position
+ *           pn_min_d  - [0..M] pre-allocated output: min delete position
+ *           pn_max_d  - [0..M] pre-allocated output: max delete position
+ *
+ *           Positions are stored in 1..L (envelope-relative) coordinates.
+ *           Unset nodes have pn_min[k] = pn_max[k] = -1.
+ *           Node 0 match band is always set to 0 (begin state special case).
+ *
+ * Returns:  eslOK on success.
+ */
+int
+p7banded_post_to_pn_bands_tau(P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc,
+                               P7_GBANDS *bnd, int ws, int M, int i0, int j0,
+                               float tau, int L,
+                               int *pn_min_m, int *pn_max_m,
+                               int *pn_min_i, int *pn_max_i,
+                               int *pn_min_d, int *pn_max_d,
+                               int do_pnmono, int do_pnmono_print)
+{
+  int          status;
+  int          g, i, k;
+  int          ia, ib;
+  int          kac, kbc;
+  int         *bnd_ip;
+  int         *bnd_kp;
+  float const *fwd_dp;
+  float const *bck_dp;
+  float        fM, bM, fI, bI;
+  float        log_post, prob;
+  int          nk;
+  int          first_kac, first_kbc;
+  int          abs_i, ep;
+  float        half_tau = tau / 2.0f;
+
+  /* per-node totals (log space) */
+  float *total_m = NULL;
+  float *total_i = NULL;
+  /* per-node cumulative sums (probability space) for left and right trim */
+  float *left_cumsum_m  = NULL;
+  float *left_cumsum_i  = NULL;
+  float *right_cumsum_m = NULL;
+  float *right_cumsum_i = NULL;
+
+  /* Per-row saved data for reverse pass.
+   * We count total rows in the banded matrix first. */
+  int    nrows = 0;
+  int   *row_kac   = NULL;
+  int   *row_kbc   = NULL;
+  int   *row_ep    = NULL;
+  int   *row_abs_i = NULL;
+  int   *row_fwd_off = NULL;  /* offset into gxfb->dp for this row's first cell */
+  int   *row_bck_off = NULL;  /* offset into gxbb->dp for this row's first cell */
+
+  /* Count total rows */
+  bnd_ip = bnd->imem;
+  for(g = 0; g < bnd->nseg; g++) {
+    ia = *bnd_ip++;
+    ib = *bnd_ip++;
+    nrows += (ib - ia + 1);
+  }
+
+  /* Allocations */
+  ESL_ALLOC(total_m,       sizeof(float) * (M+1));
+  ESL_ALLOC(total_i,       sizeof(float) * (M+1));
+  ESL_ALLOC(left_cumsum_m, sizeof(float) * (M+1));
+  ESL_ALLOC(left_cumsum_i, sizeof(float) * (M+1));
+  ESL_ALLOC(right_cumsum_m,sizeof(float) * (M+1));
+  ESL_ALLOC(right_cumsum_i,sizeof(float) * (M+1));
+  ESL_ALLOC(row_kac,       sizeof(int) * nrows);
+  ESL_ALLOC(row_kbc,       sizeof(int) * nrows);
+  ESL_ALLOC(row_ep,        sizeof(int) * nrows);
+  ESL_ALLOC(row_abs_i,     sizeof(int) * nrows);
+  ESL_ALLOC(row_fwd_off,   sizeof(int) * nrows);
+  ESL_ALLOC(row_bck_off,   sizeof(int) * nrows);
+
+  for(k = 0; k <= M; k++) {
+    total_m[k]       = -eslINFINITY;
+    total_i[k]       = -eslINFINITY;
+    left_cumsum_m[k] = 0.0f;
+    left_cumsum_i[k] = 0.0f;
+    right_cumsum_m[k]= 0.0f;
+    right_cumsum_i[k]= 0.0f;
+  }
+
+  for(k = 0; k <= M; k++) {
+    pn_min_m[k] = L + 2;
+    pn_max_m[k] = -1;
+    pn_min_i[k] = L + 2;
+    pn_max_i[k] = -1;
+    pn_min_d[k] = L + 2;
+    pn_max_d[k] = -1;
+  }
+
+  first_kac = bnd->kmem[0];
+  first_kbc = bnd->kmem[1];
+
+  /* ---- Pass 1: compute total_m[k], total_i[k] via log-sum-exp;
+   *              save per-row metadata for reverse pass ---- */
+  bnd_ip = bnd->imem;
+  bnd_kp = bnd->kmem;
+  fwd_dp = gxfb->dp;
+  bck_dp = gxbb->dp;
+  int r = 0;
+
+  for(g = 0; g < bnd->nseg; g++) {
+    ia = *bnd_ip++;
+    ib = *bnd_ip++;
+    for(i = ia; i <= ib; i++) {
+      kac = *bnd_kp++;
+      kbc = *bnd_kp++;
+      nk  = kbc - kac + 1;
+      abs_i = ws + i - 1;
+      ep    = abs_i - i0 + 1;
+
+      /* save row metadata */
+      row_kac[r]     = kac;
+      row_kbc[r]     = kbc;
+      row_ep[r]      = ep;
+      row_abs_i[r]   = abs_i;
+      row_fwd_off[r] = (int)(fwd_dp - gxfb->dp);
+      row_bck_off[r] = (int)(bck_dp - gxbb->dp);
+
+      if(abs_i >= i0 && abs_i <= j0) {
+        for(k = kac; k <= kbc; k++) {
+          fM = fwd_dp[(k-kac)*p7G_NSCELLS + p7G_M];
+          bM = bck_dp[(k-kac)*p7G_NSCELLS + p7G_M];
+          log_post = fM + bM - fwdsc;
+          total_m[k] = p7_FLogsum(total_m[k], log_post);
+          if(k > 0) {
+            /* D states share the match posterior for banding purposes */
+          }
+          if(k < M) {
+            fI = fwd_dp[(k-kac)*p7G_NSCELLS + p7G_I];
+            bI = bck_dp[(k-kac)*p7G_NSCELLS + p7G_I];
+            log_post = fI + bI - fwdsc;
+            total_i[k] = p7_FLogsum(total_i[k], log_post);
+          }
+        }
+      }
+      fwd_dp += nk * p7G_NSCELLS;
+      bck_dp += nk * p7G_NSCELLS;
+      r++;
+    }
+  }
+
+  /* ---- Pass 2 (forward): left-trim ---- */
+  for(r = 0; r < nrows; r++) {
+    kac   = row_kac[r];
+    kbc   = row_kbc[r];
+    abs_i = row_abs_i[r];
+    ep    = row_ep[r];
+    nk    = kbc - kac + 1;
+    fwd_dp = gxfb->dp + row_fwd_off[r];
+    bck_dp = gxbb->dp + row_bck_off[r];
+
+    if(abs_i >= i0 && abs_i <= j0) {
+      for(k = kac; k <= kbc; k++) {
+        /* match */
+        fM = fwd_dp[(k-kac)*p7G_NSCELLS + p7G_M];
+        bM = bck_dp[(k-kac)*p7G_NSCELLS + p7G_M];
+        log_post = fM + bM - fwdsc;
+        if(total_m[k] > -eslINFINITY) {
+          prob = expf(log_post - total_m[k]);
+          left_cumsum_m[k] += prob;
+          if(left_cumsum_m[k] >= half_tau && pn_min_m[k] > L + 1) {
+            pn_min_m[k] = ep;
+          }
+          /* delete bands track match positions */
+          if(k > 0 && left_cumsum_m[k] >= half_tau && pn_min_d[k] > L + 1) {
+            pn_min_d[k] = ep;
+          }
+        }
+        /* insert */
+        if(k < M) {
+          fI = fwd_dp[(k-kac)*p7G_NSCELLS + p7G_I];
+          bI = bck_dp[(k-kac)*p7G_NSCELLS + p7G_I];
+          log_post = fI + bI - fwdsc;
+          if(total_i[k] > -eslINFINITY) {
+            prob = expf(log_post - total_i[k]);
+            left_cumsum_i[k] += prob;
+            if(left_cumsum_i[k] >= half_tau && pn_min_i[k] > L + 1) {
+              pn_min_i[k] = ep;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /* ---- Pass 3 (backward): right-trim ---- */
+  for(r = nrows - 1; r >= 0; r--) {
+    kac   = row_kac[r];
+    kbc   = row_kbc[r];
+    abs_i = row_abs_i[r];
+    ep    = row_ep[r];
+    nk    = kbc - kac + 1;
+    fwd_dp = gxfb->dp + row_fwd_off[r];
+    bck_dp = gxbb->dp + row_bck_off[r];
+
+    if(abs_i >= i0 && abs_i <= j0) {
+      for(k = kac; k <= kbc; k++) {
+        /* match */
+        fM = fwd_dp[(k-kac)*p7G_NSCELLS + p7G_M];
+        bM = bck_dp[(k-kac)*p7G_NSCELLS + p7G_M];
+        log_post = fM + bM - fwdsc;
+        if(total_m[k] > -eslINFINITY) {
+          prob = expf(log_post - total_m[k]);
+          right_cumsum_m[k] += prob;
+          if(right_cumsum_m[k] >= half_tau && pn_max_m[k] == -1) {
+            pn_max_m[k] = ep;
+          }
+          if(k > 0 && right_cumsum_m[k] >= half_tau && pn_max_d[k] == -1) {
+            pn_max_d[k] = ep;
+          }
+        }
+        /* insert */
+        if(k < M) {
+          fI = fwd_dp[(k-kac)*p7G_NSCELLS + p7G_I];
+          bI = bck_dp[(k-kac)*p7G_NSCELLS + p7G_I];
+          log_post = fI + bI - fwdsc;
+          if(total_i[k] > -eslINFINITY) {
+            prob = expf(log_post - total_i[k]);
+            right_cumsum_i[k] += prob;
+            if(right_cumsum_i[k] >= half_tau && pn_max_i[k] == -1) {
+              pn_max_i[k] = ep;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /* i=0 special case: begin state M_0 always at position 0;
+   * D_k for k in first band row may be active at position 0. */
+  pn_min_m[0] = pn_max_m[0] = 0;
+  for(k = first_kac; k <= first_kbc; k++) {
+    if(k > 0) {
+      if(0 < pn_min_d[k]) pn_min_d[k] = 0;
+      if(0 > pn_max_d[k]) pn_max_d[k] = 0;
+    }
+  }
+
+  /* I_0 and I_M (5'/3' flanking CP9 inserts) have no p7 counterparts;
+   * see p7banded_post_to_pn_bands() for full explanation. */
+  if (pn_max_m[1] >= 1) {
+    pn_min_i[0] = 1;
+    pn_max_i[0] = pn_max_m[1] - 1;
+  }
+  if (pn_min_m[M] >= 1 && pn_min_m[M] <= L) {
+    pn_min_i[M] = pn_min_m[M] + 1;
+    pn_max_i[M] = L;
+  }
+
+  /* Convert unset entries to -1 sentinel */
+  for(k = 0; k <= M; k++) {
+    if(pn_min_m[k] > pn_max_m[k]) pn_min_m[k] = pn_max_m[k] = -1;
+    if(pn_min_i[k] > pn_max_i[k]) pn_min_i[k] = pn_max_i[k] = -1;
+    if(pn_min_d[k] > pn_max_d[k]) pn_min_d[k] = pn_max_d[k] = -1;
+  }
+  pn_min_d[0] = pn_max_d[0] = -1; /* D_0 does not exist */
+
+  if(do_pnmono) pn_match_bands_enforce_monotone(pn_min_m, pn_max_m, M, L, do_pnmono_print, "post_tau");
+
+  free(total_m);
+  free(total_i);
+  free(left_cumsum_m);
+  free(left_cumsum_i);
+  free(right_cumsum_m);
+  free(right_cumsum_i);
+  free(row_kac);
+  free(row_kbc);
+  free(row_ep);
+  free(row_abs_i);
+  free(row_fwd_off);
+  free(row_bck_off);
+  return eslOK;
+
+ ERROR:
+  if(total_m)        free(total_m);
+  if(total_i)        free(total_i);
+  if(left_cumsum_m)  free(left_cumsum_m);
+  if(left_cumsum_i)  free(left_cumsum_i);
+  if(right_cumsum_m) free(right_cumsum_m);
+  if(right_cumsum_i) free(right_cumsum_i);
+  if(row_kac)        free(row_kac);
+  if(row_kbc)        free(row_kbc);
+  if(row_ep)         free(row_ep);
+  if(row_abs_i)      free(row_abs_i);
+  if(row_fwd_off)    free(row_fwd_off);
+  if(row_bck_off)    free(row_bck_off);
+  return status;
+}
+
+
+/* Function: p7pn_bands_to_cp9cm_bands
+ * Date    : EPN, 2026-03-26
+ *
+ * Purpose:  Phase 2 of p7banded_post_to_cp9bands: convert pre-filled pn_min/max
+ *           arrays (from p7banded_post_to_pn_bands) into CP9 HMM bands and then
+ *           CM ij/d bands.
+ *
+ *           Copies pn_min/max into cp9b->pn_min/max, applies the i0..j0 coordinate
+ *           shift, handles truncation candidates, then calls cp9_HMM2ijBands,
+ *           cp9_GrowHDBands, and ij2d_bands.
+ *
+ * Args:     cm          - covariance model
+ *           errbuf      - error buffer
+ *           pn_min_m..pn_max_d - pre-filled pn arrays [0..M] (1..L envelope-relative)
+ *           pocc        - [0..M] per-node match-posterior occupancy OR NULL.
+ *                         When non-NULL, enables cp9-style computation of sp1/sp2/ep1/ep2
+ *                         via cp9b->thresh1/thresh2 comparisons (mimics
+ *                         hmmband.c:cp9_PredictStartAndEndPositions). When NULL, falls back
+ *                         to the legacy collapse sp1=sp2=min_k(pn_min_m!=-1), ep1=ep2=max_k.
+ *           cp9b        - pre-allocated CP9 bands, filled here
+ *           i0          - first absolute position of the envelope
+ *           j0          - final absolute position of the envelope
+ *           L           - envelope length (j0 - i0 + 1)
+ *           pass_idx    - pipeline pass index
+ *           debug_level - verbosity
+ *
+ * Returns:  eslOK on success, error code on failure.
+ */
+int
+p7pn_bands_to_cp9cm_bands(CM_t *cm, char *errbuf,
+                           int *pn_min_m, int *pn_max_m,
+                           int *pn_min_i, int *pn_max_i,
+                           int *pn_min_d, int *pn_max_d,
+                           const float *pocc,
+                           CP9Bands_t *cp9b, int i0, int j0, int L,
+                           int pass_idx, int debug_level)
+{
+  int    status;
+  int    k;
+  int    M            = cp9b->hmm_M;
+  int    do_old_hmm2ij;
+  int    do_trunc;
+  CP9_t *cp9;
+
+  do_old_hmm2ij = ((cm->align_opts & CM_ALIGN_HMM2IJOLD) || (cm->search_opts & CM_SEARCH_HMM2IJOLD)) ? TRUE : FALSE;
+  do_trunc      = cm_pli_PassAllowsTruncation(pass_idx);
+  switch(pass_idx) {
+    case PLI_PASS_5P_ONLY_FORCE:                cp9 = cm->Rcp9; break;
+    case PLI_PASS_3P_ONLY_FORCE:                cp9 = cm->Lcp9; break;
+    case PLI_PASS_5P_AND_3P_FORCE:
+    case PLI_PASS_5P_AND_3P_ANY:                cp9 = cm->Tcp9; break;
+    default:                                    cp9 = cm->cp9;  break;
+  }
+
+  /* Copy pn_min/max into cp9b */
+  for(k = 0; k <= M; k++) {
+    cp9b->pn_min_m[k] = pn_min_m[k];
+    cp9b->pn_max_m[k] = pn_max_m[k];
+    cp9b->pn_min_i[k] = pn_min_i[k];
+    cp9b->pn_max_i[k] = pn_max_i[k];
+    cp9b->pn_min_d[k] = pn_min_d[k];
+    cp9b->pn_max_d[k] = pn_max_d[k];
+  }
+  cp9b->tau = cm->tau;
+
+  /* Shift HMM bands from 1..L to i0..j0 coordinate system if needed */
+  if(i0 != 1) {
+    int offset = i0 - 1;
+    for(k = 0; k <= M; k++) {
+      if(cp9b->pn_min_m[k] != -1) { cp9b->pn_min_m[k] += offset; cp9b->pn_max_m[k] += offset; }
+      if(cp9b->pn_min_i[k] != -1) { cp9b->pn_min_i[k] += offset; cp9b->pn_max_i[k] += offset; }
+      if(cp9b->pn_min_d[k] != -1) { cp9b->pn_min_d[k] += offset; cp9b->pn_max_d[k] += offset; }
+    }
+  }
+
+  /* Set truncation candidate valid arrays.
+   *
+   * Two modes:
+   * - pocc != NULL: cp9-style — sp1/sp2 are leftmost k where pocc[k] crosses
+   *   thresh1/thresh2; ep1/ep2 symmetric. Rmarg/Lmarg take union over sp1,sp2
+   *   and ep1,ep2 (mirrors hmmband.c:cp9_PredictStartAndEndPositions).
+   * - pocc == NULL: legacy fallback — collapses sp1=sp2=leftmost_k_with_coverage,
+   *   ep1=ep2=rightmost_k. Used by paths that don't cache pocc (e.g. the
+   *   --p7post_tau variant and the final-stage band-shift call at
+   *   cm_pipeline.c:5807).
+   *
+   */
+  if(do_trunc) {
+    if(pocc != NULL) {
+      /* Part 1: sp1/sp2 by threshold sweep (cp9_PredictStartAndEndPositions analogue) */
+      cp9b->sp1 = cp9b->sp2 = -1;
+      for(k = 1; k <= M; k++) {
+        if(cp9b->pn_min_m[k] == -1 && cp9b->pn_min_i[k] == -1 && cp9b->pn_min_d[k] == -1) continue;
+        if(cp9b->sp1 == -1 && pocc[k] > cp9b->thresh1) cp9b->sp1 = k;
+        if(cp9b->sp2 == -1 && pocc[k] > cp9b->thresh2) cp9b->sp2 = k;
+        if(cp9b->sp1 != -1 && cp9b->sp2 != -1) break;
+      }
+      if(cp9b->sp1 == -1) cp9b->sp1 = M + 1;
+      if(cp9b->sp2 == -1) cp9b->sp2 = M + 1;
+
+      /* Part 2: ep1/ep2 symmetric sweep from the right */
+      if(cp9b->sp1 == M + 1 && cp9b->sp2 == M + 1) {
+        cp9b->ep1 = cp9b->ep2 = 0;
+      } else {
+        cp9b->ep1 = cp9b->ep2 = -1;
+        for(k = M; k >= 1; k--) {
+          if(cp9b->pn_min_m[k] == -1 && cp9b->pn_min_i[k] == -1 && cp9b->pn_min_d[k] == -1) continue;
+          if(cp9b->ep1 == -1 && pocc[k] > cp9b->thresh1) cp9b->ep1 = k;
+          if(cp9b->ep2 == -1 && pocc[k] > cp9b->thresh2) cp9b->ep2 = k;
+          if(cp9b->ep1 != -1 && cp9b->ep2 != -1) break;
+        }
+        if(cp9b->ep1 == -1) cp9b->ep1 = 0;
+        if(cp9b->ep2 == -1) cp9b->ep2 = 0;
+      }
+
+      /* Part 3: Rmarg_i{min,max} from UNION of sp1 and sp2 bands (hmmband.c:4857-4884) */
+      if(cp9b->sp1 == M + 1) {
+        cp9b->Rmarg_imin = i0;
+        cp9b->Rmarg_imax = j0;
+      } else {
+        int rmin = INT_MAX, rmax = INT_MIN;
+        if(cp9b->sp1 != (M+1) && cp9b->pn_min_m[cp9b->sp1] >= 0) rmin = ESL_MIN(rmin, cp9b->pn_min_m[cp9b->sp1]);
+        if(cp9b->sp1 != (M+1) && cp9b->pn_min_i[cp9b->sp1] >= 0) rmin = ESL_MIN(rmin, cp9b->pn_min_i[cp9b->sp1]);
+        if(cp9b->sp1 != (M+1) && cp9b->pn_min_d[cp9b->sp1] >= 0) rmin = ESL_MIN(rmin, cp9b->pn_min_d[cp9b->sp1]);
+        if(cp9b->sp2 != (M+1) && cp9b->pn_min_m[cp9b->sp2] >= 0) rmin = ESL_MIN(rmin, cp9b->pn_min_m[cp9b->sp2]);
+        if(cp9b->sp2 != (M+1) && cp9b->pn_min_i[cp9b->sp2] >= 0) rmin = ESL_MIN(rmin, cp9b->pn_min_i[cp9b->sp2]);
+        if(cp9b->sp2 != (M+1) && cp9b->pn_min_d[cp9b->sp2] >= 0) rmin = ESL_MIN(rmin, cp9b->pn_min_d[cp9b->sp2]);
+        if(rmin == INT_MAX || cp9b->sp1 == (M+1) || cp9b->sp2 == (M+1)) rmin = i0;
+        cp9b->Rmarg_imin = ESL_MAX(i0, ESL_MIN(j0 + 1, rmin));
+
+        if(cp9b->sp1 != (M+1) && cp9b->pn_max_m[cp9b->sp1] >= 0) rmax = ESL_MAX(rmax, cp9b->pn_max_m[cp9b->sp1]);
+        if(cp9b->sp1 != (M+1) && cp9b->pn_max_i[cp9b->sp1] >= 0) rmax = ESL_MAX(rmax, cp9b->pn_max_i[cp9b->sp1]);
+        if(cp9b->sp1 != (M+1) && cp9b->pn_max_d[cp9b->sp1] >= 0) rmax = ESL_MAX(rmax, cp9b->pn_max_d[cp9b->sp1]);
+        if(cp9b->sp2 != (M+1) && cp9b->pn_max_m[cp9b->sp2] >= 0) rmax = ESL_MAX(rmax, cp9b->pn_max_m[cp9b->sp2]);
+        if(cp9b->sp2 != (M+1) && cp9b->pn_max_i[cp9b->sp2] >= 0) rmax = ESL_MAX(rmax, cp9b->pn_max_i[cp9b->sp2]);
+        if(cp9b->sp2 != (M+1) && cp9b->pn_max_d[cp9b->sp2] >= 0) rmax = ESL_MAX(rmax, cp9b->pn_max_d[cp9b->sp2]);
+        if(rmax == INT_MIN || cp9b->sp1 == (M+1) || cp9b->sp2 == (M+1)) rmax = j0 + 1;
+        cp9b->Rmarg_imax = ESL_MAX(i0, ESL_MIN(j0 + 1, rmax));
+      }
+
+      /* Part 4: Lmarg_j{min,max} from UNION of ep1 and ep2 bands (hmmband.c:4886-4914) */
+      if(cp9b->ep1 == 0) {
+        cp9b->Lmarg_jmin = i0 - 1;
+        cp9b->Lmarg_jmax = j0;
+      } else {
+        int lmin = INT_MAX, lmax = INT_MIN;
+        if(cp9b->ep1 != 0 && cp9b->pn_min_m[cp9b->ep1] >= 0) lmin = ESL_MIN(lmin, cp9b->pn_min_m[cp9b->ep1]);
+        if(cp9b->ep1 != 0 && cp9b->pn_min_i[cp9b->ep1] >= 0) lmin = ESL_MIN(lmin, cp9b->pn_min_i[cp9b->ep1]);
+        if(cp9b->ep1 != 0 && cp9b->pn_min_d[cp9b->ep1] >= 0) lmin = ESL_MIN(lmin, cp9b->pn_min_d[cp9b->ep1] - 1);
+        if(cp9b->ep2 != 0 && cp9b->pn_min_m[cp9b->ep2] >= 0) lmin = ESL_MIN(lmin, cp9b->pn_min_m[cp9b->ep2]);
+        if(cp9b->ep2 != 0 && cp9b->pn_min_i[cp9b->ep2] >= 0) lmin = ESL_MIN(lmin, cp9b->pn_min_i[cp9b->ep2]);
+        if(cp9b->ep2 != 0 && cp9b->pn_min_d[cp9b->ep2] >= 0) lmin = ESL_MIN(lmin, cp9b->pn_min_d[cp9b->ep2] - 1);
+        if(lmin == INT_MAX || cp9b->ep1 == 0 || cp9b->ep2 == 0) lmin = i0 - 1;
+        cp9b->Lmarg_jmin = ESL_MAX(i0 - 1, ESL_MIN(j0, lmin));
+
+        if(cp9b->ep1 != 0 && cp9b->pn_max_m[cp9b->ep1] >= 0) lmax = ESL_MAX(lmax, cp9b->pn_max_m[cp9b->ep1]);
+        if(cp9b->ep1 != 0 && cp9b->pn_max_i[cp9b->ep1] >= 0) lmax = ESL_MAX(lmax, cp9b->pn_max_i[cp9b->ep1]);
+        if(cp9b->ep1 != 0 && cp9b->pn_max_d[cp9b->ep1] >= 0) lmax = ESL_MAX(lmax, cp9b->pn_max_d[cp9b->ep1] - 1);
+        if(cp9b->ep2 != 0 && cp9b->pn_max_m[cp9b->ep2] >= 0) lmax = ESL_MAX(lmax, cp9b->pn_max_m[cp9b->ep2]);
+        if(cp9b->ep2 != 0 && cp9b->pn_max_i[cp9b->ep2] >= 0) lmax = ESL_MAX(lmax, cp9b->pn_max_i[cp9b->ep2]);
+        if(cp9b->ep2 != 0 && cp9b->pn_max_d[cp9b->ep2] >= 0) lmax = ESL_MAX(lmax, cp9b->pn_max_d[cp9b->ep2] - 1);
+        if(lmax == INT_MIN || cp9b->ep1 == 0 || cp9b->ep2 == 0) lmax = j0;
+        cp9b->Lmarg_jmax = ESL_MAX(i0 - 1, ESL_MIN(j0, lmax));
+      }
+    } else {
+      /* Legacy fallback: extent-based collapse (sp1=sp2, ep1=ep2). */
+      int sp = M + 1, ep = 0;
+      for(k = 1; k <= M; k++) {
+        if(cp9b->pn_min_m[k] != -1 && k < sp) sp = k;
+        if(cp9b->pn_max_m[k] != -1 && k > ep) ep = k;
+      }
+      if(sp < 1)     sp = 1;
+      if(sp > M + 1) sp = M + 1;
+      if(ep < 0)     ep = 0;
+      if(ep > M)     ep = M;
+      cp9b->sp1 = cp9b->sp2 = sp;
+      cp9b->ep1 = cp9b->ep2 = ep;
+
+      if(cp9b->sp1 == M + 1) {
+        cp9b->Rmarg_imin = i0;
+        cp9b->Rmarg_imax = j0;
+      } else {
+        int rmarg_imin = INT_MAX, rmarg_imax = INT_MIN;
+        if(cp9b->pn_min_m[sp] >= 0) rmarg_imin = ESL_MIN(rmarg_imin, cp9b->pn_min_m[sp]);
+        if(cp9b->pn_min_i[sp] >= 0) rmarg_imin = ESL_MIN(rmarg_imin, cp9b->pn_min_i[sp]);
+        if(cp9b->pn_min_d[sp] >= 0) rmarg_imin = ESL_MIN(rmarg_imin, cp9b->pn_min_d[sp]);
+        if(rmarg_imin == INT_MAX)    rmarg_imin = i0;
+        cp9b->Rmarg_imin = ESL_MAX(i0, ESL_MIN(j0 + 1, rmarg_imin));
+
+        if(cp9b->pn_max_m[sp] >= 0) rmarg_imax = ESL_MAX(rmarg_imax, cp9b->pn_max_m[sp]);
+        if(cp9b->pn_max_i[sp] >= 0) rmarg_imax = ESL_MAX(rmarg_imax, cp9b->pn_max_i[sp]);
+        if(cp9b->pn_max_d[sp] >= 0) rmarg_imax = ESL_MAX(rmarg_imax, cp9b->pn_max_d[sp]);
+        if(rmarg_imax == INT_MIN)    rmarg_imax = j0 + 1;
+        cp9b->Rmarg_imax = ESL_MAX(i0, ESL_MIN(j0 + 1, rmarg_imax));
+      }
+
+      if(cp9b->ep1 == 0) {
+        cp9b->Lmarg_jmin = i0 - 1;
+        cp9b->Lmarg_jmax = j0;
+      } else {
+        int lmarg_jmin = INT_MAX, lmarg_jmax = INT_MIN;
+        if(cp9b->pn_min_m[ep] >= 0) lmarg_jmin = ESL_MIN(lmarg_jmin, cp9b->pn_min_m[ep]);
+        if(cp9b->pn_min_i[ep] >= 0) lmarg_jmin = ESL_MIN(lmarg_jmin, cp9b->pn_min_i[ep]);
+        if(cp9b->pn_min_d[ep] >= 0) lmarg_jmin = ESL_MIN(lmarg_jmin, cp9b->pn_min_d[ep] - 1);
+        if(lmarg_jmin == INT_MAX)    lmarg_jmin = i0 - 1;
+        cp9b->Lmarg_jmin = ESL_MAX(i0 - 1, ESL_MIN(j0, lmarg_jmin));
+
+        if(cp9b->pn_max_m[ep] >= 0) lmarg_jmax = ESL_MAX(lmarg_jmax, cp9b->pn_max_m[ep]);
+        if(cp9b->pn_max_i[ep] >= 0) lmarg_jmax = ESL_MAX(lmarg_jmax, cp9b->pn_max_i[ep]);
+        if(cp9b->pn_max_d[ep] >= 0) lmarg_jmax = ESL_MAX(lmarg_jmax, cp9b->pn_max_d[ep] - 1);
+        if(lmarg_jmax == INT_MIN)    lmarg_jmax = j0;
+        cp9b->Lmarg_jmax = ESL_MAX(i0 - 1, ESL_MIN(j0, lmarg_jmax));
+      }
+    }
+    if((status = cp9_MarginalCandidatesFromStartEndPositions(cm, cp9b, pass_idx, errbuf)) != eslOK) return status;
+  } else {
+    esl_vec_ISet(cp9b->Jvalid, cm->M + 1, TRUE);
+    esl_vec_ISet(cp9b->Lvalid, cm->M + 1, FALSE);
+    esl_vec_ISet(cp9b->Rvalid, cm->M + 1, FALSE);
+    esl_vec_ISet(cp9b->Tvalid, cm->M + 1, FALSE);
+  }
+
+  /* HMM bands -> CM ij bands.
+   * brief 26_0821-069: doing_search=TRUE is correct here, not a leftover
+   * default. This function (p7pn_bands_to_cp9cm_bands) has two textual call
+   * sites: cm_pipeline.c's pli_dispatch_cm_search() (--p7post_cp9b, a genuine
+   * search context -- the only live one), and pli_align_hit()'s legacy
+   * per-hit re-derivation block, which is dead (guarded by "if(0 && ...)").
+   * Hardcoded rather than threaded because the one live caller is
+   * unambiguously search-only. */
+  if(do_old_hmm2ij) {
+    if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, TRUE, debug_level)) != eslOK) return status;
+  } else {
+    if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, i0, j0, TRUE, do_trunc, debug_level)) != eslOK) return status;
+  }
+
+  /* CM ij bands -> CM d bands */
+  if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) return status;
+  ij2d_bands(cm, cp9b, do_trunc, debug_level);
+
+#if eslDEBUGLEVEL >= 1
+  if((status = cp9_ValidateBands(cm, errbuf, cp9b, i0, j0, do_trunc)) != eslOK) return status;
+  ESL_DPRINTF1(("#DEBUG: p7pn_bands_to_cp9cm_bands bands validated.\n"));
+#endif
+  if(debug_level > 0) debug_print_ij_bands(cm);
+
+  return eslOK;
+}
+
+
+/* Function: cm_BandsFromParsetree()
+ * Date    : EPN, Mon Apr  7 2026
+ *
+ * Purpose:  Derive CP9 HMM bands (pn_min_m/max_m/min_i/max_i/min_d/max_d)
+ *           from a CYK parsetree, with a fixed half-width pad. Designed
+ *           to be the CM analog of p7_pins2bands().
+ *
+ *           Walk the parsetree, recording the (i,j) positions where each
+ *           CM node's match/insert/delete states emit. Map CM states to
+ *           HMM consensus positions via cm->cp9map->cs2hn/cs2hs. Then fill
+ *           the pn_min/max arrays with [pos-pad, pos+pad] clamped to
+ *           the envelope, and do left/right sweeps to fill positions
+ *           that don't have a direct contribution from the parsetree.
+ *
+ *           Coordinates: parsetree emitl/emitr are in 1..L (subseq local)
+ *           coordinates. The output pn_min/max arrays use the same 1..L
+ *           local coordinates. Caller can shift to envelope coordinates
+ *           via p7pn_bands_to_cp9cm_bands.
+ *
+ * Args:     cm           - the covariance model (must have cp9map)
+ *           tr           - parsetree from CYK alignment
+ *           L            - length of subsequence aligned (sets the upper bound for pad clamp)
+ *           pad          - band half-width on each side of each pinned position
+ *           pn_min_m     - [0..M] OUTPUT: pre-allocated, will be filled
+ *           pn_max_m     - [0..M] OUTPUT
+ *           pn_min_i     - [0..M] OUTPUT
+ *           pn_max_i     - [0..M] OUTPUT
+ *           pn_min_d     - [0..M] OUTPUT
+ *           pn_max_d     - [0..M] OUTPUT
+ *
+ * Returns:  eslOK on success.
+ */
+int
+cm_BandsFromParsetree(CM_t *cm, Parsetree_t *tr, int L, int pad,
+                      int *pn_min_m, int *pn_max_m,
+                      int *pn_min_i, int *pn_max_i,
+                      int *pn_min_d, int *pn_max_d)
+{
+  int  M = cm->cp9map->hmm_M;
+  int  k, t, v, i, j;
+  int  hn1, hs1, hn2, hs2;
+  int  ka, kb;
+
+  /* Initialize all bands to "unset" sentinel values */
+  for(k = 0; k <= M; k++) {
+    pn_min_m[k] = L + 2; pn_max_m[k] = -1;
+    pn_min_i[k] = L + 2; pn_max_i[k] = -1;
+    pn_min_d[k] = L + 2; pn_max_d[k] = -1;
+  }
+
+  /* Walk the parsetree, recording per-HMM-node emit positions */
+  for(t = 0; t < tr->n; t++) {
+    v = tr->state[t];
+    i = tr->emitl[t];
+    j = tr->emitr[t];
+
+    /* Get HMM node(s) and state type(s) this CM state maps to */
+    hn1 = cm->cp9map->cs2hn[v][0];
+    hs1 = cm->cp9map->cs2hs[v][0];
+    hn2 = cm->cp9map->cs2hn[v][1];
+    hs2 = cm->cp9map->cs2hs[v][1];
+
+    /* Update bands based on CM state type and which HMM node it maps to.
+     * cp9map->cs2hs[v][n]: 0=MATCH, 1=INSERT, 2=DELETE
+     * For MATP_MP: cs2hn[v][0] is the LEFT consensus position (HMM node), maps as MATCH
+     *              cs2hn[v][1] is the RIGHT consensus position, also maps as MATCH
+     *              The left position emits residue i, the right position emits residue j.
+     * For MATP_ML: only the left HMM node, emits residue i (right is delete).
+     * For MATP_MR: only the right HMM node, emits residue j (left is delete).
+     * For MATL_ML/MATR_MR: only one HMM node, emits residue (i for ML, j for MR).
+     * For inserts: emit one residue (i for IL, j for IR).
+     * For deletes: emit nothing, but we still record the position around them.
+     */
+    if(hn1 >= 0 && hn1 <= M) {
+      if(hs1 == 0) { /* MATCH */
+        /* For MATP_MP, MATP_ML, MATL_ML: left HMM node emits residue i */
+        /* For MATR_MR: only one HMM node, but it's stored in [v][0] and emits j */
+        int pos = (cm->stid[v] == MATR_MR) ? j : i;
+        if(pos < pn_min_m[hn1]) pn_min_m[hn1] = pos;
+        if(pos > pn_max_m[hn1]) pn_max_m[hn1] = pos;
+      }
+      else if(hs1 == 1) { /* INSERT */
+        /* IL emits i, IR emits j */
+        int pos = (cm->sttype[v] == IR_st) ? j : i;
+        if(pos < pn_min_i[hn1]) pn_min_i[hn1] = pos;
+        if(pos > pn_max_i[hn1]) pn_max_i[hn1] = pos;
+      }
+      else if(hs1 == 2) { /* DELETE */
+        /* No residue emitted; record the surrounding position.
+         * Use i (the left bound) as a placeholder that gets refined by sweeps below. */
+        if(i < pn_min_d[hn1]) pn_min_d[hn1] = i;
+        if(i > pn_max_d[hn1]) pn_max_d[hn1] = i;
+      }
+    }
+    /* Second HMM node (for MATP_MP, both left and right are matches; for MATP_D, both are deletes) */
+    if(hn2 >= 0 && hn2 <= M) {
+      if(hs2 == 0) {
+        /* MATP_MP: hn2 is the right consensus position, emits residue j */
+        int pos = j;
+        if(pos < pn_min_m[hn2]) pn_min_m[hn2] = pos;
+        if(pos > pn_max_m[hn2]) pn_max_m[hn2] = pos;
+      }
+      else if(hs2 == 1) {
+        if(i < pn_min_i[hn2]) pn_min_i[hn2] = i;
+        if(i > pn_max_i[hn2]) pn_max_i[hn2] = i;
+      }
+      else if(hs2 == 2) {
+        if(j < pn_min_d[hn2]) pn_min_d[hn2] = j;
+        if(j > pn_max_d[hn2]) pn_max_d[hn2] = j;
+      }
+    }
+  }
+
+  /* Apply pad and clamp to [1..L]. After this each filled band has half-width pad. */
+  for(k = 0; k <= M; k++) {
+    if(pn_min_m[k] != L + 2) {
+      ka = pn_min_m[k] - pad; if(ka < 1) ka = 1;
+      kb = pn_max_m[k] + pad; if(kb > L) kb = L;
+      pn_min_m[k] = ka; pn_max_m[k] = kb;
+    }
+    if(pn_min_i[k] != L + 2) {
+      ka = pn_min_i[k] - pad; if(ka < 1) ka = 1;
+      kb = pn_max_i[k] + pad; if(kb > L) kb = L;
+      pn_min_i[k] = ka; pn_max_i[k] = kb;
+    }
+    if(pn_min_d[k] != L + 2) {
+      ka = pn_min_d[k] - pad; if(ka < 0) ka = 0;
+      kb = pn_max_d[k] + pad; if(kb > L) kb = L;
+      pn_min_d[k] = ka; pn_max_d[k] = kb;
+    }
+  }
+
+  /* Sweeps: fill in unset bands by inheriting from neighbors.
+   * Left-to-right: for each k with no band, set pn_*[k] to pn_*[k-1]'s range.
+   * Right-to-left: similarly.
+   * This handles HMM nodes that have no parsetree contribution
+   * (e.g., delete-only nodes between matches). */
+  /* Match bands left sweep */
+  { int last_min = -1, last_max = -1;
+    for(k = 1; k <= M; k++) {
+      if(pn_min_m[k] != L + 2 && pn_max_m[k] != -1) {
+        last_min = pn_min_m[k]; last_max = pn_max_m[k];
+      } else if(last_min != -1) {
+        pn_min_m[k] = last_min; pn_max_m[k] = last_max;
+      }
+    }
+  }
+  /* Match bands right sweep (catches early-k nodes that had no left neighbor) */
+  { int last_min = -1, last_max = -1;
+    for(k = M; k >= 1; k--) {
+      if(pn_min_m[k] != L + 2 && pn_max_m[k] != -1
+         && last_min == -1) {
+        last_min = pn_min_m[k]; last_max = pn_max_m[k];
+      } else if(pn_min_m[k] == L + 2 && last_min != -1) {
+        pn_min_m[k] = last_min; pn_max_m[k] = last_max;
+      }
+    }
+  }
+  /* Insert bands: similarly */
+  { int last_min = -1, last_max = -1;
+    for(k = 0; k < M; k++) {
+      if(pn_min_i[k] != L + 2 && pn_max_i[k] != -1) {
+        last_min = pn_min_i[k]; last_max = pn_max_i[k];
+      } else if(last_min != -1) {
+        pn_min_i[k] = last_min; pn_max_i[k] = last_max;
+      }
+    }
+  }
+  { int last_min = -1, last_max = -1;
+    for(k = M - 1; k >= 0; k--) {
+      if(pn_min_i[k] != L + 2 && pn_max_i[k] != -1
+         && last_min == -1) {
+        last_min = pn_min_i[k]; last_max = pn_max_i[k];
+      } else if(pn_min_i[k] == L + 2 && last_min != -1) {
+        pn_min_i[k] = last_min; pn_max_i[k] = last_max;
+      }
+    }
+  }
+  /* Delete bands: similarly */
+  { int last_min = -1, last_max = -1;
+    for(k = 1; k <= M; k++) {
+      if(pn_min_d[k] != L + 2 && pn_max_d[k] != -1) {
+        last_min = pn_min_d[k]; last_max = pn_max_d[k];
+      } else if(last_min != -1) {
+        pn_min_d[k] = last_min; pn_max_d[k] = last_max;
+      }
+    }
+  }
+  { int last_min = -1, last_max = -1;
+    for(k = M; k >= 1; k--) {
+      if(pn_min_d[k] != L + 2 && pn_max_d[k] != -1
+         && last_min == -1) {
+        last_min = pn_min_d[k]; last_max = pn_max_d[k];
+      } else if(pn_min_d[k] == L + 2 && last_min != -1) {
+        pn_min_d[k] = last_min; pn_max_d[k] = last_max;
+      }
+    }
+  }
+
+  /* Node 0 special case: M_0 = begin state, must be at position 0 */
+  pn_min_m[0] = 0; pn_max_m[0] = 0;
+
+  /* CRITICAL: Ensure the bands include the full sequence range [1..L].
+   * The downstream cp9_HMM2ijBands -> CM bands relies on these bounds:
+   * - Some HMM node must be reachable at position 1 (start of seq)
+   * - Some HMM node must be reachable at position L (end of seq)
+   * - In particular, the LAST emitting node (typically near M) must have
+   *   its match band include L, otherwise ROOT_S's j band won't include L
+   *   and Inside DP will fail with "L is outside ROOT_S's j band".
+   *
+   * Walk left-to-right and ensure each node's band extends down to at most
+   * pos 1 if it's near the start. Walk right-to-left and ensure each node's
+   * band extends up to at least L if it's near the end. The simplest way:
+   * widen the LAST set match band to include L, and the FIRST set match
+   * band to include 1.
+   */
+  { int first_set = -1, last_set = -1;
+    for(k = 1; k <= M; k++) {
+      if(pn_min_m[k] != L + 2 && pn_max_m[k] != -1) {
+        if(first_set == -1) first_set = k;
+        last_set = k;
+      }
+    }
+    if(first_set != -1) {
+      /* Ensure first set node can be reached at position 1 */
+      if(pn_min_m[first_set] > 1) pn_min_m[first_set] = 1;
+    }
+    if(last_set != -1) {
+      /* Ensure last set node can be reached at position L */
+      if(pn_max_m[last_set] < L) pn_max_m[last_set] = L;
+    }
+  }
+
+  /* Convert any still-unset entries to -1 sentinel */
+  for(k = 0; k <= M; k++) {
+    if(pn_min_m[k] > pn_max_m[k] || pn_min_m[k] == L + 2) { pn_min_m[k] = -1; pn_max_m[k] = -1; }
+    if(pn_min_i[k] > pn_max_i[k] || pn_min_i[k] == L + 2) { pn_min_i[k] = -1; pn_max_i[k] = -1; }
+    if(pn_min_d[k] > pn_max_d[k] || pn_min_d[k] == L + 2) { pn_min_d[k] = -1; pn_max_d[k] = -1; }
+  }
+  pn_min_d[0] = pn_max_d[0] = -1; /* D_0 does not exist */
+
+  return eslOK;
+}
+
+
+/* === ARCHIVED 2026-05-19: NOT HOOKED UP ===
+ *
+ * This function computes a per-state CYK pad array from CP9 HMM band
+ * widths using a calibrated linear model:
+ *   pad[v] = a[stt(v)] * mean_hmm_cells(v) + b[stt(v)]
+ *
+ * The cal_a[10] / cal_b[10] coefficients below were fit on
+ * 26_0316 stage1.5d posterior-mass-mining compare.tsv (5 CMs, 6285
+ * states with n_used >= 10 GT IO p99-pad samples). Recovering these
+ * coefficients required real benchmarking work -- preserved here so
+ * a future revival doesn't have to re-derive them.
+ *
+ * Empirical result (2026-05-12, benchmark-runs/cykperstate_walltime/):
+ * perstate5 is 10.3x slower than uniform pad5 (sequence-weighted
+ * aggregate). The long-tail per-state pads (LSU p99=90, max=160)
+ * produce cell-count blowup that exceeds the cell savings from
+ * tighter mean bands. Floor+cap variants (`f5_cap10`) still 1.39x
+ * slower than pad5. p95 refit also failed (brief
+ * 26_0430-028).
+ *
+ * Decision (2026-05-19): kept in source as reference but not hooked
+ * up. The `--cykbands-perstate`, `--cykperstate-maxpad`, `--cykpadfile`
+ * CLI surface was removed along with the `cm->p7_cykbands_perstate`
+ * and `cm->p7_cykperstate_maxpad` struct fields.
+ *
+ * To revive:
+ *   1. Re-add a CLI flag (e.g., `--cykbands-perstate`) and a CM field
+ *      to toggle this path.
+ *   2. Call `cm_CYKPerstatePadCompute(cm, cp9b, additive_pad, maxpad)`
+ *      in the cykbands caller in cm_alndata.c.
+ *   3. Restore the per_state_pad parameter to the cykbands worker
+ *      function (it was stripped on 2026-05-19 -- the conditional was
+ *      a single line at step 2; see git history before the strip
+ *      commit). The strip was made on the cmalign line only; p7band-cp9
+ *      carried its own copy of --cykpadfile and the parameter, and the
+ *      2026-07-02 merge of p7band-cp9 into that line brought them back.
+ *      brief 26_0821-135 removed them again.
+ *
+ * === end ARCHIVED ===
+ *
+ * Function: cm_CYKPerstatePadCompute()
+ * Date    : 2026-05-11
+ *
+ * Compute per-state CYK pad from current sequence's CP9 HMM band widths,
+ * using a calibrated linear model pad = a[stt]*mean_hmm_cells + b[stt].
+ *
+ * Calibration: fit on 26_0316 stage1.5d posterior-mass-mining compare.tsv
+ * (5 CMs, 6285 states with n_used>=10 ground-truth IO p99-pad samples).
+ *
+ * Returns malloc'd int[cm->M]; caller frees. Returns NULL on alloc failure.
+ * additive_pad is added to each per-state pad (allows --cykpad N to act
+ * as a floor when --cykbands-perstate is on). maxpad caps each per-state
+ * pad at this value (0 = no cap).
+ */
+int *
+cm_CYKPerstatePadCompute(CM_t *cm, CP9Bands_t *cp9b, int additive_pad, int maxpad)
+{
+  int  M = cm->M;
+  int *pad_arr = malloc(sizeof(int) * M);
+  if (pad_arr == NULL) return NULL;
+
+  /* Calibration coefficients indexed by sttype constant:
+   * D_st=0, MP_st=1, ML_st=2, MR_st=3, IL_st=4, IR_st=5, S_st=6, E_st=7, B_st=8, EL_st=9
+   * E and EL have no calibration data (singletons / non-emitting); use conservative defaults.
+   */
+  static const double cal_a[10] = {
+    0.0044,  /* D */   0.0140,  /* MP */  0.0225,  /* ML */  0.0088,  /* MR */
+    0.0224,  /* IL */  0.0124,  /* IR */  0.0238,  /* S */
+    0.0000,  /* E (no data) */
+    0.0182,  /* B */
+    0.0000   /* EL (no data) */
+  };
+  static const double cal_b[10] = {
+    6.7158,  /* D */   0.8575,  /* MP */  0.9253,  /* ML */  2.3591,  /* MR */
+    3.3514,  /* IL */  4.6203,  /* IR */ -0.1362,  /* S */
+    5.0000,  /* E */
+    0.9841,  /* B */
+    5.0000   /* EL */
+  };
+
+  int v;
+  for (v = 0; v < M; v++) {
+    int stt = cm->sttype[v];
+    if (stt < 0 || stt >= 10) { pad_arr[v] = additive_pad; continue; }
+
+    int cells = 1;
+    if (cm->cp9map != NULL && cp9b != NULL) {
+      int k = cm->cp9map->cs2hn[v][0];
+      if (k >= 0 && k <= cp9b->hmm_M) {
+        int iw = cp9b->imax[k] - cp9b->imin[k] + 1;
+        int jw = cp9b->jmax[k] - cp9b->jmin[k] + 1;
+        if (iw < 1) iw = 1;
+        if (jw < 1) jw = 1;
+        cells = iw * jw;
+      }
+    }
+
+    double predicted = cal_a[stt] * (double)cells + cal_b[stt];
+    int p = (int)ceil(predicted);
+    if (p < 0) p = 0;
+    p += additive_pad;
+    if (maxpad > 0 && p > maxpad) p = maxpad;
+    pad_arr[v] = p;
+  }
+
+
+  return pad_arr;
+}
+
+
+/* Function: cm_BandsFromCYKParsetree()
+ * Date    : 2026-04-08
+ *
+ * Purpose:  Derive per-CM-state bands (cp9b->imin/imax/jmin/jmax/hdmin/hdmax)
+ *           directly from a CYK parsetree, without going through HMM-node
+ *           pn bands. This avoids the linear HMM-node sweep contamination
+ *           that breaks for permuted CMs (where the HMM-node order doesn't
+ *           match the CM state order).
+ *
+ *           Algorithm:
+ *           1. Walk parsetree, mark visited[v]=TRUE and set imin/imax/jmin/jmax
+ *              from each occurrence of state v with absolute (i, j) coords.
+ *           2. Apply pad to visited states, clamp to [i0..j0].
+ *           3. For unvisited states, walk CM tree post-order (M-1 down to 0)
+ *              and inherit from children: parent's bounds = child's bounds
+ *              shifted by parent's StateLeftDelta/StateRightDelta.
+ *              Bifurcations: i bound from left child, j bound from right child.
+ *           4. Fill cp9b->imin/imax/jmin/jmax, then call cp9_GrowHDBands and
+ *              ij2d_bands to compute hd bands.
+ *
+ *           For non-truncated mode, sets Jvalid[]=TRUE, others FALSE.
+ *
+ * Args:     cm        - the covariance model (must have cp9b allocated)
+ *           errbuf    - error buffer
+ *           tr        - parsetree from FastCYKScanHB_shmx; emitl/emitr in absolute dsq coords
+ *           i0, j0    - envelope start/stop in absolute dsq coords (i0..j0)
+ *           pad       - half-width pad to add on each side of visited bounds
+ *           strict_unvisited - if TRUE, set Jvalid[v]=FALSE for unvisited states (--cykbands-strict).
+ *                              This makes the F7 HB DP skip those states entirely, dramatically
+ *                              reducing matrix cell count at the risk of parse failure or score loss.
+ *           cp9b      - bands to fill (caller pre-allocated)
+ *           pass_idx  - pipeline pass index (for truncation handling)
+ *           debug     - if >0, print bands
+ *
+ * Returns:  eslOK on success.
+ */
+int
+cm_BandsFromCYKParsetree(CM_t *cm, char *errbuf, Parsetree_t *tr,
+                         int i0, int j0, int pad,
+                         int strict_unvisited,
+                         CP9Bands_t *cp9b, int pass_idx, int debug)
+{
+  int    status;
+  int    M = cm->M;
+  int    v, t, y, z, off;
+  int    sdl, sdr;
+  int    L = j0 - i0 + 1;
+  int    do_trunc = cm_pli_PassAllowsTruncation(pass_idx);
+  int   *visited = NULL;
+  int   *imin = cp9b->imin;
+  int   *imax = cp9b->imax;
+  int   *jmin = cp9b->jmin;
+  int   *jmax = cp9b->jmax;
+
+  ESL_ALLOC(visited, sizeof(int) * M);
+  esl_vec_ISet(visited, M, FALSE);
+
+  /* Initialize all bands to "unset" sentinel: imin/jmin = INT_MAX, imax/jmax = -1 */
+  for(v = 0; v < M; v++) {
+    imin[v] = INT_MAX; imax[v] = -1;
+    jmin[v] = INT_MAX; jmax[v] = -1;
+  }
+
+  /* Step 1: Walk parsetree, set per-state bounds from each visit */
+  for(t = 0; t < tr->n; t++) {
+    v = tr->state[t];
+    if(v < 0 || v >= M) continue;
+    int i = tr->emitl[t];
+    int j = tr->emitr[t];
+    visited[v] = TRUE;
+    if(i < imin[v]) imin[v] = i;
+    if(i > imax[v]) imax[v] = i;
+    if(j < jmin[v]) jmin[v] = j;
+    if(j > jmax[v]) jmax[v] = j;
+  }
+
+  /* Step 2: Apply pad to visited states, clamp to [i0..j0]. */
+  for(v = 0; v < M; v++) {
+    if(visited[v]) {
+      imin[v] -= pad; if(imin[v] < i0) imin[v] = i0;
+      imax[v] += pad; if(imax[v] > j0) imax[v] = j0;
+      jmin[v] -= pad; if(jmin[v] < i0) jmin[v] = i0;
+      jmax[v] += pad; if(jmax[v] > j0) jmax[v] = j0;
+    }
+  }
+
+  /* Step 3: For unvisited states, inherit from PARENT (top-down: 0 -> M-1).
+   * This gives narrow bands near the MAP parse, unlike bottom-up which would
+   * union over all children and degenerate to ~unbanded for sparse parsetrees.
+   * Build parent[] map first. */
+  int *parent = NULL;
+  ESL_ALLOC(parent, sizeof(int) * M);
+  for(v = 0; v < M; v++) parent[v] = -1;
+  for(v = 0; v < M; v++) {
+    if(cm->sttype[v] == B_st) {
+      y = cm->cfirst[v]; if(y >= 0 && y < M) parent[y] = v;
+      z = cm->cnum[v];   if(z >= 0 && z < M) parent[z] = v;
+    } else if(cm->sttype[v] != E_st && cm->sttype[v] != EL_st) {
+      for(off = 0; off < cm->cnum[v]; off++) {
+        y = cm->cfirst[v] + off;
+        if(y >= 0 && y < M && parent[y] == -1) parent[y] = v;
+      }
+    }
+  }
+  for(v = 0; v < M; v++) {
+    if(visited[v]) continue;
+    int p = parent[v];
+    if(p < 0) {
+      /* No parent (e.g., root) or unreachable; fall back to full envelope */
+      imin[v] = i0; imax[v] = j0; jmin[v] = i0; jmax[v] = j0;
+      continue;
+    }
+    /* Inherit from parent, shifted by parent's emit deltas:
+     * If parent emits a left residue, child's i is parent's i + 1.
+     * If parent emits a right residue, child's j is parent's j - 1.
+     * For B parents: left child gets parent's i bounds, right child gets parent's j bounds. */
+    if(cm->sttype[p] == B_st) {
+      if(v == cm->cfirst[p]) {
+        /* Left child of B: i bounds from parent's i, j is split point (we don't know exactly, use parent's range) */
+        imin[v] = imin[p]; imax[v] = imax[p];
+        jmin[v] = imin[p]; jmax[v] = jmax[p]; /* j can be anywhere parent's i to parent's j */
+      } else {
+        /* Right child of B: j bounds from parent's j, i is split point */
+        imin[v] = imin[p]; imax[v] = jmax[p];
+        jmin[v] = jmin[p]; jmax[v] = jmax[p];
+      }
+    } else {
+      sdl = StateLeftDelta(cm->sttype[p]);
+      sdr = StateRightDelta(cm->sttype[p]);
+      imin[v] = imin[p] + sdl; if(imin[v] < i0) imin[v] = i0; if(imin[v] > j0) imin[v] = j0;
+      imax[v] = imax[p] + sdl; if(imax[v] < i0) imax[v] = i0; if(imax[v] > j0) imax[v] = j0;
+      jmin[v] = jmin[p] - sdr; if(jmin[v] < i0) jmin[v] = i0; if(jmin[v] > j0) jmin[v] = j0;
+      jmax[v] = jmax[p] - sdr; if(jmax[v] < i0) jmax[v] = i0; if(jmax[v] > j0) jmax[v] = j0;
+    }
+  }
+  free(parent);
+
+  /* Final clamping and sanity: ensure imin<=imax, jmin<=jmax, all in [i0..j0]. */
+  for(v = 0; v < M; v++) {
+    if(imin[v] == INT_MAX) { imin[v] = i0; imax[v] = j0; }
+    if(jmin[v] == INT_MAX) { jmin[v] = i0; jmax[v] = j0; }
+    if(imin[v] < i0) imin[v] = i0;
+    if(imax[v] > j0) imax[v] = j0;
+    if(jmin[v] < i0) jmin[v] = i0;
+    if(jmax[v] > j0) jmax[v] = j0;
+    if(imin[v] > imax[v]) imax[v] = imin[v];
+    if(jmin[v] > jmax[v]) jmax[v] = jmin[v];
+  }
+
+  /* Set Jvalid/Lvalid/Rvalid/Tvalid for non-truncated mode.
+   * In strict_unvisited mode, only visited states get Jvalid=TRUE; the F7 HB DP
+   * gates on Jvalid[v] before computing alpha cells, so unvisited states are
+   * skipped entirely. The EL state (M) is always kept valid (filler for end-locals).
+   */
+  if(!do_trunc) {
+    if(strict_unvisited) {
+      for(v = 0; v < M; v++) cp9b->Jvalid[v] = visited[v];
+      cp9b->Jvalid[M] = TRUE; /* EL state */
+    } else {
+      esl_vec_ISet(cp9b->Jvalid, M + 1, TRUE);
+    }
+    esl_vec_ISet(cp9b->Lvalid, M + 1, FALSE);
+    esl_vec_ISet(cp9b->Rvalid, M + 1, FALSE);
+    esl_vec_ISet(cp9b->Tvalid, M + 1, FALSE);
+  } else {
+    /* Truncated bands not supported by this function path */
+    esl_vec_ISet(cp9b->Jvalid, M + 1, TRUE);
+    esl_vec_ISet(cp9b->Lvalid, M + 1, FALSE);
+    esl_vec_ISet(cp9b->Rvalid, M + 1, FALSE);
+    esl_vec_ISet(cp9b->Tvalid, M + 1, FALSE);
+  }
+
+  /* strict-alloc: shrink Jvalid=FALSE states' i,j bands to a single
+   * sentinel cell so the matrix allocator doesn't reserve memory for
+   * cells the DP will never compute. ij2d_bands below recomputes
+   * hdmin/hdmax from the shrunk imin/imax, so the d-band collapses too.
+   * The DP's existing Jvalid gating prevents the sentinel cells from
+   * being read for actual scores.
+   */
+  if(!do_trunc && strict_unvisited) {
+    for(v = 0; v < M; v++) {
+      if(!cp9b->Jvalid[v]) {
+        cp9b->imin[v] = cp9b->imax[v] = i0;
+        cp9b->jmin[v] = cp9b->jmax[v] = i0;
+      }
+    }
+  }
+
+  cp9b->tau = cm->tau;
+
+  /* Compute hdmin/hdmax */
+  if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) goto ERROR;
+  ij2d_bands(cm, cp9b, do_trunc, debug);
+
+  free(visited);
+  return eslOK;
+
+ ERROR:
+  if(visited) free(visited);
+  return status;
+}
+
+
+/* Function: cp9_PredictStartAndEndPositionsP7B()
+ * Date    : 2026-03-20
+ *
+ * Purpose:  Banded version of cp9_PredictStartAndEndPositions().
+ *           Computes sp1/sp2 (first HMM nodes with significant occupancy)
+ *           and ep1/ep2 (last such nodes) from banded CP9 posterior matrix,
+ *           then derives Rmarg_imin/imax and Lmarg_jmin/jmax.
+ *
+ *           The only difference from the unbanded version is that the
+ *           occupancy sum over rows for a given node k only visits rows
+ *           where k is within the P7 band [kmin[i]..kmax[i]], and uses
+ *           band-relative indexing to access the banded matrix.
+ *
+ * Args:     pmx   - banded CP9 posterior matrix (from cp9_PosteriorP7B)
+ *           cp9b  - CP9 bands, with pn_min/pn_max already filled
+ *           kmin  - [0..L] P7-derived min node for each row
+ *           kmax  - [0..L] P7-derived max node for each row
+ *           i0    - first position in original sequence coords
+ *           j0    - last position in original sequence coords
+ *
+ * Returns:  void. cp9b->sp1/sp2/ep1/ep2 and Rmarg/Lmarg bounds are set.
+ */
+void
+cp9_PredictStartAndEndPositionsP7B(CP9_MX *pmx, CP9Bands_t *cp9b, int *kmin, int *kmax, int i0, int j0)
+{
+  int i;
+  int k;
+  int L = j0-i0+1;
+  int   iocc;
+  float pocc;
+
+  /* Part 1: Find sp1/sp2 — first nodes (left to right) with significant occupancy */
+  k = 1;
+  cp9b->sp1 = cp9b->sp2 = -1;
+  while(k <= cp9b->hmm_M && (cp9b->sp1 == -1 || cp9b->sp2 == -1)) {
+    if(cp9b->pn_min_m[k] == -1 && cp9b->pn_min_i[k] == -1 && cp9b->pn_min_d[k] == -1) {
+      k++;
+    }
+    else {
+      iocc = -INFTY;
+      for(i = 0; i <= L; i++) {
+	if(k >= kmin[i] && k <= kmax[i]) {
+	  int kp = k - kmin[i];
+	  iocc = ILogsum(iocc, ILogsum(pmx->mmx[i][kp], pmx->dmx[i][kp]));
+	}
+      }
+      pocc = Score2Prob(iocc, 1.);
+      if((cp9b->sp1 == -1) && (pocc > cp9b->thresh1)) cp9b->sp1 = k;
+      if((cp9b->sp2 == -1) && (pocc > cp9b->thresh2)) cp9b->sp2 = k;
+      k++;
+    }
+  }
+  if(k == cp9b->hmm_M+1) {
+    if(cp9b->sp1 == -1) { cp9b->sp1 = cp9b->hmm_M+1; }
+    if(cp9b->sp2 == -1) { cp9b->sp2 = cp9b->hmm_M+1; }
+  }
+
+  /* Part 2: Find ep1/ep2 — last nodes (right to left) with significant occupancy */
+  if((cp9b->sp1 == cp9b->hmm_M+1) &&
+     (cp9b->sp2 == cp9b->hmm_M+1)) {
+    cp9b->ep1 = 0;
+    cp9b->ep2 = 0;
+  }
+  else {
+    cp9b->ep1 = cp9b->ep2 = -1;
+    k = cp9b->hmm_M;
+    while(k >= 1 && (cp9b->ep1 == -1 || cp9b->ep2 == -1)) {
+      if(cp9b->pn_min_m[k] == -1 && cp9b->pn_min_i[k] == -1 && cp9b->pn_min_d[k] == -1) {
+	k--;
+      }
+      else {
+	iocc = -INFTY;
+	for(i = 0; i <= L; i++) {
+	  if(k >= kmin[i] && k <= kmax[i]) {
+	    int kp = k - kmin[i];
+	    iocc = ILogsum(iocc, ILogsum(pmx->mmx[i][kp], pmx->dmx[i][kp]));
+	  }
+	}
+	pocc = Score2Prob(iocc, 1.);
+	if((cp9b->ep1 == -1) && (pocc > cp9b->thresh1)) cp9b->ep1 = k;
+	if((cp9b->ep2 == -1) && (pocc > cp9b->thresh2)) cp9b->ep2 = k;
+	k--;
+      }
+    }
+    if(k == 0) {
+      if(cp9b->ep1 == -1) { cp9b->ep1 = 0; }
+      if(cp9b->ep2 == -1) { cp9b->ep2 = 0; }
+    }
+  }
+
+  /* Parts 3-4: Derive Rmarg_imin/imax from sp1/sp2, Lmarg_jmin/jmax from ep1/ep2.
+   * These only use pn_min/pn_max arrays (not the posterior matrix), so they are
+   * identical to the unbanded version.
+   */
+
+  /* set cp9b->Rmarg_imin */
+  if(cp9b->sp1 == cp9b->hmm_M+1) { cp9b->Rmarg_imin = i0; }
+  else {
+    cp9b->Rmarg_imin = INT_MAX;
+    if(cp9b->sp1 != (cp9b->hmm_M+1) && cp9b->pn_min_m[cp9b->sp1] >= 0) cp9b->Rmarg_imin = ESL_MIN(cp9b->Rmarg_imin, cp9b->pn_min_m[cp9b->sp1]);
+    if(cp9b->sp1 != (cp9b->hmm_M+1) && cp9b->pn_min_i[cp9b->sp1] >= 0) cp9b->Rmarg_imin = ESL_MIN(cp9b->Rmarg_imin, cp9b->pn_min_i[cp9b->sp1]);
+    if(cp9b->sp1 != (cp9b->hmm_M+1) && cp9b->pn_min_d[cp9b->sp1] >= 0) cp9b->Rmarg_imin = ESL_MIN(cp9b->Rmarg_imin, cp9b->pn_min_d[cp9b->sp1]);
+    if(cp9b->sp2 != (cp9b->hmm_M+1) && cp9b->pn_min_m[cp9b->sp2] >= 0) cp9b->Rmarg_imin = ESL_MIN(cp9b->Rmarg_imin, cp9b->pn_min_m[cp9b->sp2]);
+    if(cp9b->sp2 != (cp9b->hmm_M+1) && cp9b->pn_min_i[cp9b->sp2] >= 0) cp9b->Rmarg_imin = ESL_MIN(cp9b->Rmarg_imin, cp9b->pn_min_i[cp9b->sp2]);
+    if(cp9b->sp2 != (cp9b->hmm_M+1) && cp9b->pn_min_d[cp9b->sp2] >= 0) cp9b->Rmarg_imin = ESL_MIN(cp9b->Rmarg_imin, cp9b->pn_min_d[cp9b->sp2]);
+    if(cp9b->Rmarg_imin == INT_MAX || cp9b->sp1 == (cp9b->hmm_M+1) || cp9b->sp2 == (cp9b->hmm_M+1)) cp9b->Rmarg_imin = i0;
+    cp9b->Rmarg_imin = ESL_MAX(i0,   cp9b->Rmarg_imin);
+    cp9b->Rmarg_imin = ESL_MIN(j0+1, cp9b->Rmarg_imin);
+  }
+
+  /* set cp9b->Rmarg_imax */
+  if(cp9b->sp1 == cp9b->hmm_M+1) { cp9b->Rmarg_imax = j0; }
+  else {
+    cp9b->Rmarg_imax = INT_MIN;
+    if(cp9b->sp1 != (cp9b->hmm_M+1) && cp9b->pn_max_m[cp9b->sp1] >= 0) cp9b->Rmarg_imax = ESL_MAX(cp9b->Rmarg_imax, cp9b->pn_max_m[cp9b->sp1]);
+    if(cp9b->sp1 != (cp9b->hmm_M+1) && cp9b->pn_max_i[cp9b->sp1] >= 0) cp9b->Rmarg_imax = ESL_MAX(cp9b->Rmarg_imax, cp9b->pn_max_i[cp9b->sp1]);
+    if(cp9b->sp1 != (cp9b->hmm_M+1) && cp9b->pn_max_d[cp9b->sp1] >= 0) cp9b->Rmarg_imax = ESL_MAX(cp9b->Rmarg_imax, cp9b->pn_max_d[cp9b->sp1]);
+    if(cp9b->sp2 != (cp9b->hmm_M+1) && cp9b->pn_max_m[cp9b->sp2] >= 0) cp9b->Rmarg_imax = ESL_MAX(cp9b->Rmarg_imax, cp9b->pn_max_m[cp9b->sp2]);
+    if(cp9b->sp2 != (cp9b->hmm_M+1) && cp9b->pn_max_i[cp9b->sp2] >= 0) cp9b->Rmarg_imax = ESL_MAX(cp9b->Rmarg_imax, cp9b->pn_max_i[cp9b->sp2]);
+    if(cp9b->sp2 != (cp9b->hmm_M+1) && cp9b->pn_max_d[cp9b->sp2] >= 0) cp9b->Rmarg_imax = ESL_MAX(cp9b->Rmarg_imax, cp9b->pn_max_d[cp9b->sp2]);
+    if(cp9b->Rmarg_imax == INT_MIN || cp9b->sp1 == (cp9b->hmm_M+1) || cp9b->sp2 == (cp9b->hmm_M+1)) cp9b->Rmarg_imax = j0+1;
+    cp9b->Rmarg_imax = ESL_MAX(i0,   cp9b->Rmarg_imax);
+    cp9b->Rmarg_imax = ESL_MIN(j0+1, cp9b->Rmarg_imax);
+  }
+
+  /* set cp9b->Lmarg_jmin */
+  if(cp9b->ep1 == 0) { cp9b->Lmarg_jmin = i0-1; }
+  else {
+    cp9b->Lmarg_jmin = INT_MAX;
+    if(cp9b->ep1 != 0 && cp9b->pn_min_m[cp9b->ep1] >= 0) cp9b->Lmarg_jmin = ESL_MIN(cp9b->Lmarg_jmin, cp9b->pn_min_m[cp9b->ep1]);
+    if(cp9b->ep1 != 0 && cp9b->pn_min_i[cp9b->ep1] >= 0) cp9b->Lmarg_jmin = ESL_MIN(cp9b->Lmarg_jmin, cp9b->pn_min_i[cp9b->ep1]);
+    if(cp9b->ep1 != 0 && cp9b->pn_min_d[cp9b->ep1] >= 0) cp9b->Lmarg_jmin = ESL_MIN(cp9b->Lmarg_jmin, cp9b->pn_min_d[cp9b->ep1]-1);
+    if(cp9b->ep2 != 0 && cp9b->pn_min_m[cp9b->ep2] >= 0) cp9b->Lmarg_jmin = ESL_MIN(cp9b->Lmarg_jmin, cp9b->pn_min_m[cp9b->ep2]);
+    if(cp9b->ep2 != 0 && cp9b->pn_min_i[cp9b->ep2] >= 0) cp9b->Lmarg_jmin = ESL_MIN(cp9b->Lmarg_jmin, cp9b->pn_min_i[cp9b->ep2]);
+    if(cp9b->ep2 != 0 && cp9b->pn_min_d[cp9b->ep2] >= 0) cp9b->Lmarg_jmin = ESL_MIN(cp9b->Lmarg_jmin, cp9b->pn_min_d[cp9b->ep2]-1);
+    if(cp9b->Lmarg_jmin == INT_MAX || cp9b->ep1 == 0 || cp9b->ep2 == 0) cp9b->Lmarg_jmin = i0-1;
+    cp9b->Lmarg_jmin = ESL_MAX(i0-1, cp9b->Lmarg_jmin);
+    cp9b->Lmarg_jmin = ESL_MIN(j0,   cp9b->Lmarg_jmin);
+  }
+
+  /* set cp9b->Lmarg_jmax */
+  if(cp9b->ep1 == 0) { cp9b->Lmarg_jmax = j0; }
+  else {
+    cp9b->Lmarg_jmax = INT_MIN;
+    if(cp9b->ep1 != 0 && cp9b->pn_max_m[cp9b->ep1] >= 0) cp9b->Lmarg_jmax = ESL_MAX(cp9b->Lmarg_jmax, cp9b->pn_max_m[cp9b->ep1]);
+    if(cp9b->ep1 != 0 && cp9b->pn_max_i[cp9b->ep1] >= 0) cp9b->Lmarg_jmax = ESL_MAX(cp9b->Lmarg_jmax, cp9b->pn_max_i[cp9b->ep1]);
+    if(cp9b->ep1 != 0 && cp9b->pn_max_d[cp9b->ep1] >= 0) cp9b->Lmarg_jmax = ESL_MAX(cp9b->Lmarg_jmax, cp9b->pn_max_d[cp9b->ep1]-1);
+    if(cp9b->ep2 != 0 && cp9b->pn_max_m[cp9b->ep2] >= 0) cp9b->Lmarg_jmax = ESL_MAX(cp9b->Lmarg_jmax, cp9b->pn_max_m[cp9b->ep2]);
+    if(cp9b->ep2 != 0 && cp9b->pn_max_i[cp9b->ep2] >= 0) cp9b->Lmarg_jmax = ESL_MAX(cp9b->Lmarg_jmax, cp9b->pn_max_i[cp9b->ep2]);
+    if(cp9b->ep2 != 0 && cp9b->pn_max_d[cp9b->ep2] >= 0) cp9b->Lmarg_jmax = ESL_MAX(cp9b->Lmarg_jmax, cp9b->pn_max_d[cp9b->ep2]-1);
+    if(cp9b->Lmarg_jmax == INT_MIN || cp9b->ep1 == 0 || cp9b->ep2 == 0) cp9b->Lmarg_jmax = j0;
+    cp9b->Lmarg_jmax = ESL_MAX(i0-1, cp9b->Lmarg_jmax);
+    cp9b->Lmarg_jmax = ESL_MIN(j0,   cp9b->Lmarg_jmax);
+  }
+
+  return;
 }
 
 
@@ -2020,8 +5813,9 @@ cp9_PosteriorP7B(ESL_DSQ *dsq, char *errbuf, int L, CP9_t *hmm, CP9_MX *fmx, CP9
  * Returns: eslOK on success;
  */
 int
-cp9_FB2HMMBandsP7B(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b, 
-		   int L, int M, double p_thresh, int do_old_hmm2ij, int *kmin, int *kmax, int debug_level)
+cp9_FB2HMMBandsP7B(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b,
+		   int L, int M, double p_thresh, int do_old_hmm2ij, int *kmin, int *kmax, int debug_level,
+		   int do_pnmono, int do_pnmono_print)
 {
   int status;
   int k;                                  /* counter over nodes of the model */
@@ -2247,6 +6041,9 @@ cp9_FB2HMMBandsP7B(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *
   cp9b->pn_min_d[0] = -1; /* D_0 doesn't exist */
   cp9b->pn_max_d[0] = -1; /* D_0 doesn't exist */
 
+  if(do_pnmono) pn_match_bands_enforce_monotone(cp9b->pn_min_m, cp9b->pn_max_m, M, L, do_pnmono_print, "fb2hmm_p7b");
+
+  /* Always print HMM bands for P7B path debugging */
   if(debug_level > 0) cp9_DebugPrintHMMBands(stdout, L, cp9b, (1.-p_thresh), 1);
 
   free(mass_m);
@@ -2268,6 +6065,486 @@ cp9_FB2HMMBandsP7B(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *
   ESL_FAIL(status, errbuf, "Memory allocation error.\n");
 }
 
+
+/* Function: cp9_FB2HMMBandsP7BF()
+ *
+ * Float-precision mirror of cp9_FB2HMMBandsP7B(). Reads CP9_FMX fmx/bmx,
+ * computes per-cell posteriors into pmx (CP9_FMX), and derives per-state
+ * pn_min/pn_max bands by sweeping for the position where accumulated
+ * posterior mass crosses (1-p_thresh)/2 from each side.
+ *
+ * Logic identical to the int version. Differences are mechanical:
+ * ILogsum -> p7_FLogsum, -INFTY -> -eslINFINITY, model scores via Scorify().
+ */
+int
+cp9_FB2HMMBandsP7BF(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_FMX *fmx, CP9_FMX *bmx, CP9_FMX *pmx, CP9Bands_t *cp9b,
+		    int L, int M, double p_thresh, int do_old_hmm2ij, int *kmin, int *kmax, int debug_level,
+		    int do_pnmono, int do_pnmono_print)
+{
+  int status;
+  int k;
+  /* float threshold in log space (nats? bits? cp9 uses scoring as bits/INTSCALE; we keep log-prob) */
+  float thresh = log2f((1. - p_thresh) / 2.);
+
+  float *nset_m, *nset_i, *nset_d;
+  float *xset_m, *xset_i, *xset_d;
+  float *mass_m, *mass_i, *mass_d;
+  int   *_nset_m, *_nset_i, *_nset_d;
+  int   *_xset_m, *_xset_i, *_xset_d;
+  int    i;
+  float  sc;
+  int    hmm_is_localized;
+  int    kp, kn, kx;
+
+  hmm_is_localized = ((hmm->flags & CPLAN9_LOCAL_BEGIN) || (hmm->flags & CPLAN9_LOCAL_END) || (hmm->flags & CPLAN9_EL)) ? TRUE : FALSE;
+
+  if(bmx != pmx) GrowCP9FMatrix(pmx, errbuf, L, M, kmin, kmax, NULL, NULL, NULL, NULL, NULL);
+
+  /* mass_X are float log-prob accumulators; nset_X / xset_X are int boolean flags */
+  ESL_ALLOC(_nset_m, sizeof(int) * (M+1));
+  ESL_ALLOC(_nset_i, sizeof(int) * (M+1));
+  ESL_ALLOC(_nset_d, sizeof(int) * (M+1));
+  ESL_ALLOC(_xset_m, sizeof(int) * (M+1));
+  ESL_ALLOC(_xset_i, sizeof(int) * (M+1));
+  ESL_ALLOC(_xset_d, sizeof(int) * (M+1));
+  ESL_ALLOC(mass_m, sizeof(float) * (M+1));
+  ESL_ALLOC(mass_i, sizeof(float) * (M+1));
+  ESL_ALLOC(mass_d, sizeof(float) * (M+1));
+
+  /* keep the unused float aliases NULL to silence unused-var warnings; not all callers want them */
+  nset_m = nset_i = nset_d = NULL;
+  xset_m = xset_i = xset_d = NULL;
+  (void)nset_m; (void)nset_i; (void)nset_d;
+  (void)xset_m; (void)xset_i; (void)xset_d;
+
+  esl_vec_FSet(mass_m, M+1, -eslINFINITY);
+  esl_vec_FSet(mass_i, M+1, -eslINFINITY);
+  esl_vec_FSet(mass_d, M+1, -eslINFINITY);
+  esl_vec_ISet(_nset_m, M+1, FALSE);
+  esl_vec_ISet(_nset_i, M+1, FALSE);
+  esl_vec_ISet(_nset_d, M+1, FALSE);
+  esl_vec_ISet(_xset_m, M+1, FALSE);
+  esl_vec_ISet(_xset_i, M+1, FALSE);
+  esl_vec_ISet(_xset_d, M+1, FALSE);
+
+  sc = bmx->mmx[0][0];
+
+  assert(kmin[0] == 0);
+  pmx->mmx[0][0] = fmx->mmx[0][0] + bmx->mmx[0][0] - sc;
+  pmx->imx[0][0] = -eslINFINITY;
+  pmx->dmx[0][0] = -eslINFINITY;
+  if((mass_m[0] = pmx->mmx[0][0]) > thresh) {
+    cp9b->pn_min_m[0] = 0;
+    _nset_m[0] = TRUE;
+  }
+  mass_i[0] = -eslINFINITY;
+  mass_d[0] = -eslINFINITY;
+
+  i  = 0;
+  kn = ESL_MAX(kmin[i], 1);
+  kx = kmax[i];
+  kp = kn - kmin[i];
+  for (k = kn; k <= kx; k++, kp++) {
+    pmx->mmx[0][kp] = -eslINFINITY;
+    pmx->imx[0][kp] = -eslINFINITY;
+    pmx->dmx[0][kp] = fmx->dmx[0][kp] + bmx->dmx[0][kp] - sc;
+    if((mass_d[k] = pmx->dmx[0][kp]) > thresh) {
+      cp9b->pn_min_d[k] = 0;
+      _nset_d[k] = TRUE;
+    }
+  }
+
+  for (i = 1; i <= L; i++) {
+      k = 0;
+      if(INBAND(i,0)) {
+	kp = k - kmin[i];
+	assert(kp == 0);
+	pmx->mmx[i][kp] = ESL_MAX(fmx->mmx[i][kp] + bmx->mmx[i][kp] - sc, -eslINFINITY);
+	if(! _nset_m[0]) {
+	  if((mass_m[0] = FLogsum(mass_m[0], pmx->mmx[i][kp])) > thresh) {
+	    cp9b->pn_min_m[0] = i;
+	    _nset_m[0] = TRUE;
+	  }
+	}
+	pmx->imx[i][kp] = ESL_MAX(fmx->imx[i][kp] + bmx->imx[i][kp] - Scorify(hmm->isc[dsq[i]][0]) - sc, -eslINFINITY);
+	if(! _nset_i[0]) {
+	  if((mass_i[0] = FLogsum(mass_i[0], pmx->imx[i][kp])) > thresh) {
+	    cp9b->pn_min_i[0] = i;
+	    _nset_i[0] = TRUE;
+	  }
+	}
+	pmx->dmx[i][kp] = -eslINFINITY;
+      }
+
+      kn = ESL_MAX(kmin[i], 1);
+      kx = kmax[i];
+      kp = kn - kmin[i];
+      for(k = kn; k <= kx; k++, kp++) {
+	pmx->mmx[i][kp] = ESL_MAX(fmx->mmx[i][kp] + bmx->mmx[i][kp] - Scorify(hmm->msc[dsq[i]][k]) - sc, -eslINFINITY);
+	pmx->imx[i][kp] = ESL_MAX(fmx->imx[i][kp] + bmx->imx[i][kp] - Scorify(hmm->isc[dsq[i]][k]) - sc, -eslINFINITY);
+	pmx->dmx[i][kp] = ESL_MAX(fmx->dmx[i][kp] + bmx->dmx[i][kp] - sc, -eslINFINITY);
+
+	if(! _nset_m[k]) {
+	  if((mass_m[k] = FLogsum(mass_m[k], pmx->mmx[i][kp])) > thresh) {
+	    cp9b->pn_min_m[k] = i;
+	    _nset_m[k] = TRUE;
+	  }
+	}
+	if(! _nset_i[k]) {
+	  if((mass_i[k] = FLogsum(mass_i[k], pmx->imx[i][kp])) > thresh) {
+	    cp9b->pn_min_i[k] = i;
+	    _nset_i[k] = TRUE;
+	  }
+	}
+	if(! _nset_d[k]) {
+	  if((mass_d[k] = FLogsum(mass_d[k], pmx->dmx[i][kp])) > thresh) {
+	    cp9b->pn_min_d[k] = i;
+	    _nset_d[k] = TRUE;
+	  }
+	}
+      }
+  }
+
+  esl_vec_FSet(mass_m, M+1, -eslINFINITY);
+  esl_vec_FSet(mass_i, M+1, -eslINFINITY);
+  esl_vec_FSet(mass_d, M+1, -eslINFINITY);
+  for (i = L; i >= 1; i--) {
+      kp = 0;
+      for(k = kmin[i]; k <= kmax[i]; k++, kp++) {
+	if(! _xset_m[k]) {
+	  if((mass_m[k] = FLogsum(mass_m[k], pmx->mmx[i][kp])) > thresh) {
+	    cp9b->pn_max_m[k] = i;
+	    _xset_m[k] = TRUE;
+	  }
+	}
+	if(! _xset_i[k]) {
+	  if((mass_i[k] = FLogsum(mass_i[k], pmx->imx[i][kp])) > thresh) {
+	    cp9b->pn_max_i[k] = i;
+	    _xset_i[k] = TRUE;
+	  }
+	}
+	if(! _xset_d[k]) {
+	  if((mass_d[k] = FLogsum(mass_d[k], pmx->dmx[i][kp])) > thresh) {
+	    cp9b->pn_max_d[k] = i;
+	    _xset_d[k] = TRUE;
+	  }
+	}
+      }
+  }
+  if(INBAND(0,0)) {
+    assert(kmin[0] == 0);
+    if(! _xset_m[0]) {
+      if((mass_m[0] = FLogsum(mass_m[0], pmx->mmx[0][0])) > thresh) {
+	cp9b->pn_max_m[0] = 0;
+	_xset_m[0] = TRUE;
+      }
+    }
+  }
+  kn = ESL_MAX(kmin[i], 1);
+  kx = kmax[i];
+  kp = kn - kmin[i];
+  for(k = kn; k <= kx; k++, kp++) {
+    if(!_xset_d[k]) {
+      if((mass_d[k] = FLogsum(mass_d[k], pmx->dmx[0][kp])) > thresh) {
+	cp9b->pn_max_d[k] = 0;
+	_xset_d[k] = TRUE;
+      }
+    }
+  }
+
+  int mset, dset;
+  for(k = 0; k <= M; k++) {
+    mset = dset = TRUE;
+    if(((! _nset_m[k])) || (! _xset_m[k]) || (cp9b->pn_max_m[k] < cp9b->pn_min_m[k])) {
+      cp9b->pn_min_m[k] = cp9b->pn_max_m[k] = -1;
+      mset = FALSE;
+    }
+    if(((! _nset_i[k])) || (! _xset_i[k]) || (cp9b->pn_max_i[k] < cp9b->pn_min_i[k])) {
+      cp9b->pn_min_i[k] = cp9b->pn_max_i[k] = -1;
+    }
+    if(((! _nset_d[k])) || (! _xset_d[k]) || (cp9b->pn_max_d[k] < cp9b->pn_min_d[k])) {
+      cp9b->pn_min_d[k] = cp9b->pn_max_d[k] = -1;
+      dset = FALSE;
+    }
+    if((!hmm_is_localized) && (mset == FALSE && dset == FALSE)) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "node: %d match nor delete HMM state bands were set in non-localized, non-scanning HMM, lower tau (should be << 0.5).\n", k);
+  }
+
+  cp9b->pn_min_d[0] = -1;
+  cp9b->pn_max_d[0] = -1;
+
+  if(do_pnmono) pn_match_bands_enforce_monotone(cp9b->pn_min_m, cp9b->pn_max_m, M, L, do_pnmono_print, "fb2hmm_p7bf");
+
+  if(debug_level > 0) cp9_DebugPrintHMMBands(stdout, L, cp9b, (1.-p_thresh), 1);
+
+  free(mass_m); free(mass_i); free(mass_d);
+  free(_nset_m); free(_nset_i); free(_nset_d);
+  free(_xset_m); free(_xset_i); free(_xset_d);
+
+  return eslOK;
+
+ ERROR:
+  ESL_FAIL(status, errbuf, "Memory allocation error.\n");
+}
+
+
+/* Function: cp9_PredictStartAndEndPositionsP7BF()
+ *
+ * Float-precision mirror of cp9_PredictStartAndEndPositionsP7B(). Reads
+ * CP9_FMX posteriors. Per-node pocc[k] is summed in float space directly
+ * (no Score2Prob detour through int log space). No median renormalization
+ * — the float F/B is supposed to give pocc ~1.0 in glocal mode without a
+ * heuristic scale factor, so the do_renorm hack from the int variant is
+ * dropped here.
+ */
+void
+cp9_PredictStartAndEndPositionsP7BF(CP9_FMX *pmx, CP9Bands_t *cp9b, int *kmin, int *kmax, int i0, int j0)
+{
+  int    i, k;
+  int    L = j0-i0+1;
+  float  pocc;
+  float *pocc_arr;
+
+  pocc_arr = malloc(sizeof(float) * (cp9b->hmm_M + 1));
+  if(pocc_arr == NULL) cm_Fail("cp9_PredictStartAndEndPositionsP7BF(): malloc failed for pocc_arr");
+  for(k = 0; k <= cp9b->hmm_M; k++) pocc_arr[k] = -1.0;
+  for(k = 1; k <= cp9b->hmm_M; k++) {
+    if(cp9b->pn_min_m[k] == -1 && cp9b->pn_min_i[k] == -1 && cp9b->pn_min_d[k] == -1) continue;
+    pocc = 0.0;
+    for(i = 0; i <= L; i++) {
+      if(k >= kmin[i] && k <= kmax[i]) {
+	int kp = k - kmin[i];
+	pocc += exp2f(pmx->mmx[i][kp]);
+	pocc += exp2f(pmx->dmx[i][kp]);
+      }
+    }
+    pocc_arr[k] = pocc;
+  }
+
+  /* Part 1: sp1/sp2 — leftmost nodes with significant occupancy. */
+  k = 1;
+  cp9b->sp1 = cp9b->sp2 = -1;
+  while(k <= cp9b->hmm_M && (cp9b->sp1 == -1 || cp9b->sp2 == -1)) {
+    if(pocc_arr[k] < 0.0) { k++; }
+    else {
+      pocc = pocc_arr[k];
+      if((cp9b->sp1 == -1) && (pocc > cp9b->thresh1)) cp9b->sp1 = k;
+      if((cp9b->sp2 == -1) && (pocc > cp9b->thresh2)) cp9b->sp2 = k;
+      k++;
+    }
+  }
+  if(k == cp9b->hmm_M+1) {
+    if(cp9b->sp1 == -1) { cp9b->sp1 = cp9b->hmm_M+1; }
+    if(cp9b->sp2 == -1) { cp9b->sp2 = cp9b->hmm_M+1; }
+  }
+
+  /* Part 2: ep1/ep2 — rightmost nodes with significant occupancy. */
+  if((cp9b->sp1 == cp9b->hmm_M+1) &&
+     (cp9b->sp2 == cp9b->hmm_M+1)) {
+    cp9b->ep1 = 0;
+    cp9b->ep2 = 0;
+  }
+  else {
+    cp9b->ep1 = cp9b->ep2 = -1;
+    k = cp9b->hmm_M;
+    while(k >= 1 && (cp9b->ep1 == -1 || cp9b->ep2 == -1)) {
+      if(pocc_arr[k] < 0.0) { k--; }
+      else {
+	pocc = pocc_arr[k];
+	if((cp9b->ep1 == -1) && (pocc > cp9b->thresh1)) cp9b->ep1 = k;
+	if((cp9b->ep2 == -1) && (pocc > cp9b->thresh2)) cp9b->ep2 = k;
+	k--;
+      }
+    }
+    if(k == 0) {
+      if(cp9b->ep1 == -1) { cp9b->ep1 = 0; }
+      if(cp9b->ep2 == -1) { cp9b->ep2 = 0; }
+    }
+  }
+  free(pocc_arr);
+
+  /* Parts 3-4: Rmarg/Lmarg derivation — identical to int variant. */
+
+  /* Rmarg_imin */
+  if(cp9b->sp1 == cp9b->hmm_M+1) { cp9b->Rmarg_imin = i0; }
+  else {
+    cp9b->Rmarg_imin = INT_MAX;
+    if(cp9b->sp1 != (cp9b->hmm_M+1) && cp9b->pn_min_m[cp9b->sp1] >= 0) cp9b->Rmarg_imin = ESL_MIN(cp9b->Rmarg_imin, cp9b->pn_min_m[cp9b->sp1]);
+    if(cp9b->sp1 != (cp9b->hmm_M+1) && cp9b->pn_min_i[cp9b->sp1] >= 0) cp9b->Rmarg_imin = ESL_MIN(cp9b->Rmarg_imin, cp9b->pn_min_i[cp9b->sp1]);
+    if(cp9b->sp1 != (cp9b->hmm_M+1) && cp9b->pn_min_d[cp9b->sp1] >= 0) cp9b->Rmarg_imin = ESL_MIN(cp9b->Rmarg_imin, cp9b->pn_min_d[cp9b->sp1]);
+    if(cp9b->sp2 != (cp9b->hmm_M+1) && cp9b->pn_min_m[cp9b->sp2] >= 0) cp9b->Rmarg_imin = ESL_MIN(cp9b->Rmarg_imin, cp9b->pn_min_m[cp9b->sp2]);
+    if(cp9b->sp2 != (cp9b->hmm_M+1) && cp9b->pn_min_i[cp9b->sp2] >= 0) cp9b->Rmarg_imin = ESL_MIN(cp9b->Rmarg_imin, cp9b->pn_min_i[cp9b->sp2]);
+    if(cp9b->sp2 != (cp9b->hmm_M+1) && cp9b->pn_min_d[cp9b->sp2] >= 0) cp9b->Rmarg_imin = ESL_MIN(cp9b->Rmarg_imin, cp9b->pn_min_d[cp9b->sp2]);
+    if(cp9b->Rmarg_imin == INT_MAX || cp9b->sp1 == (cp9b->hmm_M+1) || cp9b->sp2 == (cp9b->hmm_M+1)) cp9b->Rmarg_imin = i0;
+    cp9b->Rmarg_imin = ESL_MAX(i0,   cp9b->Rmarg_imin);
+    cp9b->Rmarg_imin = ESL_MIN(j0+1, cp9b->Rmarg_imin);
+  }
+  /* Rmarg_imax */
+  if(cp9b->sp1 == cp9b->hmm_M+1) { cp9b->Rmarg_imax = j0; }
+  else {
+    cp9b->Rmarg_imax = INT_MIN;
+    if(cp9b->sp1 != (cp9b->hmm_M+1) && cp9b->pn_max_m[cp9b->sp1] >= 0) cp9b->Rmarg_imax = ESL_MAX(cp9b->Rmarg_imax, cp9b->pn_max_m[cp9b->sp1]);
+    if(cp9b->sp1 != (cp9b->hmm_M+1) && cp9b->pn_max_i[cp9b->sp1] >= 0) cp9b->Rmarg_imax = ESL_MAX(cp9b->Rmarg_imax, cp9b->pn_max_i[cp9b->sp1]);
+    if(cp9b->sp1 != (cp9b->hmm_M+1) && cp9b->pn_max_d[cp9b->sp1] >= 0) cp9b->Rmarg_imax = ESL_MAX(cp9b->Rmarg_imax, cp9b->pn_max_d[cp9b->sp1]);
+    if(cp9b->sp2 != (cp9b->hmm_M+1) && cp9b->pn_max_m[cp9b->sp2] >= 0) cp9b->Rmarg_imax = ESL_MAX(cp9b->Rmarg_imax, cp9b->pn_max_m[cp9b->sp2]);
+    if(cp9b->sp2 != (cp9b->hmm_M+1) && cp9b->pn_max_i[cp9b->sp2] >= 0) cp9b->Rmarg_imax = ESL_MAX(cp9b->Rmarg_imax, cp9b->pn_max_i[cp9b->sp2]);
+    if(cp9b->sp2 != (cp9b->hmm_M+1) && cp9b->pn_max_d[cp9b->sp2] >= 0) cp9b->Rmarg_imax = ESL_MAX(cp9b->Rmarg_imax, cp9b->pn_max_d[cp9b->sp2]);
+    if(cp9b->Rmarg_imax == INT_MIN || cp9b->sp1 == (cp9b->hmm_M+1) || cp9b->sp2 == (cp9b->hmm_M+1)) cp9b->Rmarg_imax = j0+1;
+    cp9b->Rmarg_imax = ESL_MAX(i0,   cp9b->Rmarg_imax);
+    cp9b->Rmarg_imax = ESL_MIN(j0+1, cp9b->Rmarg_imax);
+  }
+  /* Lmarg_jmin */
+  if(cp9b->ep1 == 0) { cp9b->Lmarg_jmin = i0-1; }
+  else {
+    cp9b->Lmarg_jmin = INT_MAX;
+    if(cp9b->ep1 != 0 && cp9b->pn_min_m[cp9b->ep1] >= 0) cp9b->Lmarg_jmin = ESL_MIN(cp9b->Lmarg_jmin, cp9b->pn_min_m[cp9b->ep1]);
+    if(cp9b->ep1 != 0 && cp9b->pn_min_i[cp9b->ep1] >= 0) cp9b->Lmarg_jmin = ESL_MIN(cp9b->Lmarg_jmin, cp9b->pn_min_i[cp9b->ep1]);
+    if(cp9b->ep1 != 0 && cp9b->pn_min_d[cp9b->ep1] >= 0) cp9b->Lmarg_jmin = ESL_MIN(cp9b->Lmarg_jmin, cp9b->pn_min_d[cp9b->ep1]-1);
+    if(cp9b->ep2 != 0 && cp9b->pn_min_m[cp9b->ep2] >= 0) cp9b->Lmarg_jmin = ESL_MIN(cp9b->Lmarg_jmin, cp9b->pn_min_m[cp9b->ep2]);
+    if(cp9b->ep2 != 0 && cp9b->pn_min_i[cp9b->ep2] >= 0) cp9b->Lmarg_jmin = ESL_MIN(cp9b->Lmarg_jmin, cp9b->pn_min_i[cp9b->ep2]);
+    if(cp9b->ep2 != 0 && cp9b->pn_min_d[cp9b->ep2] >= 0) cp9b->Lmarg_jmin = ESL_MIN(cp9b->Lmarg_jmin, cp9b->pn_min_d[cp9b->ep2]-1);
+    if(cp9b->Lmarg_jmin == INT_MAX || cp9b->ep1 == 0 || cp9b->ep2 == 0) cp9b->Lmarg_jmin = i0-1;
+    cp9b->Lmarg_jmin = ESL_MAX(i0-1, cp9b->Lmarg_jmin);
+    cp9b->Lmarg_jmin = ESL_MIN(j0,   cp9b->Lmarg_jmin);
+  }
+  /* Lmarg_jmax */
+  if(cp9b->ep1 == 0) { cp9b->Lmarg_jmax = j0; }
+  else {
+    cp9b->Lmarg_jmax = INT_MIN;
+    if(cp9b->ep1 != 0 && cp9b->pn_max_m[cp9b->ep1] >= 0) cp9b->Lmarg_jmax = ESL_MAX(cp9b->Lmarg_jmax, cp9b->pn_max_m[cp9b->ep1]);
+    if(cp9b->ep1 != 0 && cp9b->pn_max_i[cp9b->ep1] >= 0) cp9b->Lmarg_jmax = ESL_MAX(cp9b->Lmarg_jmax, cp9b->pn_max_i[cp9b->ep1]);
+    if(cp9b->ep1 != 0 && cp9b->pn_max_d[cp9b->ep1] >= 0) cp9b->Lmarg_jmax = ESL_MAX(cp9b->Lmarg_jmax, cp9b->pn_max_d[cp9b->ep1]-1);
+    if(cp9b->ep2 != 0 && cp9b->pn_max_m[cp9b->ep2] >= 0) cp9b->Lmarg_jmax = ESL_MAX(cp9b->Lmarg_jmax, cp9b->pn_max_m[cp9b->ep2]);
+    if(cp9b->ep2 != 0 && cp9b->pn_max_i[cp9b->ep2] >= 0) cp9b->Lmarg_jmax = ESL_MAX(cp9b->Lmarg_jmax, cp9b->pn_max_i[cp9b->ep2]);
+    if(cp9b->ep2 != 0 && cp9b->pn_max_d[cp9b->ep2] >= 0) cp9b->Lmarg_jmax = ESL_MAX(cp9b->Lmarg_jmax, cp9b->pn_max_d[cp9b->ep2]-1);
+    if(cp9b->Lmarg_jmax == INT_MIN || cp9b->ep1 == 0 || cp9b->ep2 == 0) cp9b->Lmarg_jmax = j0;
+    cp9b->Lmarg_jmax = ESL_MAX(i0-1, cp9b->Lmarg_jmax);
+    cp9b->Lmarg_jmax = ESL_MIN(j0,   cp9b->Lmarg_jmax);
+  }
+
+  return;
+}
+
+
+/* Function: cp9_FBMatrices2BandsF()
+ *
+ * Float-precision mirror of cp9_FBMatrices2BandsP7B(). Phase 2 of the
+ * P7-banded CP9 band derivation: given filled CP9_FMX fmx/bmx, compute
+ * pn_min/pn_max bands via cp9_FB2HMMBandsP7BF, then convert to CM bands.
+ * Used only by cp9_IterateSeq2BandsP7B when do_trunc=TRUE.
+ */
+int
+cp9_FBMatrices2BandsF(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_FMX *fmx, CP9_FMX *bmx, CP9_FMX *pmx,
+		     ESL_DSQ *dsq, CP9Bands_t *cp9b, int *kmin, int *kmax,
+		     int L, int i0, int j0, int pass_idx, int debug_level,
+		     int do_pnmono, int do_pnmono_print)
+{
+  int status;
+  int use_sums      = ((cm->align_opts & CM_ALIGN_SUMS) || (cm->search_opts & CM_SEARCH_SUMS)) ? TRUE : FALSE;
+  int do_old_hmm2ij = ((cm->align_opts & CM_ALIGN_HMM2IJOLD) || (cm->search_opts & CM_SEARCH_HMM2IJOLD)) ? TRUE : FALSE;
+  int do_trunc      = cm_pli_PassAllowsTruncation(pass_idx);
+
+  if(use_sums) {
+    printf("USE SUMS!\n");
+    exit(1);
+  }
+  else {
+    if((status = cp9_FB2HMMBandsP7BF(cp9, errbuf, dsq, fmx, bmx, pmx, cp9b, L, cp9b->hmm_M,
+				     (1.-cm->tau), do_old_hmm2ij, kmin, kmax, debug_level,
+				     do_pnmono, do_pnmono_print)) != eslOK) return status;
+    cp9b->tau = cm->tau;
+  }
+  if(debug_level > 0) cp9_DebugPrintHMMBands(stdout, L, cp9b, cm->tau, 1);
+
+  /* Shift HMM bands from 1..L to i0..j0 */
+  if(i0 != 1) {
+    int offset = i0 - 1;
+    int k;
+    for(k = 0; k <= cp9b->hmm_M; k++) {
+      if(cp9b->pn_min_m[k] != -1) { cp9b->pn_min_m[k] += offset; cp9b->pn_max_m[k] += offset; }
+      if(cp9b->pn_min_i[k] != -1) { cp9b->pn_min_i[k] += offset; cp9b->pn_max_i[k] += offset; }
+      if(cp9b->pn_min_d[k] != -1) { cp9b->pn_min_d[k] += offset; cp9b->pn_max_d[k] += offset; }
+    }
+  }
+
+  if(do_trunc) {
+    /* float path: do_renorm always FALSE. The point of the float DP is that
+     * pocc[k] arrives at ~1.0 in glocal mode without the median heuristic. */
+    cp9_PredictStartAndEndPositionsP7BF(pmx, cp9b, kmin, kmax, i0, j0);
+    /* brief 26_0430-149: in glocal alignment the full (J-mode) parse must always be
+     * geometrically available. The thresh1 escalation in cp9_IterateSeq2BandsP7B
+     * can retreat ep1 below clen (and, in principle, push sp1 above 1) on models
+     * with a decaying posterior-occupancy tail -- e.g. pure-MATL VADR genome
+     * models such as NC_001959, where every state's rpos == clen, so once
+     * ep1 < clen every state gets Jvalid[v] = FALSE in
+     * cp9_MarginalCandidatesFromStartEndPositions(). That excludes the full parse
+     * and cm_TrInsideAlignHB() returns "no valid parsetree" in -g mode (local mode
+     * survives via an EL escape). Floor sp1 <= 1 and ep1 >= clen so the entire
+     * model stays J-valid. Scoped to glocal (CMH_LOCAL_BEGIN off) to leave local
+     * mode byte-identical (it already has a valid root, and EL handles the tail).
+     * This whole float-truncated band path is cmalign-only: cp9_IterateSeq2BandsP7B
+     * is reached only from cm_alndata.c with doing_search == FALSE, so
+     * (do_align && !doing_search) holds by construction. */
+    if(! (cm->flags & CMH_LOCAL_BEGIN)) {
+      if(cp9b->sp1 > 1)        cp9b->sp1 = 1;
+      if(cp9b->ep1 < cm->clen) cp9b->ep1 = cm->clen;
+    }
+    if((status = cp9_MarginalCandidatesFromStartEndPositions(cm, cp9b, pass_idx, errbuf)) != eslOK) return status;
+  }
+  else {
+    esl_vec_ISet(cp9b->Jvalid, cm->M+1, TRUE);
+    esl_vec_ISet(cp9b->Lvalid, cm->M+1, FALSE);
+    esl_vec_ISet(cp9b->Rvalid, cm->M+1, FALSE);
+    esl_vec_ISet(cp9b->Tvalid, cm->M+1, FALSE);
+  }
+
+  if(do_old_hmm2ij) {
+    /* brief 26_0430-148 (lands brief 26_0430-082): pass doing_search=FALSE so cp9_HMM2ijBands_OLD applies the
+     * global-alignment ROOT_S span enforcement (hmmband.c). This float-truncated band path is
+     * cmalign-only / do_trunc-only; without the pin the full J-mode parse is geometrically
+     * excluded in -g mode -> cm_TrInsideAlignHB returns "no valid parsetree". */
+    if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, FALSE, debug_level)) != eslOK) return status;
+  }
+  else {
+    /* brief 26_0430-148 (lands brief 26_0430-082): doing_search=FALSE (see comment above). */
+    if((status = cp9_HMM2ijBands(cm, errbuf, cp9, cm->cp9b, cm->cp9map, i0, j0, FALSE, do_trunc, debug_level)) != eslOK) return status;
+  }
+  if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) return status;
+  ij2d_bands(cm, cp9b, do_trunc, debug_level);
+
+  if(do_trunc && (! (cm->flags & CMH_LOCAL_BEGIN))) {
+    /* brief 26_0430-185: brief 26_0430-149's sp1/ep1 floor (above) forces Jvalid[v] = TRUE for
+     * essentially every state so the glocal J-parse stays geometrically available
+     * for models with a decaying-but-real occupancy tail (its target case, e.g.
+     * NC_001959). It does not widen the real per-state (j,d) bands, computed just
+     * above by ij2d_bands() from the un-floored 1-tau threshold signal -- so on a
+     * sequence with a genuinely, biologically missing region the floor also
+     * flags states whose real band is empty as "J-valid": geometrically
+     * unreachable "phantom valid" states that a truncated-alignment traceback
+     * can walk into and die on (cm_TrInsideAlignHB() "no valid parsetree
+     * found"). Veto Jvalid[v] back to FALSE for any state whose real band is
+     * empty at every j in its jband, using the hd_min()/hd_max()
+     * recompute-on-demand accessors (brief 26_0430-157) -- never reintroduce flat
+     * hdmin[v][]/hdmax[v][] reads here, they're gone. */
+    int v, jp, njp, found;
+    for(v = 0; v < cp9b->cm_M; v++) {
+      if(! cp9b->Jvalid[v]) continue;
+      njp = cp9b->jmax[v] - cp9b->jmin[v] + 1;
+      found = FALSE;
+      for(jp = 0; jp < njp; jp++) {
+        if(hd_min(cp9b, v, jp) <= hd_max(cp9b, v, jp)) { found = TRUE; break; }
+      }
+      if(! found) cp9b->Jvalid[v] = FALSE;
+    }
+  }
+
+#if eslDEBUGLEVEL >= 1
+  if((status = cp9_ValidateBands(cm, errbuf, cp9b, i0, j0, do_trunc)) != eslOK) return status;
+#endif
+  if(debug_level > 0) debug_print_ij_bands(cm);
+  if(debug_level > 0) PrintDPCellsSaved_jd(cm, cp9b, L);
+
+  return eslOK;
+}
 
 
 /* Function: p7_Seq2Bands
@@ -2304,7 +6581,7 @@ cp9_FB2HMMBandsP7B(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *
  * 
  */
 int
-p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL_DSQ *dsq, int L, 
+cm_p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL_DSQ *dsq, int L,
 	     double **phi, float sc7, int len7, int end7, float mprob7, float mcprob7, float iprob7, float ilprob7, int pad7,
 	     int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells)
 {
@@ -2315,52 +6592,51 @@ p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_T
   int *iconflict;
   int *kmin, *kmax;
   int ncells;
+  int M = gm->M;  /* model length; equals cm->mlp7->M and cm->clen for RNA profiles */
+  ESL_STOPWATCH *s2b_watch = NULL;
 
   /* setup for all modes */
   p7_bg_SetLength(bg, L);
   p7_bg_NullOne(bg, dsq, L, &nullsc);
 
   /* generic mode setup */
-  p7_gmx_GrowTo(gx, cm->mlp7->M, L); 
+  p7_gmx_GrowTo(gx, M, L);
   p7_ReconfigLength(gm, L);
-  gx->M = cm->mlp7->M;
+  gx->M = M;
   gx->L = L;
 
-  /* Step 1: MSV algorithm M->M transitions only 
-   * Step 2: traceback MSV to get pins 
-   * Step 3: prune pins
-   * Step 4: pins -> bands
-   */
-  
-  /* Step 1: MSV algorithm */
+  s2b_watch = esl_stopwatch_Create();
 
-  /* optimized MSV */
-  /*
-    p7_oprofile_ReconfigLength(cm->mlp7_om, L);
-    esl_stopwatch_Start(watch);    
-    my_p7_MSVFilter(dsq, L, cm->mlp7_om, ox, gx, &usc);
-    got    esl_stopwatch_Stop(watch); 
-    FormatTimeString(time_buf, watch->user, TRUE);
-    fprintf(stdout, "OMSV  %8.2f  %11s\n", ((usc -nullsc) / eslCONST_LOG2), time_buf);
-  */
-
+  /* Step 1: GMSV algorithm */
+  esl_stopwatch_Start(s2b_watch);
   p7_GMSV(dsq, L, gm, gx, 2.0, &usc);
+  esl_stopwatch_Stop(s2b_watch);
 
   /* Step 2: traceback MSV */
+  esl_stopwatch_Start(s2b_watch);
   status = my_p7_GTraceMSV(dsq, L, gm, gx, p7_tr, &i2k, &k2i, &isc, &iconflict);
+  esl_stopwatch_Stop(s2b_watch);
+
+  /* Debug: print pins with isc scores before pruning */
 
   /* Step 3: prune pins */
+  esl_stopwatch_Start(s2b_watch);
   if(status == eslOK) { /* trace is valid */
     prune_i2k(i2k, iconflict, isc, L, phi, sc7, len7, end7, mprob7, mcprob7, iprob7, ilprob7);
   }
-  else if (status == eslEINCOMPAT) { /* trace was discontiguous, abort! remove all pins */ 
-    esl_vec_ISet(k2i, (cm->mlp7->M+1), -1);
+  else if (status == eslEINCOMPAT) { /* trace was discontiguous, abort! remove all pins */
+    esl_vec_ISet(k2i, (M+1), -1);
     esl_vec_ISet(i2k, (L+1), -1);
+    esl_stopwatch_Destroy(s2b_watch);
     return status;
   }
+  esl_stopwatch_Stop(s2b_watch);
 
   /* Step 4: pins -> bands */
-  if((status = p7_pins2bands(i2k, errbuf, L, cm->clen, pad7, &kmin, &kmax, &ncells)) != eslOK) return status;
+  esl_stopwatch_Start(s2b_watch);
+  if((status = p7_pins2bands(i2k, errbuf, L, M, pad7, &kmin, &kmax, &ncells)) != eslOK) { esl_stopwatch_Destroy(s2b_watch); return status; }
+  esl_stopwatch_Stop(s2b_watch);
+  esl_stopwatch_Destroy(s2b_watch);
   /*DumpP7Bands(stdout, i2k, kmin, kmax, L); */
 
   /* print gmx in heatmap format */ 
@@ -2389,109 +6665,5199 @@ p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_T
 }
 
 
-/**************************************************************
- * Function: CP9NodeForPosnP7B()
- * Incept:   EPN, Tue Aug 19 14:30:51 2008
- * 
- * Purpose:  Given a P7 banded CP9 posterior matrix,
- *           determine the node of the CP9 HMM that is most likely to 
- *           have emitted (from either its Match or Insert state)
- *           a given posn in the target sequence.
+/* Function: p7_Seq2BandsVit()
+ * Incept:   EPN*
  *
- * Args:     hmm       - the CM plan 9 HMM
- *           errbuf    - for error messages
- *           x         - posn of target subsequence we're interested in
- *           L         - last position of target sequence 
- *           post      - the posterior matrix for the hmm
- *           kn        - min node k for residue x
- *           kx        - max node k for residue x
- *           ret_node  - RETURN: index of node with highest probability of emitting x
- *           ret_type  - RETURN: type of state in ret_node with highest probability 
- *           print_flag- TRUE to print out info on most likely node 
- *           
+ * Synopsis: Derive p7 bands from glocal Viterbi alignment.
  *
- * Returns:  eslOK on success;
- *           eslEINVAL on contract violation.
- *           eslEINCOMPAT if kmin[x] >= 
- */
-int 
-CP9NodeForPosnP7B(CP9_t *hmm, char *errbuf, int x, CP9_MX *post, 
-		  int kn, int kx, int *ret_node, int *ret_type, int print_flag)
-{
-  /* post->mmx[i][kp]: posterior probability that posn i was emitted from node k's 
-     match state, k = kp + kmin[i] */  
-  int  max_k;    /* node index with highest posterior probability of emitting posn x */
-  int  max_type; /* type of state in max_k node with max probability '0' for match, 
-		    '1' for insert */
-  int  max_sc;   /* score (log probability) from post matrix for max_k node max_type state type */
-  int  k;        /* counter over nodes */
-  int  kp;       /* k': k offset in position x's band */
-    
-  if(kn > kx) ESL_FAIL(eslEINVAL, errbuf, "ERROR in CP9NodeForPosn(), kn (%d) > kx (%d)\n", kn, kx);
-  
-  kp = 0;
-  k  = kn;
-  if(post->mmx[x][0] > post->imx[x][0]) { 
-    max_sc     = post->mmx[x][0];
-    max_type   = 0; /* match */
-  }
-  else {
-    max_sc     = post->imx[x][0];
-    max_type   = 1; /* insert */
-  }
-  max_k = k; 
-
-  /* move left to right through HMM nodes */
-  for(k = kn+1, kp = 1; k <= kx; k++, kp++) {
-    if(post->mmx[x][kp] > max_sc) {
-      max_k  = k;
-      max_sc = post->mmx[x][kp];
-      max_type = 0; /* match */
-    }
-    if(post->imx[x][kp] > max_sc) {
-      max_k  = k;
-      max_sc = post->imx[x][kp];
-      max_type = 1; /* insert */
-    }
-  }
-
-  if(print_flag) { 
-    if(max_type == 0) printf("MATCH  | mx->mmx[%3d][%3d]: %9d | %8f\n", x, max_k, post->mmx[x][max_k-kn],  Score2Prob(post->mmx[x][max_k-kn], 1.));
-    else      	      printf("INSERT | mx->imx[%3d][%3d]: %9d | %8f\n", x, max_k, post->imx[x][max_k-kn], Score2Prob(post->imx[x][max_k-kn], 1.));
-  }
-  *ret_node = max_k;
-  *ret_type = max_type;
-  return eslOK;
-}
-
-/* Function: P7BandsAdjustForSubCM()
- * Incept:   EPN, Tue Aug 19 14:47:55 2008
- * 
- * Purpose:  Correct k bands kmin, kmax built from an original CM for it's sub CM model 
- *           that models spos..epos.
- *           
- * Args:     kmin     - [0.i..L] = k, min node k for residue i
- *           kmax     - [0.i..L] = k, max node k for residue i
- *           L        - length of current sequence
- *           spos     - min k valid in sub CM 
- *           epos     - max k valid in sub CM 
+ * Purpose:  Given a profile <gm> already configured in the desired mode
+ *           (glocal, local, or truncated-glocal) and a digital sequence
+ *           <dsq> of length <L>, run p7_GViterbi(), traceback the optimal
+ *           alignment with p7_GTrace(), and derive per-residue kmin/kmax
+ *           bands suitable for banded glocal Forward.
  *
- * Return:   <eslOK> on success.
+ *           Unlike p7_Seq2Bands() (which uses GMSV + my_p7_GTraceMSV),
+ *           the Viterbi trace is globally optimal and free of diagonal
+ *           conflicts, so no pin-conflict pruning is performed.
  *
+ *           Profile mode is the caller's responsibility: configure gm
+ *           to p7_GLOCAL (or truncated equivalent) before calling, and
+ *           restore it afterward if needed.
+ *
+ * Args:     errbuf    - for error messages
+ *           gm        - profile, configured in desired mode by caller
+ *           gx        - generic DP matrix (will be grown as needed)
+ *           bg        - null model (unused; reserved for future)
+ *           p7_tr     - pre-allocated trace (will be reused)
+ *           dsq       - digital sequence, 1..L
+ *           L         - length of dsq
+ *           pad       - band half-width passed to p7_pins2bands()
+ *           nodepad   - per-node pad array [0..M], or NULL to use pad
+ *           hopback   - if >0, dilate band per pinned residue by min/max of
+ *                       i2k across the 2*hopback+1-pin trace-order window.
+ *                       Only applied when nodepad path is used (pin set is
+ *                       monotone). 0 = off.
+ *           vitend    - if >0, drop the first <vitend> and last <vitend>
+ *                       Vit pins (M-state entries in i2k) before pins->bands.
+ *                       Targets Mode-1 boundary truncation by widening the
+ *                       band at the prefix/suffix to [0,M].
+ *           ret_i2k   - RETURN: per-residue pin array (caller frees)
+ *           ret_kmin  - RETURN: per-residue kmin array (caller frees)
+ *           ret_kmax  - RETURN: per-residue kmax array (caller frees)
+ *           ret_ncells- RETURN: total banded cells; 0 = fall back to unbanded
+ *
+ * Returns:  eslOK on success.
+ *           eslFAIL if Viterbi finds no valid path; ret_* set to NULL,
+ *           ret_ncells set to 0; caller should fall back to unbanded Forward.
  */
 int
-P7BandsAdjustForSubCM(int *kmin, int *kmax, int L, int spos, int epos)
+cm_p7_Seq2BandsVit(char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr,
+		ESL_DSQ *dsq, int L, int pad, int *nodepad, int hopback, int vitend,
+		int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells)
 {
-  int i;
-  int M = epos - spos + 1;
-  for(i = 0; i <= L; i++) { 
-    kmin[i] = ESL_MAX(kmin[i] - (spos-1), 0);
-    kmin[i] = ESL_MIN(kmin[i], M);
+  int    status;
+  float  sc;
+  int   *i2k  = NULL;
+  int   *kmin = NULL;
+  int   *kmax = NULL;
+  int    ncells = 0;
+  int    M = gm->M;
+  int    tpos;
 
-    kmax[i] = ESL_MAX(kmax[i] - (spos-1), 0);
-    kmax[i] = ESL_MIN(kmax[i], M);
+  /* Setup DP matrix */
+  p7_gmx_GrowTo(gx, M, L);
+  gx->M = M;
+  gx->L = L;
+
+  /* Step 1: Viterbi DP */
+  if ((status = p7_GViterbi(dsq, L, gm, gx, &sc)) != eslOK)
+    ESL_FAIL(status, errbuf, "p7_GViterbi() failed in p7_Seq2BandsVit()");
+
+  /* Step 2: Traceback.
+   * p7_GTrace() expects an empty trace (tr->N == 0); call Reuse() first.
+   * If no valid path (eslFAIL), return eslOK with ncells=0 so the
+   * caller falls back to unbanded Forward.
+   */
+  p7_trace_Reuse(p7_tr);
+  status = p7_GTrace(dsq, L, gm, gx, p7_tr);
+  if (status == eslFAIL) {
+    /* Empty trace: no valid Viterbi path. Signal caller to fall back. */
+    *ret_i2k    = NULL;
+    *ret_kmin   = NULL;
+    *ret_kmax   = NULL;
+    *ret_ncells = 0;
+    return eslOK;
   }
-  kmin[0] = 0; /* hard-coded, M_0 is begin state, it must emit full sequence */
+  if (status != eslOK) ESL_FAIL(status, errbuf, "p7_GTrace() failed in p7_Seq2BandsVit()");
 
+  /* Step 3: Populate i2k from M states in trace.
+   * Viterbi trace is non-conflicting by construction; no conflict handling needed.
+   * For multi-hit (glocal multihit mode via J state), both hits populate i2k
+   * at distinct sequence positions — no conflict.
+   */
+  ESL_ALLOC(i2k, sizeof(int) * (L + 1));
+  esl_vec_ISet(i2k, (L + 1), -1);
+
+  int nB = 0; /* count B states = number of hits in trace */
+  int nM = 0; /* total M states */
+  for (tpos = 0; tpos < p7_tr->N; tpos++) {
+    if (p7_tr->st[tpos] == p7T_B) nB++;
+    if (p7_tr->st[tpos] == p7T_M) {
+      nM++;
+      int i = p7_tr->i[tpos];
+      int k = p7_tr->k[tpos];
+      if (i >= 1 && i <= L && k >= 1 && k <= M)
+	i2k[i] = k;
+    }
+  }
+
+  /* Step 3b: Optional vitend pruning. Drop the first <vitend> and last
+   * <vitend> populated entries of i2k (walking forward, then backward,
+   * over non--1 entries), setting them to -1. This widens the band at
+   * the prefix/suffix to [0,M] (no pin -> no per-pin width contribution
+   * and the bridge pass between consecutive pins doesn't reach those
+   * edge rows). Targets Mode-1 boundary truncation: with end pins
+   * removed, F5 backward can integrate posterior mass into the prefix
+   * and suffix that would otherwise be locked to nodepad[k_first/last].
+   * Skip if nM <= 2*vitend (would clear all pins; falls back to unbanded
+   * via empty pin set, behavior matches no-pin case).
+   */
+  if (vitend > 0 && nM > 0) {
+    int dropped, i;
+    /* Forward pass: drop first <vitend> non--1 entries. */
+    dropped = 0;
+    for (i = 1; i <= L && dropped < vitend; i++) {
+      if (i2k[i] != -1) {
+	i2k[i] = -1;
+	dropped++;
+      }
+    }
+    /* Backward pass: drop last <vitend> non--1 entries. */
+    dropped = 0;
+    for (i = L; i >= 1 && dropped < vitend; i--) {
+      if (i2k[i] != -1) {
+	i2k[i] = -1;
+	dropped++;
+      }
+    }
+  }
+
+  /* Step 4: Pins -> bands */
+  if (nodepad != NULL) {
+    /* brief 26_0628-043: Viterbi-trace path doesn't expose a tunable ramp alpha --
+     * pass brief 26_0628-042's validated default unconditionally. */
+    if ((status = p7_pins2bands_nodepad(i2k, errbuf, L, M, nodepad, hopback, 0.75, &kmin, &kmax, &ncells)) != eslOK)
+      goto ERROR;
+  }
+  else {
+    if ((status = p7_pins2bands(i2k, errbuf, L, M, pad, &kmin, &kmax, &ncells)) != eslOK)
+      goto ERROR;
+  }
+
+  *ret_i2k    = i2k;
+  *ret_kmin   = kmin;
+  *ret_kmax   = kmax;
+  *ret_ncells = ncells;
+  return eslOK;
+
+ ERROR:
+  if (i2k)  free(i2k);
+  if (kmin) free(kmin);
+  if (kmax) free(kmax);
+  return status;
+}
+
+
+/* Function: p7_kbands2gbands()
+ * Date:     EPN*, Sun Mar 16 2026
+ * 
+ * Purpose:  Convert k-indexed bands (kmin[i], kmax[i]) to HMMER's 
+ *           i-indexed P7_GBANDS structure. 
+ *           
+ *           Only includes positions where i2k[i] != -1 (MSV-aligned positions).
+ *           Positions with i2k=-1 are excluded, creating gaps between segments.
+ *           This allows unaligned regions to use N/J/C states freely.
+ *           
+ * Args:     i2k    - [0..i..L] = k or -1, which HMM node aligns to residue i
+ *           kmin   - [0..i..L] = k, min node k for residue i
+ *           kmax   - [0..i..L] = k, max node k for residue i
+ *           L      - length of sequence
+ *           M      - length of HMM model
+ *           ret_bnd - RETURN: newly allocated P7_GBANDS structure
+ *
+ * Returns:  <eslOK> on success, <ret_bnd> points to new P7_GBANDS.
+ *           <eslEMEM> on allocation failure.
+ *           
+ * Note:     Always makes one segment covering rows 1..L. (An older note
+ *           here said it made multiple segments for sparse alignments; it
+ *           does not, and the banded OA fills cannot handle unbanded rows:
+ *           see p7b_oa_band_check(), brief 26_0821-144.)
+ */
+int
+cm_p7_kbands2gbands(int *i2k, int *kmin, int *kmax, int L, int M, P7_GBANDS **ret_bnd)
+{
+  P7_GBANDS *bnd = NULL;
+  int        status;
+  int        i;
+  int        ka, kb;
+
+  if ((bnd = p7_gbands_Create()) == NULL) { status = eslEMEM; goto ERROR; }
+  
+  /* Include all positions i=1..L, but widen bands for unaligned positions.
+   * For positions with i2k=-1 (no MSV alignment), if the inherited band is
+   * narrow, widen it to allow more flexibility for D states and special states.
+   * Clamp bands to valid range [1..M] - HMM nodes are 1-indexed.
+   */
+  for (i = 1; i <= L; i++) {
+    ka = ESL_MAX(1, kmin[i]);  /* ensure ka >= 1 */
+    kb = ESL_MIN(M, kmax[i]);  /* ensure kb <= M */
+    if (ka > kb) ka = kb;      /* ensure ka <= kb (can happen with non-uniform nodepad) */
+    
+    /* (widening for unaligned positions removed — was inflating bands) */
+    
+    if ((status = p7_gbands_Append(bnd, i, ka, kb)) != eslOK) goto ERROR;
+  }
+  
+  /* Finalize the band structure */
+  bnd->L = L;
+  bnd->M = M;
+  
+  *ret_bnd = bnd;
+  return eslOK;
+  
+ ERROR:
+  if (bnd != NULL) p7_gbands_Destroy(bnd);
+  *ret_bnd = NULL;
+  return status;
+}
+
+/* brief 26_0821-151: the double row kernels of the HMM-only engines,
+ * defined below, also run cmsearch's banded Forward/Backward. */
+static inline double p7b_dlogsum(double a, double b);
+static void p7b_fwd_row(const ESL_DSQ *dsq, const P7_PROFILE *gm, int M, double esc,
+                        int i, int kac, int kbc, const double *dpp, int kap, int kbp,
+                        double xB, double xN_in, double xJ_in, double xC_in, double *dpc,
+                        double *o_xE, double *o_xN, double *o_xJ, double *o_xB, double *o_xC);
+static void p7b_bwd_row(const ESL_DSQ *dsq, const P7_PROFILE *gm, int M, double esc,
+                        int i, int L, int kac, int kbc, const double *dpn, int kan, int kbn,
+                        double *xC_io, double *xJ_io, double *xN_io, double *xE_io, double *xB_io,
+                        double *dpc);
+static void p7b_bwd_cross_gap(const ESL_DSQ *dsq, const P7_PROFILE *gm, int M, int i_up, int G,
+                              const double *dpn, int kan, int kbn,
+                              double *xC, double *xJ, double *xN, double *xE);
+
+/* Function: my_p7_GForwardBanded()
+ * Date:     EPN*, Sun Mar 16 2026
+ * 
+ * Purpose:  Exact copy of p7_GForwardBanded() from HMMER.
+ *           Copied from hmmer/src/generic_fwdback_banded.c:p7_GForwardBanded()
+ *           GLOCAL mode only (entry at M_1, exit at M_M).
+ *           
+ * Args:     dsq    - digital sequence, 1..L
+ *           L      - length of sequence
+ *           gm     - profile
+ *           gxb    - banded DP matrix (contains P7_GBANDS structure)
+ *           opt_sc - optRETURN: Forward score in nats
+ *           
+ * Returns:  <eslOK> on success
+ */
+int
+cm_p7_GForwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, float *opt_sc)
+{
+  /* brief 26_0821-151: the recursion runs in double, through the same row
+   * kernel as the double HMM-only engines (p7b_fwd_row()); <gxb> receives
+   * a float copy of each finished row.  Nothing read back into the
+   * recursion is float, so rounding no longer accumulates along the
+   * sequence (in float it drifted the score by ~2 bits at L ~ 19,000). */
+  P7_GBANDS *bnd    = gxb->bnd;
+  int        M      = gm->M;
+  double     esc    = p7_profile_IsLocal(gm) ? 0 : -eslINFINITY;
+  double    *buf[2] = { NULL, NULL };
+  double    *prv, *cur;
+  double     xE, xN, xJ, xB, xC;
+  float     *dpc    = gxb->dp;
+  float     *xpc    = gxb->xmx;
+  int       *bnd_ip = bnd->imem;
+  int       *bnd_kp = bnd->kmem;
+  int        maxnc  = 1;
+  int        g, i, r, c, ia, ib, kac, kbc, kap, kbp, nc;
+  int        last_ib = 0;
+  int        status;
+
+  for (r = 0; r < bnd->nrow; r++) maxnc = ESL_MAX(maxnc, bnd->kmem[2*r+1] - bnd->kmem[2*r] + 1);
+  ESL_ALLOC(buf[0], sizeof(double) * maxnc * p7G_NSCELLS);
+  ESL_ALLOC(buf[1], sizeof(double) * maxnc * p7G_NSCELLS);
+
+  xN = 0.0;
+  xJ = -eslINFINITY;
+  xC = -eslINFINITY;
+  r  = 0;
+  for (g = 0; g < bnd->nseg; g++)
+    {
+      ia = *bnd_ip++;
+      ib = *bnd_ip++;
+
+      /* specials for row ia-1, just outside the segment.  Guard n*xsc[LOOP]
+       * against n=0 with xsc[LOOP]=-inf (truncated profiles): 0*(-inf)=NaN. */
+      { int gap = ia - last_ib - 1;
+        if (gap > 0) { xN += gap * gm->xsc[p7P_N][p7P_LOOP];
+                       xJ += gap * gm->xsc[p7P_J][p7P_LOOP];
+                       xC += gap * gm->xsc[p7P_C][p7P_LOOP]; } }
+      xB  = p7b_dlogsum(xN + gm->xsc[p7P_N][p7P_MOVE], xJ + gm->xsc[p7P_J][p7P_MOVE]);
+      prv = NULL;
+      kap = kbp = M+1;
+
+      for (i = ia; i <= ib; i++, r++)
+        {
+          kac = *bnd_kp++;
+          kbc = *bnd_kp++;
+          nc  = kbc - kac + 1;
+          cur = buf[r & 1];
+          p7b_fwd_row(dsq, gm, M, esc, i, kac, kbc, prv, kap, kbp, xB, xN, xJ, xC, cur, &xE, &xN, &xJ, &xB, &xC);
+          for (c = 0; c < nc * p7G_NSCELLS; c++) *dpc++ = (float) cur[c];
+          *xpc++ = (float) xE;
+          *xpc++ = (float) xN;
+          *xpc++ = (float) xJ;
+          *xpc++ = (float) xB;
+          *xpc++ = (float) xC;
+          prv = cur;
+          kap = kac;
+          kbp = kbc;
+        }
+      last_ib = ib;
+    }
+
+  /* last_ib+1..L is outside any band segment, so it can only run through xC.
+   * Guard against 0*(-inf)=NaN when tail=0 and xsc[C][LOOP]=-inf (truncated profiles).
+   */
+  if (opt_sc != NULL) { int tail = L - last_ib;
+    *opt_sc = (float) ((tail > 0 ? xC + tail * gm->xsc[p7P_C][p7P_LOOP] : xC) + gm->xsc[p7P_C][p7P_MOVE]); }
+  free(buf[0]); free(buf[1]);
+  return eslOK;
+
+ ERROR:
+  if (buf[0]) free(buf[0]);
+  if (buf[1]) free(buf[1]);
+  return status;
+}
+
+/* Function: p7_GBackwardBanded()
+ * Date:     EPN*, Sun Mar 16 2026
+ * 
+ * Purpose:  Banded Backward algorithm for P7 profile HMMs.
+ *           Adapted from Sean Eddy's p7_GForwardBanded() in 
+ *           hmmer/src/generic_fwdback_banded.c (2011) and p7_GBackward()
+ *           in hmmer/src/generic_fwdback.c.
+ *           
+ *           Calculate the Backward matrix for sequence <dsq> of length <L>,
+ *           using profile <gm>, constrained by bands in <gxb>.
+ *           
+ *           Works backwards through the sequence (i = L to 1) and through
+ *           model nodes within each row's band, computing the probability
+ *           of generating the rest of the sequence from each cell.
+ *           
+ * Args:     dsq    - digital sequence, 1..L
+ *           L      - length of sequence
+ *           gm     - profile
+ *           gxb    - banded DP matrix (contains P7_GBANDS structure)
+ *           opt_sc - optRETURN: Backward score in nats
+ *           
+ * Returns:  <eslOK> on success; <gxb> contains the Backward matrix,
+ *           <opt_sc> (if non-NULL) contains Backward score.
+ *           
+ * Note:     Like p7_GBackward(), this calculates the probability of
+ *           getting OUT of cell i,k, exclusive of emitting residue x_i.
+ *           
+ *           Emissions for row i are scored using dsq[i+1], because
+ *           Backward looks at what comes AFTER the current cell.
+ */
+int
+cm_p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, float *opt_sc)
+{
+  /* brief 26_0821-151: double recursion through p7b_bwd_row() and
+   * p7b_bwd_cross_gap() (the double HMM-only engines' kernels), float
+   * copies into <gxb>; see cm_p7_GForwardBanded(). */
+  P7_GBANDS *bnd    = gxb->bnd;
+  int        M      = gm->M;
+  int        nrow   = bnd->nrow;
+  double     esc    = p7_profile_IsLocal(gm) ? 0 : -eslINFINITY;
+  double    *buf[2] = { NULL, NULL };
+  double    *nbr    = NULL, *cur;
+  double     xE, xN, xJ, xB, xC;
+  int       *irow   = NULL;
+  int64_t    off    = (int64_t) bnd->ncell * p7G_NSCELLS;   /* start of row r in gxb->dp, counted down */
+  int        maxnc  = 1;
+  int        g, i, r, c, ia, ib, kac, kbc, kan, kbn, nc;
+  int        status;
+
+  ESL_ALLOC(irow, sizeof(int) * (nrow + 1));
+  for (r = 0, g = 0; g < bnd->nseg; g++)
+    for (i = bnd->imem[2*g]; i <= bnd->imem[2*g+1]; i++) irow[r++] = i;
+  for (r = 0; r < nrow; r++) maxnc = ESL_MAX(maxnc, bnd->kmem[2*r+1] - bnd->kmem[2*r] + 1);
+  ESL_ALLOC(buf[0], sizeof(double) * maxnc * p7G_NSCELLS);
+  ESL_ALLOC(buf[1], sizeof(double) * maxnc * p7G_NSCELLS);
+
+  xC  = gm->xsc[p7P_C][p7P_MOVE];
+  xE  = xC + gm->xsc[p7P_E][p7P_MOVE];
+  xJ  = xB = xN = -eslINFINITY;
+  kan = kbn = M+1;
+  for (r = nrow - 1; r >= 0; r--)
+    {
+      i   = irow[r];
+      kac = bnd->kmem[2*r];
+      kbc = bnd->kmem[2*r+1];
+      nc  = kbc - kac + 1;
+      if (r == nrow - 1 || irow[r+1] > i + 1) {   /* last row of a segment */
+        if (r < nrow - 1)    /* interior gap below the next segment (brief 26_0821-141) */
+          p7b_bwd_cross_gap(dsq, gm, M, irow[r+1], irow[r+1] - i - 1, nbr, kan, kbn, &xC, &xJ, &xN, &xE);
+        else if (L - i > 0) { xC += (L - i) * gm->xsc[p7P_C][p7P_LOOP];   /* trailing rows: C only */
+                              xE  = p7b_dlogsum(xE, xC + gm->xsc[p7P_E][p7P_MOVE]); }
+        nbr = NULL; kan = kbn = M+1;
+      }
+      cur = buf[r & 1];
+      p7b_bwd_row(dsq, gm, M, esc, i, L, kac, kbc, nbr, kan, kbn, &xC, &xJ, &xN, &xE, &xB, cur);
+      off -= (int64_t) nc * p7G_NSCELLS;
+      for (c = 0; c < nc * p7G_NSCELLS; c++) gxb->dp[off + c] = (float) cur[c];
+      gxb->xmx[(int64_t) r * p7G_NXCELLS + p7G_E] = (float) xE;
+      gxb->xmx[(int64_t) r * p7G_NXCELLS + p7G_N] = (float) xN;
+      gxb->xmx[(int64_t) r * p7G_NXCELLS + p7G_J] = (float) xJ;
+      gxb->xmx[(int64_t) r * p7G_NXCELLS + p7G_B] = (float) xB;
+      gxb->xmx[(int64_t) r * p7G_NXCELLS + p7G_C] = (float) xC;
+      nbr = cur; kan = kac; kbn = kbc;
+    }
+
+  /* Row 0: N(i0-1) = logsum(N(i0) + N_LOOP, B(i0-1) + N_MOVE), B(i0-1)
+   * summed over the first band row's M cells, then N loops down to row 0.
+   * Same as cm_p7_GFBDecodeBandedDouble(). */
+  if (opt_sc != NULL) {
+    float const *tsc = gm->tsc;
+    float const *rsc;
+    int          i0  = (nrow > 0) ? irow[0] : L+1;
+    double       xB0 = -eslINFINITY, sc;
+    int          k;
+    if (i0 <= L) {
+      rsc = gm->rsc[dsq[i0]];
+      for (k = ESL_MAX(1, bnd->kmem[0]); k <= ESL_MIN(M, bnd->kmem[1]); k++)
+        xB0 = p7b_dlogsum(xB0, nbr[(k - bnd->kmem[0]) * p7G_NSCELLS + p7G_M] + TSC(p7P_BM, k-1) + MSC(k));
+    }
+    sc = p7b_dlogsum(xN + gm->xsc[p7P_N][p7P_LOOP], xB0 + gm->xsc[p7P_N][p7P_MOVE]);
+    if (i0 > 1) sc += (i0 - 1) * gm->xsc[p7P_N][p7P_LOOP];
+    *opt_sc = (float) sc;
+  }
+  free(buf[0]); free(buf[1]); free(irow);
+  return eslOK;
+
+ ERROR:
+  if (buf[0]) free(buf[0]);
+  if (buf[1]) free(buf[1]);
+  if (irow)   free(irow);
+  return status;
+}
+
+
+/* Function: p7_GDecodingBanded()
+ * Date:     EPN*, Wed Mar 18 2026
+ *
+ * Purpose:  Banded posterior decoding. Given Forward and Backward banded
+ *           matrices <fwd> and <bck> (both using the same P7_GBANDS),
+ *           calculate posterior probabilities for each (i,k) cell.
+ *
+ *           <bck> may be overwritten with posteriors (pass bck == pp).
+ *           <fwd> is read-only (needs fwd xmx at row i-1 for N/J/C).
+ *
+ * Args:     gm         - profile
+ *           fwd        - banded Forward matrix
+ *           bck        - banded Backward matrix
+ *           pp         - RESULT: banded posterior matrix (may == bck)
+ *           overall_sc - Forward score in nats (fwdsc). Unused since brief
+ *                        26_0821-141: each row is exponentiated against its
+ *                        own max of F + B and normalized by its own sum.
+ *
+ * Note:     cmalign's HMM-only alignment no longer calls this (it uses the
+ *           double-precision cm_p7_GFBDecodeBandedDouble() and the p7b_*
+ *           engines); cmsearch's --msvband/--vitband domain definition does.
+ *
+ * Returns:  eslOK on success; eslEMEM on allocation failure.
+ */
+int
+cm_p7_GDecodingBanded(const P7_PROFILE *gm, const P7_GMXB *fwd, P7_GMXB *bck,
+		   P7_GMXB *pp, float overall_sc)
+{
+  int         *bnd_ip = fwd->bnd->imem;
+  int         *bnd_kp = fwd->bnd->kmem;
+  float const *fwd_dp = fwd->dp;
+  float const *bck_dp = bck->dp;
+  float       *pp_dp  = pp->dp;
+  float const *fwd_xp = fwd->xmx;
+  float const *bck_xp = bck->xmx;
+  float       *pp_xp  = pp->xmx;
+  int          ia, ib;
+  int          last_ib;
+  int          kac, kbc;
+  int          M = gm->M;
+  double       fwd_xN_prev, fwd_xJ_prev, fwd_xC_prev;
+  double       denom, rowmax;
+  double      *wrk = NULL, *wx;   /* one row: M,I per cell, then N,J,C */
+  int          g, i, k, c;
+  int          nk, nw, maxnk = 0;
+  int          status;
+
+  /* size the row buffer from the widest band row */
+  for (i = 0; i < fwd->bnd->nrow; i++)
+    maxnk = ESL_MAX(maxnk, fwd->bnd->kmem[2*i+1] - fwd->bnd->kmem[2*i] + 1);
+  ESL_ALLOC(wrk, sizeof(double) * (2 * maxnk + 3));
+
+  fwd_xN_prev = 0.0;
+  fwd_xJ_prev = -eslINFINITY;
+  fwd_xC_prev = -eslINFINITY;
+  last_ib     = 0;
+
+  for (g = 0; g < fwd->bnd->nseg; g++)
+    {
+      ia = *bnd_ip++;
+      ib = *bnd_ip++;
+
+      /* Handle gap before this segment: advance prev specials through gap.
+       * Guard against 0*(-inf)=NaN.
+       */
+      { int gap = ia - last_ib - 1;
+        if (gap > 0) {
+	  fwd_xN_prev = fwd_xN_prev + gap * gm->xsc[p7P_N][p7P_LOOP];
+	  fwd_xJ_prev = fwd_xJ_prev + gap * gm->xsc[p7P_J][p7P_LOOP];
+	  fwd_xC_prev = fwd_xC_prev + gap * gm->xsc[p7P_C][p7P_LOOP];
+	}
+      }
+
+      for (i = ia; i <= ib; i++)
+	{
+	  kac    = *bnd_kp++;
+	  kbc    = *bnd_kp++;
+	  nk     = kbc - kac + 1;
+	  nw     = 2 * nk + 3;
+	  wx     = wrk + 2 * nk;
+	  rowmax = -eslINFINITY;
+	  denom  = 0.0;
+
+	  /* brief 26_0821-141: F + B in double, then the row-max guard (see
+	   * p7b_decode_row()): exponentiate against this row's max of F + B
+	   * rather than overall_sc. The row is normalized by its own sum, so
+	   * it is the same posterior, but exp() stays in range when the float
+	   * F/B have drifted apart along a genome-scale sequence. F and B are
+	   * read into wrk[] before pp is written, since pp may alias bck. */
+	  for (k = kac; k <= kbc; k++)
+	    {
+	      wrk[2*(k-kac)]   = (double) fwd_dp[p7G_M] + (double) bck_dp[p7G_M];                            /* M */
+	      wrk[2*(k-kac)+1] = (k < M) ? (double) fwd_dp[p7G_I] + (double) bck_dp[p7G_I] : -eslINFINITY;   /* I */
+	      fwd_dp += p7G_NSCELLS; bck_dp += p7G_NSCELLS;
+	    }
+	  /* Special states: N/J/C use fwd(i-1) and bck(i); E, B, D stay 0 */
+	  wx[0] = fwd_xN_prev + (double) bck_xp[p7G_N] + gm->xsc[p7P_N][p7P_LOOP];
+	  wx[1] = fwd_xJ_prev + (double) bck_xp[p7G_J] + gm->xsc[p7P_J][p7P_LOOP];
+	  wx[2] = fwd_xC_prev + (double) bck_xp[p7G_C] + gm->xsc[p7P_C][p7P_LOOP];
+	  for (c = 0; c < nw; c++) if (isfinite(wrk[c]) && wrk[c] > rowmax) rowmax = wrk[c];
+
+	  for (c = 0; c < nw; c++)
+	    {
+	      wrk[c] = isfinite(rowmax) ? exp(wrk[c] - rowmax) : 0.0;
+	      if (! isfinite(wrk[c])) wrk[c] = 0.0;  /* guard NaN from -inf + inf (cell unreachable in one direction) */
+	      denom += wrk[c];
+	    }
+
+	  /* Row normalization */
+	  denom = (denom > 0.0) ? 1.0 / denom : 1.0;
+	  for (k = kac; k <= kbc; k++)
+	    {
+	      pp_dp[p7G_M] = (float) (wrk[2*(k-kac)]   * denom);
+	      pp_dp[p7G_I] = (float) (wrk[2*(k-kac)+1] * denom);
+	      pp_dp[p7G_D] = 0.0f;
+	      pp_dp += p7G_NSCELLS;
+	    }
+	  pp_xp[p7G_E] = 0.0f;
+	  pp_xp[p7G_N] = (float) (wx[0] * denom);
+	  pp_xp[p7G_J] = (float) (wx[1] * denom);
+	  pp_xp[p7G_B] = 0.0f;
+	  pp_xp[p7G_C] = (float) (wx[2] * denom);
+
+	  /* Save current row's fwd specials as prev for next row */
+	  fwd_xN_prev = fwd_xp[p7G_N];
+	  fwd_xJ_prev = fwd_xp[p7G_J];
+	  fwd_xC_prev = fwd_xp[p7G_C];
+
+	  fwd_xp += p7G_NXCELLS;
+	  bck_xp += p7G_NXCELLS;
+	  pp_xp  += p7G_NXCELLS;
+	}
+      last_ib = ib;
+    }
+  free(wrk);
+  (void) overall_sc;
+  return eslOK;
+
+ ERROR:
+  return status;
+}
+
+
+/* p7b_oa_band_check(): the banded OA fills require a band with no unbanded
+ * rows: one segment covering rows 1..L. At a gap they reset N/J/C to -inf
+ * (they do not carry them across the gap the way Forward and Backward do),
+ * so every row after a gap is unreachable, the OA score is -inf and the
+ * traceback does not follow the posterior (brief 26_0821-144). cmalign's and
+ * cmsearch's band builders never make such bands, so reject one rather than
+ * align it silently wrong. <L> is the sequence length.
+ * Returns eslOK, or throws eslEINVAL. */
+static int
+p7b_oa_band_check(const P7_GBANDS *bnd, int L)
+{
+  if (bnd->nseg != 1 || bnd->imem[0] != 1 || bnd->imem[1] != L)
+    ESL_EXCEPTION(eslEINVAL, "HMM-only optimal accuracy alignment needs a band covering every residue 1..%d without gaps; this band has %d segment(s) spanning rows %d..%d",
+                  L, bnd->nseg, bnd->nseg >= 1 ? bnd->imem[0] : 0, bnd->nseg >= 1 ? bnd->imem[2*bnd->nseg-1] : 0);
   return eslOK;
 }
+
+/* Function: cm_p7_gmxbd_Create()
+ * Incept:   EPN, Tue Oct 27 2026 (w/Claude)  [brief 26_0821-151]
+ *
+ * Purpose:  Allocate a double-precision banded DP matrix for band <bnd>:
+ *           the same layout as p7_gmxb_Create()'s float P7_GMXB.
+ *           Used for the optimal accuracy matrix of
+ *           p7_GOptimalAccuracyBanded()/p7_GOATraceBanded().
+ *
+ * Returns:  the new matrix, or NULL on allocation failure.
+ */
+CM_P7_GMXBD *
+cm_p7_gmxbd_Create(P7_GBANDS *bnd)
+{
+  CM_P7_GMXBD *gxd = NULL;
+  int          status;
+
+  ESL_ALLOC(gxd, sizeof(CM_P7_GMXBD));
+  gxd->dp  = NULL;
+  gxd->xmx = NULL;
+  gxd->bnd = bnd;
+  ESL_ALLOC(gxd->dp,  sizeof(double) * ((int64_t) bnd->ncell * p7G_NSCELLS + 1));
+  ESL_ALLOC(gxd->xmx, sizeof(double) * ((int64_t) bnd->nrow  * p7G_NXCELLS + 1));
+  return gxd;
+
+ ERROR:
+  cm_p7_gmxbd_Destroy(gxd);
+  return NULL;
+}
+
+/* Function: cm_p7_gmxbd_Destroy()
+ * Incept:   EPN, Tue Oct 27 2026 (w/Claude)  [brief 26_0821-151]
+ *
+ * Purpose:  Free a matrix from cm_p7_gmxbd_Create(). The band is not freed.
+ */
+void
+cm_p7_gmxbd_Destroy(CM_P7_GMXBD *gxd)
+{
+  if (gxd == NULL) return;
+  if (gxd->dp)  free(gxd->dp);
+  if (gxd->xmx) free(gxd->xmx);
+  free(gxd);
+}
+
+/* Function: p7_GOptimalAccuracyBanded()
+ * Date:     EPN*, Wed Mar 18 2026
+ *
+ * Purpose:  Banded optimal accuracy DP fill. Same structure as banded
+ *           Forward, but uses ESL_MAX instead of p7_FLogsum, and adds
+ *           posterior probability as an accuracy reward for emitting states.
+ *
+ *           Brief 26_0821-151: the OA values (sums of posteriors along a
+ *           path, up to ~L) are double, storage included, as in the
+ *           checkpointed engines' p7b_oa_row() (brief 26_0821-144). In
+ *           float, at genome scale the rounding tipped near-ties, so this
+ *           engine's alignments differed from the checkpointed engines'.
+ *           With double, all three engines are byte-identical again. The
+ *           posteriors themselves stay float.
+ *
+ * Args:     gm    - profile
+ *           pp    - banded posterior matrix (from p7_GDecodingBanded)
+ *           gx    - RESULT: banded double OA DP matrix, cm_p7_gmxbd_Create()
+ *                   on the same band as pp
+ *           ret_e - RETURN: OA score (expected # correct residues)
+ *
+ * Returns:  eslOK on success.
+ */
+int
+cm_p7_GOptimalAccuracyBanded(const P7_PROFILE *gm, const P7_GMXB *pp,
+			  CM_P7_GMXBD *gx, float *ret_e)
+{
+  /* TSCDELTA: 1.0 if transition is possible, FLT_MIN if not */
+#define TSCDELTA(s,k) ( (tsc[(k) * p7P_NTRANS + (s)] == -eslINFINITY) ? FLT_MIN : 1.0)
+
+  int         *bnd_ip  = gx->bnd->imem;
+  int         *bnd_kp  = gx->bnd->kmem;
+  double      *dpc     = gx->dp;
+  double      *xpc     = gx->xmx;
+  float const *tsc     = gm->tsc;
+  float const *pp_dp;
+  float const *pp_xp   = pp->xmx;
+  double      *dpp;
+  double      *last_dpc;
+  int          ia, ib;
+  int          last_ib;
+  int          kac, kbc;
+  int          kap, kbp;
+  int          kbc2;
+  double       xE, xN, xJ, xB, xC;
+  double       mvp, ivp, dvp;
+  double       dc;
+  double       sc;
+  double       pp_m;
+  int          g, i, k;
+  int          M = gm->M;
+  double       esc = p7_profile_IsLocal(gm) ? 1.0f : 0.0f;
+  double       t1, t2;
+
+  if (p7b_oa_band_check(gx->bnd, gx->bnd->L) != eslOK) return eslEINVAL;   /* brief 26_0821-144 */
+
+  xN      = 0.0f;
+  xJ      = -eslINFINITY;
+  xC      = -eslINFINITY;
+  last_ib = 0;
+  pp_dp   = pp->dp;
+
+  for (g = 0; g < gx->bnd->nseg; g++)
+    {
+      ia = *bnd_ip++;
+      ib = *bnd_ip++;
+
+      kap = kbp = M + 1;
+      dpp = dpc;
+
+      /* Re-init specials for gap before this segment.
+       * In OA, N(i) = t1*(N(i-1) + pp_N(i)). For rows outside bands,
+       * pp_N is not stored, but for UNILOCAL N_LOOP=-inf so t1=FLT_MIN
+       * and the N contribution goes to ~0 anyway. Just mark as -inf for gap>0.
+       */
+      xE = -eslINFINITY;
+      { int gap = ia - last_ib - 1;
+	if (gap > 0) {
+	  xN = -eslINFINITY;
+	  xJ = -eslINFINITY;
+	  xC = -eslINFINITY;
+	}
+      }
+      xB = ESL_MAX( ((gm->xsc[p7P_N][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f) * xN,
+		     ((gm->xsc[p7P_J][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f) * xJ);
+
+      for (i = ia; i <= ib; i++)
+	{
+	  dc       = -eslINFINITY;
+	  xE       = -eslINFINITY;
+	  last_dpc = dpc;
+
+	  kac = *bnd_kp++;
+	  kbc = *bnd_kp++;
+	  kbc2 = (kbc == M ? kbc - 1 : kbc);
+
+	  /* dpp advance for left overhang */
+	  dpp += (kac - 1 > kap ? ESL_MIN(kac - kap - 1, kbp - kap + 1) * p7G_NSCELLS : 0);
+
+	  if (kac > kap && kac - 1 <= kbp) { mvp = *dpp++; ivp = *dpp++; dvp = *dpp++; }
+	  else                              { mvp = -eslINFINITY; ivp = -eslINFINITY; dvp = -eslINFINITY; }
+
+	  for (k = kac; k <= kbc2; k++)
+	    {
+	      pp_m = *pp_dp;  /* pp_M(i,k) */
+
+	      /* M(i,k) = max(transitions) + pp_M(i,k) */
+	      *dpc++ = sc = ESL_MAX(ESL_MAX(TSCDELTA(p7P_MM, k-1) * (mvp + pp_m),
+					    TSCDELTA(p7P_IM, k-1) * (ivp + pp_m)),
+				    ESL_MAX(TSCDELTA(p7P_DM, k-1) * (dvp + pp_m),
+					    TSCDELTA(p7P_BM, k-1) * (xB  + pp_m)));
+
+	      if (k >= kap && k <= kbp) { mvp = *dpp++; ivp = *dpp++; dvp = *dpp++; }
+	      else                      { mvp = -eslINFINITY; ivp = -eslINFINITY; dvp = -eslINFINITY; }
+
+	      /* I(i,k) = max(transitions) + pp_I(i,k) */
+	      *dpc++ = ESL_MAX(TSCDELTA(p7P_MI, k) * (mvp + pp_dp[1]),
+			       TSCDELTA(p7P_II, k) * (ivp + pp_dp[1]));
+
+	      /* E update from M(i,k) */
+	      xE = ESL_MAX(xE, esc * sc);
+
+	      /* D(i,k) — no pp reward */
+	      *dpc++ = dc;
+	      dc = ESL_MAX(TSCDELTA(p7P_MD, k) * sc,
+			   TSCDELTA(p7P_DD, k) * dc);
+
+	      pp_dp += p7G_NSCELLS;
+	    }
+
+	  if (kbc2 < kbc) /* kbc == M: unrolled last node */
+	    {
+	      pp_m = *pp_dp;
+
+	      *dpc++ = sc = ESL_MAX(ESL_MAX(TSCDELTA(p7P_MM, k-1) * (mvp + pp_m),
+					    TSCDELTA(p7P_IM, k-1) * (ivp + pp_m)),
+				    ESL_MAX(TSCDELTA(p7P_DM, k-1) * (dvp + pp_m),
+					    TSCDELTA(p7P_BM, k-1) * (xB  + pp_m)));
+	      *dpc++ = -eslINFINITY; /* no I_M */
+	      *dpc++ = dc;           /* D_M */
+
+	      /* E update: M_M and D_M always exit to E (no esc penalty at k=M) */
+	      xE = ESL_MAX(xE, ESL_MAX(sc, dc));
+
+	      pp_dp += p7G_NSCELLS;
+	    }
+
+	  /* Special states */
+	  *xpc++ = xE;
+
+	  t1 = ((gm->xsc[p7P_N][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0f);
+	  *xpc++ = xN = t1 * (xN + pp_xp[p7G_N]);
+
+	  t1 = ((gm->xsc[p7P_J][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0f);
+	  t2 = ((gm->xsc[p7P_E][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0f);
+	  *xpc++ = xJ = ESL_MAX(t1 * (xJ + pp_xp[p7G_J]), t2 * xE);
+
+	  t1 = ((gm->xsc[p7P_N][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f);
+	  t2 = ((gm->xsc[p7P_J][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f);
+	  *xpc++ = xB = ESL_MAX(t1 * xN, t2 * xJ);
+
+	  t1 = ((gm->xsc[p7P_C][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0f);
+	  t2 = ((gm->xsc[p7P_E][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f);
+	  *xpc++ = xC = ESL_MAX(t1 * (xC + pp_xp[p7G_C]), t2 * xE);
+
+	  pp_xp += p7G_NXCELLS;
+	  dpp = last_dpc;
+	  kap = kac;
+	  kbp = kbc;
+	}
+      last_ib = ib;
+    }
+
+  if (ret_e != NULL) *ret_e = (float) xC;
+  return eslOK;
+
+#undef TSCDELTA
+}
+
+
+/* Function: p7_GOATraceBanded()
+ * Date:     EPN*, Wed Mar 18 2026
+ *
+ * Purpose:  Banded OA traceback. Traces back through banded OA matrix
+ *           to find the optimal accuracy alignment path.
+ *
+ *           Builds a lookup table for random access into the banded
+ *           matrices, then runs the same traceback logic as p7_GOATrace().
+ *
+ *           Brief 26_0821-151: <gx> is double, and every comparison
+ *           below is made in double, as in p7b_oa_trace().
+ *
+ * Args:     gm  - profile
+ *           pp  - banded posterior matrix
+ *           gx  - banded double OA DP matrix (p7_GOptimalAccuracyBanded())
+ *           tr  - RESULT: OA trace (caller provides, possibly via Reuse)
+ *
+ * Returns:  eslOK on success.
+ *           eslEMEM on allocation failure.
+ */
+int
+cm_p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const CM_P7_GMXBD *gx,
+		  P7_TRACE *tr)
+{
+#define TSCDELTA(s,k) ( (tsc[(k) * p7P_NTRANS + (s)] == -eslINFINITY) ? FLT_MIN : 1.0)
+
+  float const *tsc = gm->tsc;
+  P7_GBANDS   *bnd = gx->bnd;
+  int          L    = bnd->L;
+  int          M    = gm->M;
+  int          nrow = bnd->nrow;
+
+  /* Lookup tables for random access */
+  int64_t *dp_off  = NULL;   /* dp offset for each banded row */
+  int     *ka_arr  = NULL;   /* band ka for each banded row */
+  int     *kb_arr  = NULL;   /* band kb for each banded row */
+  int     *row_idx = NULL;   /* seq pos i -> banded row index r (-1 if outside) */
+
+  int      i, k, r, g;
+  int      ia, ib;
+  int     *ip, *kp;
+  int64_t  cum;
+  float    postprob;
+  int      sprv, scur;
+  int      status;
+
+  /* Allocate lookup tables */
+  ESL_ALLOC(dp_off,  sizeof(int64_t) * nrow);
+  ESL_ALLOC(ka_arr,  sizeof(int)     * nrow);
+  ESL_ALLOC(kb_arr,  sizeof(int)     * nrow);
+  ESL_ALLOC(row_idx, sizeof(int)     * (L + 1));
+
+  /* Fill lookup tables */
+  kp  = bnd->kmem;
+  cum = 0;
+  for (r = 0; r < nrow; r++) {
+    ka_arr[r]  = *kp++;
+    kb_arr[r]  = *kp++;
+    dp_off[r]  = cum;
+    cum       += (int64_t)(kb_arr[r] - ka_arr[r] + 1) * p7G_NSCELLS;
+  }
+
+  for (i = 0; i <= L; i++) row_idx[i] = -1;
+  ip = bnd->imem;
+  r  = 0;
+  for (g = 0; g < bnd->nseg; g++) {
+    ia = *ip++;
+    ib = *ip++;
+    for (i = ia; i <= ib; i++)
+      row_idx[i] = r++;
+  }
+
+  /* --- Helper macros for banded cell access --- */
+#define GXB_M(gxb, i, k) \
+  ( ((i) >= 0 && (i) <= L && row_idx[(i)] >= 0 && (k) >= ka_arr[row_idx[(i)]] && (k) <= kb_arr[row_idx[(i)]]) \
+    ? (gxb)->dp[dp_off[row_idx[(i)]] + ((k) - ka_arr[row_idx[(i)]]) * p7G_NSCELLS + p7G_M] \
+    : -eslINFINITY )
+
+#define GXB_I(gxb, i, k) \
+  ( ((i) >= 0 && (i) <= L && row_idx[(i)] >= 0 && (k) >= ka_arr[row_idx[(i)]] && (k) <= kb_arr[row_idx[(i)]]) \
+    ? (gxb)->dp[dp_off[row_idx[(i)]] + ((k) - ka_arr[row_idx[(i)]]) * p7G_NSCELLS + p7G_I] \
+    : -eslINFINITY )
+
+#define GXB_D(gxb, i, k) \
+  ( ((i) >= 0 && (i) <= L && row_idx[(i)] >= 0 && (k) >= ka_arr[row_idx[(i)]] && (k) <= kb_arr[row_idx[(i)]]) \
+    ? (gxb)->dp[dp_off[row_idx[(i)]] + ((k) - ka_arr[row_idx[(i)]]) * p7G_NSCELLS + p7G_D] \
+    : -eslINFINITY )
+
+  /* For xmx at i=0: OA fill initializes N(0)=0, B(0)=0, E/C/J(0)=-inf.
+   * Row 0 is not in the banded matrix, so return these initial values directly.
+   */
+#define GXB_XMX(gxb, i, s) \
+  ( ((i) == 0) \
+    ? (((s) == p7G_N || (s) == p7G_B) ? 0.0f : -eslINFINITY) \
+    : (((i) > 0 && (i) <= L && row_idx[(i)] >= 0) \
+       ? (gxb)->xmx[row_idx[(i)] * p7G_NXCELLS + (s)] \
+       : -eslINFINITY) )
+
+  /* --- Traceback --- */
+  i = L;
+  k = 0;
+
+  if ((status = p7_trace_AppendWithPP(tr, p7T_T, k, i, 0.0)) != eslOK) goto ERROR;
+  if ((status = p7_trace_AppendWithPP(tr, p7T_C, k, i, 0.0)) != eslOK) goto ERROR;
+
+  sprv = p7T_C;
+  while (sprv != p7T_S)
+    {
+      switch (sprv) {
+
+      case p7T_M: /* select_m: which state was predecessor of M(i,k)? */
+	{
+	  if (k - 1 == 0) {
+	    /* Node 0 has no M/D state: the only valid entry into M1 is B->M1.
+	     * Without this, a trace that reaches M1 with every predecessor at
+	     * -inf (e.g. the first row after an unbanded gap) took argmax's
+	     * index 0 (M), stepped to k = 0 and read tsc[] at k-1 = -1, out of
+	     * bounds. Same guard as p7b_oa_trace() (brief 26_0821-144). */
+	    scur = p7T_B;
+	  } else {
+	    double path[4];
+	    int    state[4] = { p7T_M, p7T_I, p7T_D, p7T_B };
+	    path[0] = TSCDELTA(p7P_MM, k-1) * GXB_M(gx, i-1, k-1);
+	    path[1] = TSCDELTA(p7P_IM, k-1) * GXB_I(gx, i-1, k-1);
+	    path[2] = TSCDELTA(p7P_DM, k-1) * GXB_D(gx, i-1, k-1);
+	    path[3] = TSCDELTA(p7P_BM, k-1) * GXB_XMX(gx, i-1, p7G_B);
+	    scur = state[esl_vec_DArgMax(path, 4)];
+	  }
+	  k--; i--;
+	}
+	break;
+
+      case p7T_D: /* select_d */
+	{
+	  double path[2];
+	  path[0] = TSCDELTA(p7P_MD, k-1) * GXB_M(gx, i, k-1);
+	  path[1] = TSCDELTA(p7P_DD, k-1) * GXB_D(gx, i, k-1);
+	  scur = (path[0] >= path[1]) ? p7T_M : p7T_D;
+	  k--;
+	}
+	break;
+
+      case p7T_I: /* select_i */
+	{
+	  double path[2];
+	  path[0] = TSCDELTA(p7P_MI, k) * GXB_M(gx, i-1, k);
+	  path[1] = TSCDELTA(p7P_II, k) * GXB_I(gx, i-1, k);
+	  scur = (path[0] >= path[1]) ? p7T_M : p7T_I;
+	  i--;
+	}
+	break;
+
+      case p7T_N: /* select_n */
+	scur = (i == 0) ? p7T_S : p7T_N;
+	break;
+
+      case p7T_C: /* select_c */
+	{
+	  double t1c = ((gm->xsc[p7P_C][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0f);
+	  double t2c = ((gm->xsc[p7P_E][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f);
+	  double path[2];
+	  path[0] = t1c * (GXB_XMX(gx, i-1, p7G_C) + GXB_XMX(pp, i, p7G_C));
+	  path[1] = t2c *  GXB_XMX(gx, i, p7G_E);
+	  scur = (path[0] > path[1]) ? p7T_C : p7T_E;
+	}
+	break;
+
+      case p7T_J: /* select_j */
+	{
+	  double t1j = ((gm->xsc[p7P_J][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0f);
+	  double t2j = ((gm->xsc[p7P_E][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0f);
+	  double path[2];
+	  path[0] = t1j * (GXB_XMX(gx, i-1, p7G_J) + GXB_XMX(pp, i, p7G_J));
+	  path[1] = t2j *  GXB_XMX(gx, i, p7G_E);
+	  scur = (path[0] > path[1]) ? p7T_J : p7T_E;
+	}
+	break;
+
+      case p7T_E: /* select_e: which k did E come from? */
+	{
+	  double max = -eslINFINITY;
+	  int   smax = -1;
+	  int   kmax = -1;
+	  int   ri   = row_idx[i];
+
+	  if (! p7_profile_IsLocal(gm)) {
+	    k = M;
+	    scur = (GXB_M(gx, i, M) >= GXB_D(gx, i, M)) ? p7T_M : p7T_D;
+	  } else {
+	    if (ri >= 0) {
+	      int ka = ka_arr[ri], kb = kb_arr[ri];
+	      for (k = ka; k <= kb; k++) {
+		double mv = GXB_M(gx, i, k);
+		double dv = GXB_D(gx, i, k);
+		if (mv >= max) { max = mv; smax = p7T_M; kmax = k; }
+		if (dv >  max) { max = dv; smax = p7T_D; kmax = k; }
+	      }
+	    }
+	    k    = kmax;
+	    scur = smax;
+	  }
+	}
+	break;
+
+      case p7T_B: /* select_b */
+	{
+	  double t1b = ((gm->xsc[p7P_N][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f);
+	  double t2b = ((gm->xsc[p7P_J][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f);
+	  double path[2];
+	  path[0] = t1b * GXB_XMX(gx, i, p7G_N);
+	  path[1] = t2b * GXB_XMX(gx, i, p7G_J);
+	  /* Brief 26_0430-131: under a unihit profile (E->J == -inf, set by
+	   * p7_ProfileConfig for UNILOCAL/UNIGLOCAL), the J state is
+	   * semantically unreachable, so B must enter from N. The OA fill
+	   * floors forbidden transitions at FLT_MIN rather than hard -inf, so
+	   * xJ can be 0 (not -inf); combined with the strict-'>' tie-break
+	   * below, an xN==xJ==0 tie (which IBV's full-width boundary widening
+	   * at rows 1/L-1/L induces) would otherwise default to a spurious
+	   * p7T_J that map_new_msa() rejects ("J state unsupported"). Forcing N
+	   * here is correct, not heuristic: with E->J blocked no residue can
+	   * legitimately reach J. NOTE: do not "resync to stock" generic_optacc
+	   * select_b and drop this guard -- stock's unbanded path never produces
+	   * the boundary tie, but the IBV-banded path does. */
+	  if (gm->xsc[p7P_E][p7P_LOOP] == -eslINFINITY) scur = p7T_N;
+	  else scur = (path[0] > path[1]) ? p7T_N : p7T_J;
+	}
+	break;
+
+      default:
+	ESL_EXCEPTION(eslEINVAL, "bogus state in traceback");
+      }
+
+      if (scur == -1) ESL_EXCEPTION(eslEINVAL, "OA banded traceback choice failed");
+
+      /* get_postprob */
+      switch (scur) {
+      case p7T_M: postprob = GXB_M(pp, i, k);                                      break;
+      case p7T_I: postprob = GXB_I(pp, i, k);                                      break;
+      case p7T_N: postprob = (scur == sprv) ? GXB_XMX(pp, i, p7G_N) : 0.0f;       break;
+      case p7T_C: postprob = (scur == sprv) ? GXB_XMX(pp, i, p7G_C) : 0.0f;       break;
+      case p7T_J: postprob = (scur == sprv) ? GXB_XMX(pp, i, p7G_J) : 0.0f;       break;
+      default:    postprob = 0.0f;                                                  break;
+      }
+
+      if ((status = p7_trace_AppendWithPP(tr, scur, k, i, postprob)) != eslOK) goto ERROR;
+
+      /* For NCJ self-loops, defer i decrement */
+      if ((scur == p7T_N || scur == p7T_J || scur == p7T_C) && scur == sprv) i--;
+      sprv = scur;
+    }
+
+  tr->M = M;
+  tr->L = L;
+  status = p7_trace_Reverse(tr);
+
+  free(dp_off);
+  free(ka_arr);
+  free(kb_arr);
+  free(row_idx);
+  return status;
+
+ ERROR:
+  if (dp_off)  free(dp_off);
+  if (ka_arr)  free(ka_arr);
+  if (kb_arr)  free(kb_arr);
+  if (row_idx) free(row_idx);
+  return status;
+
+#undef TSCDELTA
+#undef GXB_M
+#undef GXB_I
+#undef GXB_D
+#undef GXB_XMX
+}
+
+
+/*****************************************************************
+ * Brief 26_0526-016: sqrt(M)-row checkpointed banded F / B / Decoding / OA
+ *
+ * The banded Forward/Backward matrices (P7_GMXB bxf/bxb) are the
+ * dominant per-thread memory term at genome scale (brief 26_0526-014). This
+ * block reduces that term by sqrt(nrow)-checkpointing the row axis:
+ * instead of storing all <nrow> banded rows of the Forward (and OA)
+ * matrix, store ~sqrt(nrow) "seed" rows and recompute the inter-seed
+ * row blocks on demand. The Backward matrix is never materialized: it
+ * streams (2 rows live) while its posterior is folded into the
+ * resident posterior matrix <pp>.
+ *
+ * Construction mirrors 26_0610's linear-chain cm_CheckptAlignHB
+ * (STEP A/B/OA/TB), adapted to the p7 banded DP whose checkpoint axis
+ * is the sequence row i (not the CM state v). Byte-exact discipline:
+ * the per-cell recurrences and p7_FLogsum / ESL_MAX call order are
+ * copied VERBATIM from my_p7_GForwardBanded / p7_GBackwardBanded /
+ * p7_GDecodingBanded / p7_GOptimalAccuracyBanded / p7_GOATraceBanded
+ * above; only deck *storage* is windowed. p7_FLogsum is a symmetric
+ * deterministic LUT, so identical inputs in identical order -> identical
+ * bits. The existing non-checkpointed functions are NOT modified.
+ *
+ * Brief 26_0821-141: the F/B kernels are now double precision with
+ * p7b_dlogsum() in place of p7_FLogsum (see the comment above
+ * p7b_dlogsum()), and the non-checkpointed engine uses
+ * cm_p7_GFBDecodeBandedDouble() below instead of the float originals.
+ * The same-inputs-same-order discipline still holds, so the three
+ * engines remain bit-identical to each other.
+ *****************************************************************/
+
+/* Brief 26_0526-017: the resident posterior <pp> stores only M and I per cell,
+ * not the full p7G_NSCELLS=3 (M,I,D). pp_D is provably always 0 --
+ * p7b_decode_row() set it to 0, the OA fill (p7b_oa_row) reads only
+ * ppp[0]=M and ppp[1]=I, and the traceback reads pp only via PP_M/PP_I
+ * (cells p7G_M=0, p7G_I=1) -- so no site ever reads pp_D. Storing 2
+ * floats/cell instead of 3 shrinks the resident pp by ~1/3 (HSV genome
+ * ~343 -> ~228 MB). This is a STORAGE-LAYOUT change only: the M and I
+ * values written and read are bit-identical to before. The pp cell
+ * stride is P7B_PP_NSCELLS; M stays at offset 0 (p7G_M), I at offset 1
+ * (p7G_I). The Forward/Backward/OA scratch buffers keep p7G_NSCELLS. */
+#define P7B_PP_NSCELLS 2   /* resident pp cell stride: M=0, I=1; D dropped */
+
+/* p7b_pp_Create(): allocate a resident posterior matrix with the compact
+ * 2-floats/cell dp (M,I).  Mirrors p7_gmxb_Create() (hmmer/, shared --
+ * not edited) but sizes dp at P7B_PP_NSCELLS, not p7G_NSCELLS.  xmx is
+ * unchanged (p7G_NXCELLS specials).  Freed with p7_gmxb_Destroy(). */
+P7_GMXB *
+p7b_pp_Create(P7_GBANDS *bnd)
+{
+  P7_GMXB *pp = NULL;
+  int      status;
+
+  ESL_ALLOC(pp, sizeof(P7_GMXB));
+  pp->dp     = NULL;
+  pp->xmx    = NULL;
+  pp->bnd    = bnd;
+  pp->dalloc = 0;
+  pp->xalloc = 0;
+
+  ESL_ALLOC(pp->dp,  sizeof(float) * bnd->ncell * P7B_PP_NSCELLS); /* M,I only (brief 26_0526-017) */
+  ESL_ALLOC(pp->xmx, sizeof(float) * bnd->nrow  * p7G_NXCELLS);    /* ENJBC (0..4)        */
+  pp->dalloc = bnd->ncell;
+  pp->xalloc = bnd->nrow;
+  return pp;
+
+ ERROR:
+  p7_gmxb_Destroy(pp);
+  return NULL;
+}
+
+/* Function: cm_p7_ViterbiMxMb()
+ * Incept:   EPN, Wed Nov 11 2026 (w/Claude)
+ *
+ * Purpose:  Return the size in Mb of the cells of a full generic p7
+ *           Viterbi matrix (p7_gmx_Create(M, L)) for a model of <M>
+ *           nodes and a sequence of length <L>. cmalign's HMM-only
+ *           alignment and the CM path's p7 Viterbi band re-derivation
+ *           (cm_alndata.c) check it against --mxsize before they
+ *           allocate the matrix (brief 26_0821-193).
+ */
+double
+cm_p7_ViterbiMxMb(int M, int64_t L)
+{
+  return (double) sizeof(float) * (double) (M + 1) * (double) (L + 1) * (double) p7G_NSCELLS / (1024. * 1024.);
+}
+
+/* Function: cm_MxsizeRecommend()
+ * Incept:   EPN, Wed Nov 11 2026 (w/Claude)
+ *
+ * Purpose:  Return the --mxsize value to recommend when a matrix of
+ *           <needed_Mb> Mb exceeds the limit: <needed_Mb> rounded up to
+ *           the next multiple of 1024 (limits are checked as
+ *           needed > --mxsize, so a multiple of 1024 needs no more).
+ *           Used by both p7 Viterbi matrix checks, so that they
+ *           recommend the same value (brief 26_0821-193).
+ */
+int
+cm_MxsizeRecommend(double needed_Mb)
+{
+  return (int) (ceil(needed_Mb / 1024.) * 1024.);
+}
+
+/* Function: p7_CheckptBandedOAMemNeeded()
+ * Incept:   brief 26_0430-266
+ *
+ * Purpose:  Estimate the bytes actually allocated by the --hmm do_bandedoa
+ *           (Mode 3, Viterbi-banded optimal accuracy) engine for banded
+ *           region <bnd>, WITHOUT allocating anything. Three sub-cases,
+ *           selected by <ckpt_mode> (brief 26_0628-081 added the third):
+ *
+ *             P7B_OAMEM_NOCKPT (0) (INFERNAL_HMM_CKPT_OFF set):
+ *               the non-checkpointed engine -- full banded double F and
+ *               B matrices plus a float p7_gmxb_Create(bnd) posterior
+ *               (cm_p7_GFBDecodeBandedDouble(), brief 26_0821-141).
+ *               O(ncell).
+ *
+ *             P7B_OAMEM_CKPT (1) (the usual engine: this is what the
+ *             caller picks whenever its estimate fits in --mxsize, and
+ *             what INFERNAL_HMM_PPCKPT_OFF forces unconditionally):
+ *               the singly-checkpointed engine -- p7b_pp_Create(bnd)'s
+ *               resident 2-cell posterior + p7_GCheckptFBDecode_Banded()'s
+ *               O(sqrt(nrow)) working set (p7b_forward_seeds()'s <=nblk
+ *               seed[].dp row copies, p7b_backdecode()'s blkbuf (B rows)
+ *               and bbuf0/bbuf1 (1 row each)).  Still O(ncell), because
+ *               of the resident posterior.
+ *
+ *             P7B_OAMEM_CKPTPP (2) (the fallback the caller drops to when
+ *             mode 1 would not fit in --mxsize; INFERNAL_HMM_PPCKPT_ON
+ *             forces it):
+ *               the DOUBLE-checkpointed engine, p7_GCheckptFBDecodeOA_Banded().
+ *               No resident posterior at all: three ~nblk-entry seed
+ *               arrays (Forward, Backward, OA) plus a handful of
+ *               one-block (<=B+2 row) buffers -- the F, B and pp block
+ *               buffers and the OA traceback window.  O(sqrt(nrow)*maxnc)
+ *               in the DP term, plus O(nrow) for the P7B_GEO row tables
+ *               and O(L) for the traceback's row_idx.  NOTE this term is
+ *               independent of bnd->ncell: it is bounded by
+ *               O(sqrt(nrow)*M) no matter how wide the band gets.
+ *
+ *           B and nblk mirror p7b_geo_Create()'s own derivation
+ *           (B ~ round(sqrt(nrow)), nblk = ceil(nrow/B)); maxnc (widest
+ *           row) is scanned from <bnd> directly since B/nblk/maxnc depend
+ *           only on bnd, not on M/L/gm the way the full P7B_GEO struct does.
+ *
+ *           None of the three is O(M*L) -- that was the point of brief
+ *           26_0430-266, fixing the --hmm preflight's over-estimate of
+ *           do_bandedoa with the full-matrix formula meant for
+ *           --hmmvit/--hmmnoband.  Modes 0 and 1 are still O(ncell)
+ *           though, which is what mode 2 removes.
+ *
+ *           Brief 26_0821-141 resized all three for the double-precision
+ *           F/B (the F/B terms are 8 bytes per value, the posterior 4),
+ *           and brief 26_0821-144 for the double-precision OA pass of
+ *           modes 1 and 2 (OA seeds, row buffers and traceback window at
+ *           8 bytes). Brief 26_0821-151 made mode 0's OA matrix double
+ *           too; it replaces F and B, so mode 0's peak is still the F/B
+ *           phase. 141 also counts each checkpoint seed at its own
+ *           row's width rather than at maxnc, and adds the O(nrow)
+ *           P7B_GEO tables and traceback row_idx to modes 0 and 1 (which
+ *           brief 26_0430-266 had omitted), so each mode's estimate is an
+ *           upper bound on that engine's allocations.
+ *
+ * Args:     bnd       - the derived band (bnd->ncell, bnd->nrow, bnd->kmem set)
+ *           ckpt_mode - P7B_OAMEM_NOCKPT | P7B_OAMEM_CKPT | P7B_OAMEM_CKPTPP.
+ *                       (Historically an int flag do_ckpt; FALSE/TRUE still
+ *                       mean modes 0/1, so old callers keep their meaning.)
+ *           ret_bytes - RETURN: estimated peak bytes
+ *
+ * Returns:  eslOK on success.
+ */
+int
+cm_p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int ckpt_mode, double *ret_bytes)
+{
+  int    *kp = bnd->kmem;
+  int     nrow = bnd->nrow;
+  int     maxnc = 0, r, ka, kb, nc;
+  int     B, nblk;
+  int64_t fseedc = 0, bseedc = 0;   /* cells in the Forward/OA and Backward seed rows */
+  double  bytes;
+
+  B    = (int) (sqrt((double) (nrow ? nrow : 1)) + 0.5);
+  if (B < 1) B = 1;
+  nblk = (nrow + B - 1) / B;
+
+  /* maxnc (the widest row) sizes the block buffers.  The checkpoint seeds
+   * are allocated at their own row's width, so count those widths:
+   * Forward and OA seeds copy rows b*B-1 (b = 1..nblk-1), Backward seeds
+   * rows (b+1)*B (b = 0..nblk-2) -- see p7b_forward_seeds(),
+   * p7b_backward_seeds(), p7b_oa_seeds().  (brief 26_0821-141: counting
+   * every seed at maxnc over-estimated badly on IBV bands, whose few
+   * full-model-width rows make maxnc ~ M, and with double-precision seeds
+   * that pushed genome-scale cells over the limit.) */
+  for (r = 0; r < nrow; r++) {
+    ka = *kp++; kb = *kp++;
+    nc = kb - ka + 1;
+    if (nc > maxnc) maxnc = nc;
+    if (r + 1 < nrow && (r + 1) % B == 0) fseedc += nc;
+    if (r > 0        && r % B == 0)       bseedc += nc;
+  }
+
+  /* brief 26_0821-141: the Forward/Backward cells, seeds, block buffers
+   * and specials are double (8 bytes); the posterior stays float (4).
+   * brief 26_0821-144: so is the checkpointed OA pass (modes 1 and 2). */
+  if (ckpt_mode == P7B_OAMEM_CKPTPP) {
+    /* brief 26_0628-081: no O(ncell) term at all.
+     *   F + B seeds (double):         (fseedc + bseedc) * p7G_NSCELLS
+     *   OA seeds (double):             fseedc * p7G_NSCELLS
+     *   F + B block buffers (double):2 * (B+2) * maxnc * p7G_NSCELLS
+     *   OA traceback window (double):    (B+2) * maxnc * p7G_NSCELLS
+     *   OA seed-pass rows (double):         2  * maxnc * p7G_NSCELLS
+     *   pp block buffer (float):         (B+2) * maxnc * P7B_PP_NSCELLS
+     *   pp block specials (float):       (B+2) * p7G_NXCELLS
+     *   OA block specials (double):      (B+2) * p7G_NXCELLS
+     *   decode row scratch (double):     2*maxnc + 3
+     *   seed structs:                  3 * nblk (<= 64 bytes each)
+     *   P7B_GEO row tables:           nrow * (4 ints + 1 int64)
+     *   traceback row_idx:            (L+1) ints
+     */
+    double nr = (double) (B + 2);
+    bytes  = (double) sizeof(double) * p7G_NSCELLS * ((double) fseedc + (double) bseedc);
+    bytes += (double) sizeof(double) * p7G_NSCELLS * (double) fseedc;
+    bytes += (double) maxnc * p7G_NSCELLS * nr * (3.0 * sizeof(double));
+    bytes += (double) sizeof(double) * p7G_NSCELLS * 2.0 * (double) maxnc;
+    bytes += (double) sizeof(float)  * (double) maxnc * P7B_PP_NSCELLS * nr;
+    bytes += (double) (sizeof(float) + sizeof(double)) * p7G_NXCELLS * nr;
+    bytes += (double) sizeof(double) * (2.0 * (double) maxnc + 3.0);
+    bytes += 3.0 * 64.0 * (double) nblk;   /* seed structs: <= 64 bytes each (defined below) */
+    bytes += (double) (4 * sizeof(int) + sizeof(int64_t)) * (double) nrow;
+    bytes += (double) sizeof(int) * ((double) bnd->L + 1.0);
+  }
+  else if (ckpt_mode == P7B_OAMEM_CKPT) {
+    /* resident float pp, plus the larger of its two phases' working sets:
+     *   F/B phase (double): Forward seeds, the B-row Forward block buffer,
+     *                       two Backward rows (and Forward's two rows,
+     *                       freed first), the decode row scratch;
+     *   OA phase (double, brief 26_0821-144): OA seeds, the seed pass's
+     *                       two rows and the (B+2)-row traceback window
+     *                       with its specials. */
+    double fb = (double) sizeof(double) * ( p7G_NSCELLS * ((double) fseedc + (double) (B + 2) * maxnc)
+                                          + 2.0 * maxnc + 3.0 );
+    double oa = (double) sizeof(double) * ( p7G_NSCELLS * ((double) fseedc + (double) (B + 4) * maxnc)
+                                          + (double) (B + 2) * p7G_NXCELLS );
+    bytes  = (double) sizeof(float) * ((double) bnd->ncell * P7B_PP_NSCELLS
+					+ (double) bnd->nrow  * p7G_NXCELLS);
+    bytes += ESL_MAX(fb, oa);
+    bytes += (double) (4 * sizeof(int) + sizeof(int64_t)) * (double) nrow;   /* P7B_GEO row tables */
+    bytes += (double) sizeof(int) * ((double) bnd->L + 1.0);                 /* traceback row_idx  */
+  }
+  else {
+    /* cm_p7_GFBDecodeBandedDouble(): full double F and B, their N/J/C
+     * specials per row, and the float 3-cell pp it decodes into; the
+     * double OA matrix the caller allocates afterwards (brief
+     * 26_0821-151) replaces F and B and is smaller than the two. */
+    bytes  = (double) bnd->ncell * p7G_NSCELLS * (2.0 * sizeof(double) + sizeof(float));
+    bytes += (double) bnd->nrow  * (p7G_NXCELLS * sizeof(float) + 6.0 * sizeof(double));
+    bytes += (double) (4 * sizeof(int) + sizeof(int64_t)) * (double) nrow;   /* P7B_GEO row tables  */
+    bytes += (double) sizeof(double) * (2.0 * (double) maxnc + 3.0);         /* decode row scratch  */
+  }
+
+  /* brief 26_0821-141: the OA traceback grows the caller's P7_TRACE (with
+   * PP) inside every engine: ~L+M elements of 13 bytes, and p7_trace_Grow()
+   * doubles the allocation, so allow 32 bytes per element.  Without this
+   * term massif measured the engines' peak heap 0.1-0.4 MiB above the
+   * estimate on 7-15 kb genomes. */
+  bytes += 32.0 * ((double) bnd->L + (double) bnd->M);
+
+  if (ret_bytes) *ret_bytes = bytes;
+  return eslOK;
+}
+
+/* Per-call banded-row geometry, derived once from a P7_GBANDS. */
+typedef struct {
+  int      nrow;     /* number of banded rows                         */
+  int      nseg;     /* number of band segments                       */
+  int      M;        /* profile length                                */
+  int      L;        /* sequence length                               */
+  int     *irow;     /* [0..nrow-1] sequence position i of banded row */
+  int     *ka;       /* [0..nrow-1] band low  k for the row           */
+  int     *kb;       /* [0..nrow-1] band high k for the row           */
+  int     *gap;      /* [0..nrow-1] # unbanded rows just below this    */
+                     /*   row (i_r - i_{r-1} - 1; r=0: i_0 - 1).       */
+                     /*   gap>0  <=>  row r starts a new segment.      */
+  int64_t *dpoff;    /* [0..nrow-1] cell offset of row in a full dp    */
+  int      B;        /* checkpoint block size ~ round(sqrt(nrow))     */
+  int      nblk;     /* number of blocks = ceil(nrow/B)               */
+  int      maxnc;    /* max (kb-ka+1) over rows (scratch sizing)       */
+} P7B_GEO;
+
+static void
+p7b_geo_Destroy(P7B_GEO *g)
+{
+  if (g == NULL) return;
+  if (g->irow)  free(g->irow);
+  if (g->ka)    free(g->ka);
+  if (g->kb)    free(g->kb);
+  if (g->gap)   free(g->gap);
+  if (g->dpoff) free(g->dpoff);
+  free(g);
+}
+
+static P7B_GEO *
+p7b_geo_Create(const P7_GBANDS *bnd, int M, int L)
+{
+  P7B_GEO *g = NULL;
+  int      status;
+  int     *ip = bnd->imem;
+  int     *kp = bnd->kmem;
+  int      nrow = bnd->nrow;
+  int      seg, i, r = 0, prev_i = 0;
+  int64_t  cum = 0;
+
+  ESL_ALLOC(g, sizeof(P7B_GEO));
+  g->irow = g->ka = g->kb = g->gap = NULL;
+  g->dpoff = NULL;
+  g->nrow = nrow; g->nseg = bnd->nseg; g->M = M; g->L = L;
+  ESL_ALLOC(g->irow,  sizeof(int)     * (nrow ? nrow : 1));
+  ESL_ALLOC(g->ka,    sizeof(int)     * (nrow ? nrow : 1));
+  ESL_ALLOC(g->kb,    sizeof(int)     * (nrow ? nrow : 1));
+  ESL_ALLOC(g->gap,   sizeof(int)     * (nrow ? nrow : 1));
+  ESL_ALLOC(g->dpoff, sizeof(int64_t) * (nrow ? nrow : 1));
+
+  g->maxnc = 0;
+  for (seg = 0; seg < bnd->nseg; seg++) {
+    int ia = *ip++;
+    int ib = *ip++;
+    for (i = ia; i <= ib; i++) {
+      int ka = *kp++;
+      int kb = *kp++;
+      int nc = kb - ka + 1;
+      g->irow[r]  = i;
+      g->ka[r]    = ka;
+      g->kb[r]    = kb;
+      g->gap[r]   = i - prev_i - 1;     /* prev_i = 0 before first row */
+      g->dpoff[r] = cum;
+      cum        += (int64_t) nc * P7B_PP_NSCELLS;   /* brief 26_0526-017: dpoff indexes the compact 2-cell pp */
+      if (nc > g->maxnc) g->maxnc = nc;
+      prev_i = i;
+      r++;
+    }
+  }
+  g->B = (int) (sqrt((double) (nrow ? nrow : 1)) + 0.5);
+  if (g->B < 1) g->B = 1;
+  g->nblk = (nrow + g->B - 1) / g->B;
+  return g;
+
+ ERROR:
+  p7b_geo_Destroy(g);
+  return NULL;
+}
+
+/* Brief 26_0821-141: DOUBLE PRECISION for the HMM-only Forward/Backward.
+ *
+ * The p7b_* kernels below used to accumulate AND store the banded F/B in
+ * float with p7_FLogsum.  At genome scale the scores reach ~1e5 nats
+ * (float ulp 0.004-0.016), and each row's update rounds with a systematic,
+ * binade-dependent bias.  F + B - fwdsc then drifts smoothly and uniformly
+ * across whole rows, by hundreds of nats on herpesvirus/poxvirus genomes
+ * (brief 26_0821-140).  Past ~88 nats expf() underflows a whole row to 0
+ * (a dead row) or overflows its top cells, and the posteriors -- hence the
+ * OA alignment and the PP line -- are meaningless; the reported Forward
+ * score was off by up to +-326 bits.  This is the same collapse the CP9
+ * family had (cm_p7_band_chk.c, briefs 26_0430-153/26_0430-154), with the same
+ * remedy: every F/B cell, carried special, checkpoint seed and block
+ * buffer is now double.  The rounding is in the STORED values, so double
+ * accumulation alone would not be enough.  The per-cell recurrences and
+ * their log-sum call order are unchanged; only the type and the log-sum
+ * are.  The posterior <pp> and the OA pass stay float: pp is a
+ * probability in [0,1], and OA reads only pp.
+ *
+ * p7_FLogsum returns float, so it cannot carry double precision.
+ * p7b_dlogsum() is its double counterpart, in NATS (p7 profile scores are
+ * nats; cm_p7_band_chk.c's cp9_chk_dlogsum() is base 2 for CP9 bit scores
+ * and cannot be dropped in).  It is a table of log(1 + e^-d) at 0.001-nat
+ * steps, like p7_FLogsum's and cp9_chk_dlogsum's, but LINEARLY
+ * INTERPOLATED rather than truncated to the lower entry.  Measured on the
+ * HSV-1/HSV-2/VZV/mpox genome Forward totals (brief 26_0821-141):
+ *   - exact log1p(exp(-d)):   the reference (= brief 26_0821-140's
+ *                             independent double-exact Forward);
+ *   - truncated table:        +0.02 to +0.22 nats (one-sided: truncation
+ *                             always over-adds), and enough to tip
+ *                             near-tied OA paths in 3 of the 4 alignments;
+ *   - interpolated table:     within 3e-5 nats, alignments byte-identical
+ *                             to exact, and as fast as the truncated table
+ *                             (12-23% faster end to end than exact).
+ * The cutoff is where e^-d drops under double epsilon (e^-36.8 = 1.0e-16).
+ */
+#define P7B_DLOGSUM_SCALE  1000.0
+#define P7B_DLOGSUM_CUTOFF 36.8
+#define P7B_DLOGSUM_TBLN   36802    /* (int)(CUTOFF*SCALE)+2: entry j+1 is read at d just under CUTOFF */
+static double p7b_dlogsum_tbl[P7B_DLOGSUM_TBLN];
+
+/* Built once at load time (single-threaded, before any cmalign worker
+ * starts), so the hot path reads a read-only table. */
+__attribute__((constructor)) static void
+p7b_dlogsum_init(void)
+{
+  int j;
+  for (j = 0; j < P7B_DLOGSUM_TBLN; j++) p7b_dlogsum_tbl[j] = log1p(exp(-(double) j / P7B_DLOGSUM_SCALE));
+}
+
+static inline double
+p7b_dlogsum(double a, double b)
+{
+  const double max = (a > b) ? a : b;
+  const double min = (a > b) ? b : a;
+  double x, f;
+  int    j;
+
+  if (min == -eslINFINITY || max - min >= P7B_DLOGSUM_CUTOFF) return max;
+  x = (max - min) * P7B_DLOGSUM_SCALE;
+  j = (int) x;
+  f = x - (double) j;
+  return max + p7b_dlogsum_tbl[j] + f * (p7b_dlogsum_tbl[j+1] - p7b_dlogsum_tbl[j]);
+}
+
+/* p7b_fwd_row(): fill one banded Forward row.  Verbatim copy of the
+ * per-row body of my_p7_GForwardBanded() (k-loop + special updates),
+ * in double (brief 26_0821-141).
+ *
+ *   dpc  - OUT: row's dp cells, p7G_NSCELLS*(kb-ka+1) floats, k ascending
+ *   dpp  - prev row's dp cells (k=kap..kbp), or NULL at a segment start
+ *   xB_in- B-state value entering this row
+ *   x{N,J,C}_in - N/J/C running specials entering this row
+ *   o_x* - OUT: specials after this row (xE,xN,xJ,xB,xC)
+ */
+static void
+p7b_fwd_row(const ESL_DSQ *dsq, const P7_PROFILE *gm, int M, double esc,
+            int i, int kac, int kbc, const double *dpp, int kap, int kbp,
+            double xB, double xN_in, double xJ_in, double xC_in,
+            double *dpc,
+            double *o_xE, double *o_xN, double *o_xJ, double *o_xB, double *o_xC)
+{
+  float const *tsc = gm->tsc;
+  float const *rsc = gm->rsc[dsq[i]];
+  double       mvp, ivp, dvp, dc, sc, xE;
+  int          k;
+  int          kbc2 = (kbc == M ? kbc - 1 : kbc);
+
+  dc = -eslINFINITY;
+  xE = -eslINFINITY;
+
+  /* advance dpp by any left overhang of the previous row */
+  if (dpp != NULL) dpp += (kac-1 > kap ? ESL_MIN(kac-kap-1, kbp-kap+1) * p7G_NSCELLS : 0);
+
+  if (dpp != NULL && kac > kap && kac-1 <= kbp) { mvp = *dpp++; ivp = *dpp++; dvp = *dpp++; }
+  else                                          { mvp = -eslINFINITY; ivp = -eslINFINITY; dvp = -eslINFINITY; }
+
+  for (k = kac; k <= kbc2; k++)
+    {
+      *dpc++ = sc = MSC(k) + p7b_dlogsum( p7b_dlogsum(mvp + TSC(p7P_MM, k-1), ivp + TSC(p7P_IM, k-1)),
+                                          p7b_dlogsum(dvp + TSC(p7P_DM, k-1), xB  + TSC(p7P_BM, k-1)));
+
+      if (dpp != NULL && k >= kap && k <= kbp) { mvp = *dpp++; ivp = *dpp++; dvp = *dpp++; }
+      else                                     { mvp = -eslINFINITY; ivp = -eslINFINITY; dvp = -eslINFINITY; }
+
+      *dpc++ = ISC(k) + p7b_dlogsum( mvp + TSC(p7P_MI, k), ivp + TSC(p7P_II, k));
+
+      xE     = p7b_dlogsum( p7b_dlogsum(sc + esc, dc + esc), xE);
+
+      *dpc++ = dc;
+      dc     = p7b_dlogsum( sc + TSC(p7P_MD, k), dc + TSC(p7P_DD, k));
+    }
+
+  if (kbc2 < kbc) /* kbc==M: unrolled final column */
+    {
+      *dpc++ = sc = MSC(k) + p7b_dlogsum( p7b_dlogsum(mvp + TSC(p7P_MM, k-1), ivp + TSC(p7P_IM, k-1)),
+                                          p7b_dlogsum(dvp + TSC(p7P_DM, k-1), xB  + TSC(p7P_BM, k-1)));
+      *dpc++ = -eslINFINITY;
+      *dpc++ = dc;
+      xE     = p7b_dlogsum( p7b_dlogsum(sc, dc), xE);
+    }
+
+  *o_xE = xE;
+  *o_xN = xN_in + gm->xsc[p7P_N][p7P_LOOP];
+  *o_xJ = p7b_dlogsum( xJ_in + gm->xsc[p7P_J][p7P_LOOP], xE + gm->xsc[p7P_E][p7P_LOOP]);
+  *o_xB = p7b_dlogsum( *o_xJ + gm->xsc[p7P_J][p7P_MOVE],  *o_xN + gm->xsc[p7P_N][p7P_MOVE]);
+  *o_xC = p7b_dlogsum( xE + gm->xsc[p7P_E][p7P_MOVE],     xC_in + gm->xsc[p7P_C][p7P_LOOP]);
+}
+
+/* A Forward checkpoint seed: the state ENTERING a block (= the state
+ * after the last row of the previous block).  block b (b>=1) starts
+ * from seed[b]; block 0 starts from the initial state.
+ */
+typedef struct {
+  double *dp;        /* copy of the previous row's dp cells (NULL if none) */
+  int     ka, kb;    /* that row's band (kap,kbp for the next row)         */
+  double  xN, xJ, xC, xB;  /* running specials after that row             */
+  int     valid;
+} P7B_FSEED;
+
+/* brief 26_0821-141: the Forward pass's seeds are double (the OA pass
+ * once kept the float P7B_FSEED above; brief 26_0821-144 made that double
+ * too). Same fields, same meaning. */
+typedef struct {
+  double *dp;        /* copy of the previous row's dp cells (NULL if none) */
+  int     ka, kb;    /* that row's band (kap,kbp for the next row)         */
+  double  xN, xJ, xC, xB;  /* running specials after that row             */
+  int     valid;
+} P7B_DFSEED;
+
+/* p7b_forward_seeds(): STEP A.  Stream banded Forward once, store the
+ * entering state for each block, and return the Forward score.
+ */
+static int
+p7b_forward_seeds(const ESL_DSQ *dsq, const P7_PROFILE *gm, const P7B_GEO *g,
+                  P7B_DFSEED *seed, double *ret_fwdsc)
+{
+  int     status;
+  int     M = g->M, L = g->L, B = g->B;
+  double  esc = p7_profile_IsLocal(gm) ? 0 : -eslINFINITY;
+  double *buf0 = NULL, *buf1 = NULL;     /* prev / cur row dp scratch */
+  double *prev = NULL, *cur;
+  int     r, kap = M+1, kbp = M+1;
+  double  xN = 0.0, xJ = -eslINFINITY, xC = -eslINFINITY, xB;
+  double  xE_o, xN_o, xJ_o, xB_o, xC_o;
+
+  ESL_ALLOC(buf0, sizeof(double) * (g->maxnc * p7G_NSCELLS + 1));
+  ESL_ALLOC(buf1, sizeof(double) * (g->maxnc * p7G_NSCELLS + 1));
+
+  xB = -eslINFINITY;
+  for (r = 0; r < g->nrow; r++)
+    {
+      int   i   = g->irow[r];
+      int   kac = g->ka[r], kbc = g->kb[r];
+      const double *dpp;
+      int   seg_start = (g->gap[r] > 0) || (r == 0);
+
+      cur = (prev == buf0) ? buf1 : buf0;
+
+      if (seg_start) {
+        if (g->gap[r] > 0) {
+          xN += g->gap[r] * gm->xsc[p7P_N][p7P_LOOP];
+          xJ += g->gap[r] * gm->xsc[p7P_J][p7P_LOOP];
+          xC += g->gap[r] * gm->xsc[p7P_C][p7P_LOOP];
+        }
+        xB  = p7b_dlogsum( xN + gm->xsc[p7P_N][p7P_MOVE], xJ + gm->xsc[p7P_J][p7P_MOVE]);
+        dpp = NULL;
+      } else {
+        /* continue segment: xN/xJ/xC/xB already hold prev row's output */
+        dpp = prev;
+      }
+
+      p7b_fwd_row(dsq, gm, M, esc, i, kac, kbc, dpp, kap, kbp,
+                  xB, xN, xJ, xC, cur,
+                  &xE_o, &xN_o, &xJ_o, &xB_o, &xC_o);
+
+      xN = xN_o; xJ = xJ_o; xC = xC_o; xB = xB_o;
+      kap = kac; kbp = kbc;
+      prev = cur;
+
+      /* snapshot a seed if the NEXT row begins a new block */
+      if (r + 1 < g->nrow && ((r + 1) % B) == 0) {
+        int b = (r + 1) / B;
+        int nc = kbc - kac + 1;
+        ESL_ALLOC(seed[b].dp, sizeof(double) * nc * p7G_NSCELLS);
+        memcpy(seed[b].dp, cur, sizeof(double) * nc * p7G_NSCELLS);
+        seed[b].ka = kac; seed[b].kb = kbc;
+        seed[b].xN = xN;  seed[b].xJ = xJ; seed[b].xC = xC; seed[b].xB = xB;
+        seed[b].valid = 1;
+      }
+    }
+
+  /* Forward score: tail last_ib+1..L runs through C only. */
+  { int last_ib = (g->nrow > 0) ? g->irow[g->nrow-1] : 0;
+    int tail    = L - last_ib;
+    *ret_fwdsc  = (tail > 0 ? xC + tail * gm->xsc[p7P_C][p7P_LOOP] : xC) + gm->xsc[p7P_C][p7P_MOVE];
+  }
+
+  free(buf0); free(buf1);
+  return eslOK;
+
+ ERROR:
+  if (buf0) free(buf0);
+  if (buf1) free(buf1);
+  return status;
+}
+
+/* p7b_fwd_block(): recompute Forward rows [lo..hi] from seed[b], into
+ * caller buffers: fdp[r-lo] points into a packed block buffer, and the
+ * per-row running specials are returned in fxN/fxJ/fxC (specials AFTER
+ * each row).  Also returns, in *s_xN/*s_xJ/*s_xC, the specials of the
+ * row just below lo (i.e. the seed's specials) for the decoder's
+ * fwd(i-1) at i=lo.  blkbuf must hold the block's cells contiguously.
+ */
+static void
+p7b_fwd_block(const ESL_DSQ *dsq, const P7_PROFILE *gm, const P7B_GEO *g,
+              const P7B_DFSEED *seed, int b, int lo, int hi,
+              double *blkbuf, int64_t *roff,
+              double *fxN, double *fxJ, double *fxC,
+              double *s_xN, double *s_xJ, double *s_xC)
+{
+  int     M = g->M;
+  double  esc = p7_profile_IsLocal(gm) ? 0 : -eslINFINITY;
+  int     r, kap, kbp;
+  double  xN, xJ, xC, xB = -eslINFINITY;
+  int64_t cum = 0;
+
+  if (b == 0) { xN = 0.0; xJ = -eslINFINITY; xC = -eslINFINITY; kap = kbp = M+1; }
+  else        { xN = seed[b].xN; xJ = seed[b].xJ; xC = seed[b].xC; xB = seed[b].xB;
+                kap = seed[b].ka; kbp = seed[b].kb; }
+
+  *s_xN = xN; *s_xJ = xJ; *s_xC = xC;   /* seed specials = row (lo-1) */
+
+  for (r = lo; r <= hi; r++)
+    {
+      int   i   = g->irow[r];
+      int    kac = g->ka[r], kbc = g->kb[r];
+      double xE_o, xN_o, xJ_o, xB_o, xC_o;
+      double *dpc = blkbuf + cum;
+      const double *dpp;
+      int   no_prev   = (r == 0);                 /* global row 0 only */
+      int   seg_start = (g->gap[r] > 0) || no_prev;
+
+      if (seg_start) {
+        if (g->gap[r] > 0) {
+          xN += g->gap[r] * gm->xsc[p7P_N][p7P_LOOP];
+          xJ += g->gap[r] * gm->xsc[p7P_J][p7P_LOOP];
+          xC += g->gap[r] * gm->xsc[p7P_C][p7P_LOOP];
+        }
+        xB  = p7b_dlogsum( xN + gm->xsc[p7P_N][p7P_MOVE], xJ + gm->xsc[p7P_J][p7P_MOVE]);
+        dpp = NULL;
+      } else {
+        /* continue: xN/xJ/xC/xB hold prev row's output (seed for r==lo) */
+        dpp = (r == lo) ? seed[b].dp : (blkbuf + roff[r-1-lo]);
+      }
+
+      p7b_fwd_row(dsq, gm, M, esc, i, kac, kbc, dpp, kap, kbp,
+                  xB, xN, xJ, xC, dpc,
+                  &xE_o, &xN_o, &xJ_o, &xB_o, &xC_o);
+
+      roff[r-lo] = cum;
+      fxN[r-lo] = xN_o; fxJ[r-lo] = xJ_o; fxC[r-lo] = xC_o;
+      xN = xN_o; xJ = xJ_o; xC = xC_o; xB = xB_o;
+      kap = kac; kbp = kbc;
+      cum += (int64_t)(kbc - kac + 1) * p7G_NSCELLS;
+    }
+}
+
+/* p7b_bwd_row(): fill one banded Backward row.  Verbatim copy of the
+ * per-row body of p7_GBackwardBanded() (both the i==L special-case and
+ * the normal i<L recurrence), writing dp cells in ascending-k [M,I,D]
+ * layout.  Carried specials (xC,xJ,xN,xE,xB) are updated in place.
+ *
+ *   dpn       - next row (i+1) dp cells (k=kan..kbn), unused if segment top
+ *   kan,kbn   - next row band (M+1,M+1 if next row outside band)
+ *   dpc       - OUT: this row's dp cells (k ascending, [M,I,D])
+ */
+static void
+p7b_bwd_row(const ESL_DSQ *dsq, const P7_PROFILE *gm, int M, double esc,
+            int i, int L, int kac, int kbc,
+            const double *dpn, int kan, int kbn,
+            double *xC_io, double *xJ_io, double *xN_io, double *xE_io, double *xB_io,
+            double *dpc)
+{
+  float const *tsc = gm->tsc;
+  double       xC = *xC_io, xJ = *xJ_io, xN = *xN_io, xE = *xE_io, xB;
+  double       dc;
+  int          k;
+  int          kbc2 = (kbc == M ? kbc - 1 : kbc);
+
+  if (i == L)
+    {
+      /* row L special case (mirror lines ~6581-6622) */
+      xB = -eslINFINITY; xJ = -eslINFINITY; xN = -eslINFINITY;  /* xC,xE carried */
+
+      if (kbc == M) { int o=(M-kac)*p7G_NSCELLS; dpc[o]=xE; dpc[o+1]=-eslINFINITY; dpc[o+2]=xE; }
+      dc = (kbc == M) ? xE : -eslINFINITY;
+      for (k = kbc2; k >= kac; k--) {
+        double dk = p7b_dlogsum(xE + esc, dc + TSC(p7P_DD, k));
+        double mk = p7b_dlogsum(xE + esc, dc + TSC(p7P_MD, k));
+        int    o  = (k-kac)*p7G_NSCELLS;
+        dpc[o]   = mk; dpc[o+1] = -eslINFINITY; dpc[o+2] = dk;
+        dc = dk;
+      }
+    }
+  else
+    {
+      float const *rsc = gm->rsc[dsq[i+1]];
+
+      xB = -eslINFINITY;
+      for (k = ESL_MAX(1, kan); k <= ESL_MIN(M, kbn); k++) {
+        int    off    = (k - kan) * p7G_NSCELLS;
+        double m_next = dpn[off];
+        xB = p7b_dlogsum(xB, m_next + TSC(p7P_BM, k-1) + MSC(k));
+      }
+
+      xJ = p7b_dlogsum(xJ + gm->xsc[p7P_J][p7P_LOOP], xB + gm->xsc[p7P_J][p7P_MOVE]);
+      xC = xC + gm->xsc[p7P_C][p7P_LOOP];
+      xE = p7b_dlogsum(xJ + gm->xsc[p7P_E][p7P_LOOP], xC + gm->xsc[p7P_E][p7P_MOVE]);
+      xN = p7b_dlogsum(xN + gm->xsc[p7P_N][p7P_LOOP], xB + gm->xsc[p7P_N][p7P_MOVE]);
+
+      if (kbc == M) { int o=(M-kac)*p7G_NSCELLS; dpc[o]=xE; dpc[o+1]=-eslINFINITY; dpc[o+2]=xE; }
+      dc = (kbc == M) ? xE : -eslINFINITY;
+
+      for (k = kbc2; k >= kac; k--)
+        {
+          double mnext, inext, dnext;
+          if (k+1 >= kan && k+1 <= kbn) { int o=(k+1-kan)*p7G_NSCELLS; mnext = dpn[o] + MSC(k+1); dnext = dpn[o+2]; }
+          else                          { mnext = dnext = -eslINFINITY; }
+          if (k   >= kan && k   <= kbn) { int o=(k-kan)*p7G_NSCELLS;   inext = dpn[o+1] + ISC(k); }
+          else                          { inext = -eslINFINITY; }
+
+          double dk = p7b_dlogsum(p7b_dlogsum(mnext + TSC(p7P_DM, k), dc + TSC(p7P_DD, k)), xE + esc);
+          double ik = p7b_dlogsum(mnext + TSC(p7P_IM, k), inext + TSC(p7P_II, k));
+          double mk = p7b_dlogsum(p7b_dlogsum(mnext + TSC(p7P_MM, k), inext + TSC(p7P_MI, k)),
+                                  p7b_dlogsum(xE + esc, dc + TSC(p7P_MD, k)));
+          int   o  = (k-kac)*p7G_NSCELLS;
+          dpc[o] = mk; dpc[o+1] = ik; dpc[o+2] = dk;
+          dc = dk;
+          (void) dnext;
+        }
+    }
+
+  *xC_io = xC; *xJ_io = xJ; *xN_io = xN; *xE_io = xE; *xB_io = xB;
+}
+
+/* cm_p7_decstats_Init(): zero a CM_P7_DECSTATS (brief 26_0821-141). */
+void
+cm_p7_decstats_Init(CM_P7_DECSTATS *st)
+{
+  st->nrow       = 0;
+  st->ndead      = 0;
+  st->nnonfinite = 0;
+  st->fb_incons  = 0.0;
+  st->drift_max  = -eslINFINITY;
+}
+
+/* p7b_bwd_cross_gap(): Backward specials across an unbanded gap of <G>
+ * rows (G >= 1) lying between two band segments, i.e. just below the
+ * already-processed first row of the upper segment (sequence row <i_up>,
+ * dp cells <dpn>, band kan..kbn).  On return xC/xJ/xN/xE are the
+ * Backward specials of row i_up-G (the row just above the lower
+ * segment's top row), ready for p7b_bwd_row() on that top row.
+ *
+ * brief 26_0821-141 (commit 9): the gap rows emit only through N, J or C.
+ * The row just below the upper segment, i_up-1, can also enter the model
+ * through B into that segment's first-row M cells; the others only loop.
+ * Forward always charged both (the gap loops of N, J and C, and B into
+ * the upper segment); Backward used to charge C's loops only, so with a
+ * finite N loop (--notrunc) it lost every path that stays in N through a
+ * gap and enters the model above it, and the posteriors below a gap were
+ * wrong.  Row i_up-1 is computed with the same formulas as p7b_bwd_row()'s
+ * B/J/C/E/N for a row with no band cells of its own. */
+static void
+p7b_bwd_cross_gap(const ESL_DSQ *dsq, const P7_PROFILE *gm, int M, int i_up, int G,
+                  const double *dpn, int kan, int kbn,
+                  double *xC, double *xJ, double *xN, double *xE)
+{
+  float const *tsc = gm->tsc;
+  float const *rsc = gm->rsc[dsq[i_up]];
+  double       xB  = -eslINFINITY;
+  int          k;
+
+  for (k = ESL_MAX(1, kan); k <= ESL_MIN(M, kbn); k++)
+    xB = p7b_dlogsum(xB, dpn[(k - kan) * p7G_NSCELLS] + TSC(p7P_BM, k-1) + MSC(k));
+
+  *xJ = p7b_dlogsum(*xJ + gm->xsc[p7P_J][p7P_LOOP], xB + gm->xsc[p7P_J][p7P_MOVE]);
+  *xC = *xC + gm->xsc[p7P_C][p7P_LOOP];
+  *xN = p7b_dlogsum(*xN + gm->xsc[p7P_N][p7P_LOOP], xB + gm->xsc[p7P_N][p7P_MOVE]);
+  if (G > 1) {   /* the remaining G-1 gap rows only loop (guard 0 * -inf) */
+    *xJ += (G - 1) * gm->xsc[p7P_J][p7P_LOOP];
+    *xC += (G - 1) * gm->xsc[p7P_C][p7P_LOOP];
+    *xN += (G - 1) * gm->xsc[p7P_N][p7P_LOOP];
+  }
+  *xE = p7b_dlogsum(*xJ + gm->xsc[p7P_E][p7P_LOOP], *xC + gm->xsc[p7P_E][p7P_MOVE]);
+}
+
+/* p7b_decode_row(): fold one row's posterior into the caller's output
+ * row buffers.  Originally a verbatim copy of the per-row body of
+ * p7_GDecodingBanded() (expf + per-row denom normalization + NaN
+ * guards); brief 26_0821-141 made it double precision and added the
+ * row-max guard (see below).
+ *
+ * brief 26_0628-081: the destination is now passed as explicit row
+ * pointers <pdp>/<pxp> rather than (pp, r).  The resident-pp caller
+ * passes pp->dp + g->dpoff[r] / pp->xmx + r*p7G_NXCELLS -- identical to
+ * what this function used to compute itself; the double-checkpointed
+ * caller passes a one-block posterior buffer.  No arithmetic changed. */
+static void
+p7b_decode_row(const P7B_GEO *g, const P7_PROFILE *gm, double fwdsc,
+               int kac, int kbc,
+               const double *fdp, const double *bdp,
+               double bck_xN, double bck_xJ, double bck_xC,
+               double fwd_xN_prev, double fwd_xJ_prev, double fwd_xC_prev,
+               double *wrk, int ppstride, float *pdp, float *pxp,
+               CM_P7_DECSTATS *st)
+{
+  int    M  = g->M;
+  int    nc = kbc - kac + 1;
+  int    nw = 2 * nc + 3;
+  double rowmax = -eslINFINITY;
+  double denom  = 0.0;
+  double *wx = wrk + 2 * nc;   /* [0..2nc-1] M,I per cell; [2nc..2nc+2] N,J,C */
+  int    k, c;
+
+  /* brief 26_0821-141: everything up to the stored posterior is double
+   * (<wrk> holds the row, >= 2*nc+3 doubles); only the normalized
+   * posterior is stored as float.  <ppstride> is the pp cell stride:
+   * P7B_PP_NSCELLS (2: M,I) for the checkpointed engines' compact pp,
+   * p7G_NSCELLS (3: M,I,D, D=0) for a p7_gmxb_Create() pp.
+   *
+   * Row-max guard: exponentiate F + B - (this row's max of F + B) rather
+   * than F + B - fwdsc.  The row is normalized by its own sum below, so
+   * the two are the same posterior; but the guard keeps exp() in range
+   * even if F and B disagree by a constant along the row -- the float
+   * roundoff drift that caused this fix, or any constant F/B offset
+   * (e.g. an asymmetric special-state charge) -- which would otherwise
+   * underflow the whole row to 0 or overflow its top cells.  With double
+   * F/B, fwdsc and the row max differ by log(the row's largest posterior)
+   * plus ~1e-8 nats, so on correct input the guard changes nothing. */
+  for (k = kac; k <= kbc; k++) {
+    int off = (k - kac) * p7G_NSCELLS;      /* fdp/bdp: full 3-cell Forward/Backward rows */
+    c = (k - kac) * 2;
+    wrk[c]   = fdp[off] + bdp[off];                                   /* M */
+    wrk[c+1] = (k < M) ? fdp[off+1] + bdp[off+1] : -eslINFINITY;      /* I */
+  }
+  wx[0] = fwd_xN_prev + bck_xN + gm->xsc[p7P_N][p7P_LOOP];
+  wx[1] = fwd_xJ_prev + bck_xJ + gm->xsc[p7P_J][p7P_LOOP];
+  wx[2] = fwd_xC_prev + bck_xC + gm->xsc[p7P_C][p7P_LOOP];
+  for (c = 0; c < nw; c++) if (isfinite(wrk[c]) && wrk[c] > rowmax) rowmax = wrk[c];
+
+  for (c = 0; c < nw; c++) {
+    /* a row with no finite cell has nothing to normalize: all 0, as before */
+    wrk[c] = isfinite(rowmax) ? exp(wrk[c] - rowmax) : 0.0;
+    if (! isfinite(wrk[c])) { wrk[c] = 0.0; if (st) st->nnonfinite++; }  /* NaN or +inf input; zeroed */
+    denom += wrk[c];
+  }
+
+  /* brief 26_0821-141: account for what used to fail silently.  The
+   * posteriors of a row sum to 1 over its nw emitting states, so its
+   * largest is in [1/nw, 1] and rowmax - fwdsc must lie in
+   * [-log(nw), 0]; any excursion is F/B inconsistency, in nats. */
+  if (st) {
+    st->nrow++;
+    if (! isfinite(rowmax) || denom == 0.0) st->ndead++;
+    else {
+      double d = rowmax - fwdsc;
+      double x = ESL_MAX(d, -log((double) nw) - d);
+      if (x > st->fb_incons) st->fb_incons = x;
+      if (d > st->drift_max) st->drift_max = d;
+    }
+  }
+
+  denom = (denom > 0.0) ? 1.0 / denom : 1.0;
+  for (k = kac; k <= kbc; k++) {
+    int poff = (k - kac) * ppstride;  /* brief 26_0526-017: compact 2-cell pp (M,I) has no D */
+    c = (k - kac) * 2;
+    pdp[poff]   = (float) (wrk[c]   * denom);
+    pdp[poff+1] = (float) (wrk[c+1] * denom);
+    if (ppstride > 2) pdp[poff+2] = 0.0f;   /* D doesn't emit */
+  }
+  pxp[p7G_E] = 0.0f;
+  pxp[p7G_N] = (float) (wx[0] * denom);
+  pxp[p7G_J] = (float) (wx[1] * denom);
+  pxp[p7G_B] = 0.0f;
+  pxp[p7G_C] = (float) (wx[2] * denom);
+}
+
+/* p7b_backdecode(): STEP B.  Stream Backward (2 rows live) in descending
+ * blocks, recompute each block's Forward from seeds, fold the posterior
+ * into the resident <pp>.  The full Backward matrix is never stored.
+ */
+static int
+p7b_backdecode(const ESL_DSQ *dsq, const P7_PROFILE *gm, const P7B_GEO *g,
+               const P7B_DFSEED *seed, double fwdsc, P7_GMXB *pp, CM_P7_DECSTATS *st)
+{
+  int      status;
+  int      M = g->M, L = g->L, B = g->B;
+  double   esc = p7_profile_IsLocal(gm) ? 0 : -eslINFINITY;
+  double  *blkbuf = NULL, *bbuf0 = NULL, *bbuf1 = NULL, *wrk = NULL;
+  int64_t *roff   = NULL;
+  double  *fxN = NULL, *fxJ = NULL, *fxC = NULL;
+  int      b, r;
+  /* backward carry */
+  double   xC, xJ, xN, xE, xB;
+  const double *dpn = NULL;
+  int      kan = M+1, kbn = M+1;
+  double  *bnext = NULL, *bcur;
+
+  ESL_ALLOC(blkbuf, sizeof(double) * ((int64_t) B * g->maxnc * p7G_NSCELLS + 1));
+  ESL_ALLOC(roff,   sizeof(int64_t) * B);
+  ESL_ALLOC(fxN,    sizeof(double) * B);
+  ESL_ALLOC(fxJ,    sizeof(double) * B);
+  ESL_ALLOC(fxC,    sizeof(double) * B);
+  ESL_ALLOC(bbuf0,  sizeof(double) * (g->maxnc * p7G_NSCELLS + 1));
+  ESL_ALLOC(bbuf1,  sizeof(double) * (g->maxnc * p7G_NSCELLS + 1));
+  ESL_ALLOC(wrk,    sizeof(double) * (2 * g->maxnc + 3));
+
+  /* init backward specials (mirror p7_GBackwardBanded init) */
+  xC = gm->xsc[p7P_C][p7P_MOVE];
+  xE = xC + gm->xsc[p7P_E][p7P_MOVE];
+  xJ = xB = xN = -eslINFINITY;
+
+  for (b = g->nblk - 1; b >= 0; b--)
+    {
+      int   lo = b * B;
+      int   hi = ESL_MIN((b+1)*B - 1, g->nrow - 1);
+      double s_xN, s_xJ, s_xC;
+
+      p7b_fwd_block(dsq, gm, g, seed, b, lo, hi, blkbuf, roff, fxN, fxJ, fxC, &s_xN, &s_xJ, &s_xC);
+
+      for (r = hi; r >= lo; r--)
+        {
+          int   i   = g->irow[r];
+          int   kac = g->ka[r], kbc = g->kb[r];
+          int   top = (r == g->nrow - 1) || (g->gap[r+1] > 0);
+          const double *use_dpn = dpn;
+          int    use_kan = kan, use_kbn = kbn;
+          double fwd_xN_prev, fwd_xJ_prev, fwd_xC_prev;
+
+          if (top) {
+            if (r < g->nrow - 1)   /* interior gap below the next segment (brief 26_0821-141) */
+              p7b_bwd_cross_gap(dsq, gm, M, g->irow[r+1], g->gap[r+1], dpn, kan, kbn, &xC, &xJ, &xN, &xE);
+            else if (L - i > 0) { xC += (L - i) * gm->xsc[p7P_C][p7P_LOOP];   /* trailing rows: C only */
+                                  xE  = p7b_dlogsum(xE, xC + gm->xsc[p7P_E][p7P_MOVE]); }
+            use_dpn = NULL; use_kan = M+1; use_kbn = M+1;
+          }
+
+          bcur = (bnext == bbuf0) ? bbuf1 : bbuf0;
+          p7b_bwd_row(dsq, gm, M, esc, i, L, kac, kbc, use_dpn, use_kan, use_kbn,
+                      &xC, &xJ, &xN, &xE, &xB, bcur);
+
+          /* fwd specials of row (r-1), gap-adjusted, for the decoder */
+          if (r == lo) { fwd_xN_prev = s_xN; fwd_xJ_prev = s_xJ; fwd_xC_prev = s_xC; }
+          else         { fwd_xN_prev = fxN[r-1-lo]; fwd_xJ_prev = fxJ[r-1-lo]; fwd_xC_prev = fxC[r-1-lo]; }
+          if (g->gap[r] > 0) {
+            fwd_xN_prev += g->gap[r] * gm->xsc[p7P_N][p7P_LOOP];
+            fwd_xJ_prev += g->gap[r] * gm->xsc[p7P_J][p7P_LOOP];
+            fwd_xC_prev += g->gap[r] * gm->xsc[p7P_C][p7P_LOOP];
+          }
+
+          p7b_decode_row(g, gm, fwdsc, kac, kbc, blkbuf + roff[r-lo], bcur,
+                         xN, xJ, xC, fwd_xN_prev, fwd_xJ_prev, fwd_xC_prev, wrk, P7B_PP_NSCELLS,
+                         pp->dp + g->dpoff[r], pp->xmx + (int64_t) r * p7G_NXCELLS, st);
+
+          dpn = bcur; kan = kac; kbn = kbc; bnext = bcur;
+        }
+    }
+
+  free(blkbuf); free(roff); free(fxN); free(fxJ); free(fxC); free(bbuf0); free(bbuf1); free(wrk);
+  return eslOK;
+
+ ERROR:
+  if (blkbuf) free(blkbuf);
+  if (roff)   free(roff);
+  if (fxN)    free(fxN);
+  if (fxJ)    free(fxJ);
+  if (fxC)    free(fxC);
+  if (bbuf0)  free(bbuf0);
+  if (bbuf1)  free(bbuf1);
+  if (wrk)    free(wrk);
+  return status;
+}
+
+/*****************************************************************
+ * brief 26_0628-081: DOUBLE-CHECKPOINTING the Backward pass, so the
+ * posterior <pp> never has to be resident.
+ *
+ * 26_0526-016/017 checkpointed the *compute* of this engine (F, B,
+ * Decode and the OA fill all run out of ~sqrt(nrow) seed rows), but one
+ * O(bnd->ncell) matrix survived: the resident posterior that
+ * p7b_backdecode() fills and that the OA pass + traceback consume.  It
+ * had to be resident because of a DIRECTION CONFLICT -- pp rows are
+ * produced by Backward in DESCENDING row order, and consumed by OA in
+ * ASCENDING row order.
+ *
+ * The fix mirrors what the Forward pass already does for itself:
+ * checkpoint Backward too.  A second seed array (P7B_BSEED) stores the
+ * Backward state ENTERING each block from above; a block's Backward
+ * rows are then recomputed on demand into an O(B*maxnc) buffer, the pp
+ * rows for that block are formed on the fly, and OA consumes them
+ * ascending.  The traceback recomputes the same per-block pp window
+ * alongside the OA window it already recomputed.
+ *
+ * Resident term drops from O(ncell) to O(sqrt(nrow)*maxnc); the cost is
+ * two extra O(ncell) recompute passes (one Backward stream to lay the
+ * seeds, plus per-block F+B recompute during OA/traceback).
+ *
+ * Byte-exact discipline, same as 26_0526-016: no per-cell arithmetic is
+ * touched.  A Backward block resumed from a seed replays exactly the
+ * same p7b_bwd_row() calls, on exactly the same float inputs, in
+ * exactly the same order, as the uninterrupted stream would have -- so
+ * the recomputed pp rows are bit-identical to the resident ones, and
+ * everything downstream is bit-identical too.  The legacy resident-pp
+ * path is left fully intact and reachable via INFERNAL_HMM_PPCKPT_OFF.
+ *****************************************************************/
+
+/* A Backward checkpoint seed: the Backward state ENTERING block <b>
+ * from above, i.e. the state just after row (hi_b + 1) was processed.
+ * For the last block there is no row above, so the seed is the Backward
+ * initial state (dp == NULL).
+ *
+ * Note that <dp> doubles as the stored copy of row (hi_b+1)'s Backward
+ * row, which the traceback's B+1-row window needs verbatim (see
+ * p7b_bwd_block()).  xB is not carried: p7b_bwd_row() recomputes it
+ * from scratch every row and never reads an incoming value.
+ */
+typedef struct {
+  double *dp;              /* copy of row (hi_b+1)'s Backward dp cells, or NULL */
+  int     ka, kb;          /* that row's band (kan,kbn for the row below)       */
+  double  xC, xJ, xN, xE;  /* carried specials AFTER that row                   */
+  int     valid;
+} P7B_BSEED;
+
+/* p7b_backward_seeds(): STEP B1.  Stream banded Backward once (2 rows
+ * live, no posterior formed, no Forward needed), storing the entering
+ * state for each block.  Descending-row mirror of p7b_forward_seeds().
+ */
+static int
+p7b_backward_seeds(const ESL_DSQ *dsq, const P7_PROFILE *gm, const P7B_GEO *g,
+                   P7B_BSEED *bseed)
+{
+  int      status;
+  int      M = g->M, L = g->L, B = g->B;
+  double   esc = p7_profile_IsLocal(gm) ? 0 : -eslINFINITY;
+  double  *bbuf0 = NULL, *bbuf1 = NULL, *bnext = NULL, *bcur;
+  const double *dpn = NULL;
+  int      kan = M+1, kbn = M+1;
+  double   xC, xJ, xN, xE, xB;
+  int      r;
+
+  ESL_ALLOC(bbuf0, sizeof(double) * (g->maxnc * p7G_NSCELLS + 1));
+  ESL_ALLOC(bbuf1, sizeof(double) * (g->maxnc * p7G_NSCELLS + 1));
+
+  /* init backward specials (mirror p7b_backdecode / p7_GBackwardBanded init) */
+  xC = gm->xsc[p7P_C][p7P_MOVE];
+  xE = xC + gm->xsc[p7P_E][p7P_MOVE];
+  xJ = xB = xN = -eslINFINITY;
+
+  /* the topmost block enters from the Backward initial state.  (nblk==0
+   * only when the band has no rows at all, in which case the loop below
+   * is empty too and there is no block to seed.) */
+  if (g->nblk > 0) {
+    bseed[g->nblk-1].dp = NULL;
+    bseed[g->nblk-1].ka = M+1;  bseed[g->nblk-1].kb = M+1;
+    bseed[g->nblk-1].xC = xC;   bseed[g->nblk-1].xJ = xJ;
+    bseed[g->nblk-1].xN = xN;   bseed[g->nblk-1].xE = xE;
+    bseed[g->nblk-1].valid = 1;
+  }
+
+  for (r = g->nrow - 1; r >= 0; r--)
+    {
+      int   i   = g->irow[r];
+      int   kac = g->ka[r], kbc = g->kb[r];
+      int   top = (r == g->nrow - 1) || (g->gap[r+1] > 0);
+      const double *use_dpn = dpn;
+      int   use_kan = kan, use_kbn = kbn;
+
+      if (top) {
+        if (r < g->nrow - 1)   /* interior gap below the next segment (brief 26_0821-141) */
+          p7b_bwd_cross_gap(dsq, gm, M, g->irow[r+1], g->gap[r+1], dpn, kan, kbn, &xC, &xJ, &xN, &xE);
+        else if (L - i > 0) { xC += (L - i) * gm->xsc[p7P_C][p7P_LOOP];   /* trailing rows: C only */
+                              xE  = p7b_dlogsum(xE, xC + gm->xsc[p7P_E][p7P_MOVE]); }
+        use_dpn = NULL; use_kan = M+1; use_kbn = M+1;
+      }
+
+      bcur = (bnext == bbuf0) ? bbuf1 : bbuf0;
+      p7b_bwd_row(dsq, gm, M, esc, i, L, kac, kbc, use_dpn, use_kan, use_kbn,
+                  &xC, &xJ, &xN, &xE, &xB, bcur);
+
+      /* snapshot a seed if row r is the first row of a block: it is then
+       * the row just above block (r/B - 1)'s last row. */
+      if (r > 0 && (r % B) == 0) {
+        int b = r / B - 1, nc = kbc - kac + 1;
+        ESL_ALLOC(bseed[b].dp, sizeof(double) * nc * p7G_NSCELLS);
+        memcpy(bseed[b].dp, bcur, sizeof(double) * nc * p7G_NSCELLS);
+        bseed[b].ka = kac; bseed[b].kb = kbc;
+        bseed[b].xC = xC;  bseed[b].xJ = xJ; bseed[b].xN = xN; bseed[b].xE = xE;
+        bseed[b].valid = 1;
+      }
+
+      dpn = bcur; kan = kac; kbn = kbc; bnext = bcur;
+    }
+
+  free(bbuf0); free(bbuf1);
+  return eslOK;
+
+ ERROR:
+  if (bbuf0) free(bbuf0);
+  if (bbuf1) free(bbuf1);
+  return status;
+}
+
+/* p7b_bwd_block(): recompute Backward rows [lo..hi] of block <b> from
+ * bseed[b], into a packed block buffer (offsets in <roff>), plus the
+ * per-row carried specials AFTER each row (bxN/bxJ/bxC) that
+ * p7b_decode_row() wants.  Descending-row mirror of p7b_fwd_block().
+ *
+ * <lo> is always b*B.  <hi> may be hi_b (= the block's last row) or
+ * hi_b+1 (the traceback window's +1 overlap row).  In the latter case
+ * that extra row IS the seed row, so it is copied verbatim from
+ * bseed[b].dp rather than recomputed -- which is also what makes it
+ * bit-identical rather than merely equal.
+ */
+static void
+p7b_bwd_block(const ESL_DSQ *dsq, const P7_PROFILE *gm, const P7B_GEO *g,
+              const P7B_BSEED *bseed, int b, int lo, int hi,
+              double *blkbuf, int64_t *roff, double *bxN, double *bxJ, double *bxC)
+{
+  int      M = g->M, L = g->L;
+  double   esc = p7_profile_IsLocal(gm) ? 0 : -eslINFINITY;
+  double   xC, xJ, xN, xE, xB = -eslINFINITY;
+  const double *dpn;
+  int      kan, kbn;
+  int      r, rstart;
+  int      hib = ESL_MIN((b+1) * g->B - 1, g->nrow - 1);
+  int64_t  cum = 0;
+
+  for (r = lo; r <= hi; r++) {
+    roff[r-lo] = cum;
+    cum += (int64_t)(g->kb[r] - g->ka[r] + 1) * p7G_NSCELLS;
+  }
+
+  xC  = bseed[b].xC; xJ = bseed[b].xJ; xN = bseed[b].xN; xE = bseed[b].xE;
+  dpn = bseed[b].dp; kan = bseed[b].ka; kbn = bseed[b].kb;
+
+  rstart = hi;
+  if (hi > hib) {   /* the +1 overlap row is exactly the seed row */
+    int nc = g->kb[hi] - g->ka[hi] + 1;
+    memcpy(blkbuf + roff[hi-lo], bseed[b].dp, sizeof(double) * nc * p7G_NSCELLS);
+    bxN[hi-lo] = xN; bxJ[hi-lo] = xJ; bxC[hi-lo] = xC;
+    rstart = hib;
+  }
+
+  for (r = rstart; r >= lo; r--)
+    {
+      int   i   = g->irow[r];
+      int   kac = g->ka[r], kbc = g->kb[r];
+      int   top = (r == g->nrow - 1) || (g->gap[r+1] > 0);
+      const double *use_dpn = dpn;
+      int   use_kan = kan, use_kbn = kbn;
+      double *bcur = blkbuf + roff[r-lo];
+
+      if (top) {
+        if (r < g->nrow - 1)   /* interior gap below the next segment (brief 26_0821-141) */
+          p7b_bwd_cross_gap(dsq, gm, M, g->irow[r+1], g->gap[r+1], dpn, kan, kbn, &xC, &xJ, &xN, &xE);
+        else if (L - i > 0) { xC += (L - i) * gm->xsc[p7P_C][p7P_LOOP];   /* trailing rows: C only */
+                              xE  = p7b_dlogsum(xE, xC + gm->xsc[p7P_E][p7P_MOVE]); }
+        use_dpn = NULL; use_kan = M+1; use_kbn = M+1;
+      }
+
+      p7b_bwd_row(dsq, gm, M, esc, i, L, kac, kbc, use_dpn, use_kan, use_kbn,
+                  &xC, &xJ, &xN, &xE, &xB, bcur);
+
+      bxN[r-lo] = xN; bxJ[r-lo] = xJ; bxC[r-lo] = xC;
+      dpn = bcur; kan = kac; kbn = kbc;
+    }
+}
+
+/* A posterior-row source for the OA pass and traceback: either the
+ * legacy resident matrix (<pp> non-NULL) or a recomputed one-block
+ * window (<pp> NULL, rows [lo..hi] held in <ppblk>/<ppxmx>). */
+typedef struct {
+  const P7_GMXB *pp;       /* legacy resident pp, or NULL             */
+  const float   *ppblk;    /* window mode: packed pp rows             */
+  const int64_t *pproff;   /* window mode: per-row offsets into ppblk */
+  const float   *ppxmx;    /* window mode: per-row specials           */
+  int            lo, hi;   /* window mode: rows held                  */
+} P7B_PPVIEW;
+
+static const float *
+p7b_ppview_dp(const P7B_PPVIEW *v, const P7B_GEO *g, int r)
+{
+  return (v->pp != NULL) ? v->pp->dp + g->dpoff[r]
+                         : v->ppblk  + v->pproff[r - v->lo];
+}
+
+static const float *
+p7b_ppview_xp(const P7B_PPVIEW *v, const P7B_GEO *g, int r)
+{
+  return (v->pp != NULL) ? v->pp->xmx + (int64_t) r * p7G_NXCELLS
+                         : v->ppxmx   + (int64_t)(r - v->lo) * p7G_NXCELLS;
+}
+
+/* Scratch for recomputing one block's posterior rows on demand.  Every
+ * buffer here is O(B*maxnc) or smaller -- this struct is what replaces
+ * the O(ncell) resident pp. */
+typedef struct {
+  const ESL_DSQ   *dsq;
+  const P7B_DFSEED *fseed;  /* Forward  seeds (from p7b_forward_seeds)  */
+  const P7B_BSEED *bseed;   /* Backward seeds (from p7b_backward_seeds) */
+  double           fwdsc;
+  int              nr;      /* rows a block window can hold (B+2)       */
+  double  *fblk;  int64_t *froff;  double *fxN, *fxJ, *fxC;   /* brief 26_0821-141: F/B in double */
+  double  *bblk;  int64_t *broff;  double *bxN, *bxJ, *bxC;
+  double  *wrk;                                                /* p7b_decode_row() row scratch */
+  CM_P7_DECSTATS *st;     /* decode counts, or NULL (brief 26_0821-141): set only for
+                           * the OA pass, which visits each row once; the traceback
+                           * recomputes rows and must not count them again */
+  float   *ppblk; int64_t *pproff; float *ppxmx;
+} P7B_PPWORK;
+
+static void
+p7b_ppwork_Destroy(P7B_PPWORK *w)
+{
+  if (w == NULL) return;
+  if (w->fblk)   free(w->fblk);
+  if (w->froff)  free(w->froff);
+  if (w->fxN)    free(w->fxN);
+  if (w->fxJ)    free(w->fxJ);
+  if (w->fxC)    free(w->fxC);
+  if (w->bblk)   free(w->bblk);
+  if (w->broff)  free(w->broff);
+  if (w->bxN)    free(w->bxN);
+  if (w->bxJ)    free(w->bxJ);
+  if (w->bxC)    free(w->bxC);
+  if (w->wrk)    free(w->wrk);
+  if (w->ppblk)  free(w->ppblk);
+  if (w->pproff) free(w->pproff);
+  if (w->ppxmx)  free(w->ppxmx);
+  free(w);
+}
+
+static P7B_PPWORK *
+p7b_ppwork_Create(const ESL_DSQ *dsq, const P7B_GEO *g,
+                  const P7B_DFSEED *fseed, const P7B_BSEED *bseed, double fwdsc)
+{
+  P7B_PPWORK *w = NULL;
+  int         status;
+  int         nr = g->B + 2;   /* block (B rows) + traceback's +1 overlap row + slack */
+
+  ESL_ALLOC(w, sizeof(P7B_PPWORK));
+  w->fblk = w->fxN = w->fxJ = w->fxC = NULL;
+  w->bblk = w->bxN = w->bxJ = w->bxC = NULL;
+  w->wrk  = NULL;
+  w->ppblk = w->ppxmx = NULL;
+  w->froff = w->broff = w->pproff = NULL;
+  w->dsq = dsq; w->fseed = fseed; w->bseed = bseed; w->fwdsc = fwdsc; w->nr = nr;
+  w->st  = NULL;
+
+  ESL_ALLOC(w->fblk,   sizeof(double)  * ((int64_t) nr * g->maxnc * p7G_NSCELLS + 1));
+  ESL_ALLOC(w->froff,  sizeof(int64_t) * nr);
+  ESL_ALLOC(w->fxN,    sizeof(double)  * nr);
+  ESL_ALLOC(w->fxJ,    sizeof(double)  * nr);
+  ESL_ALLOC(w->fxC,    sizeof(double)  * nr);
+  ESL_ALLOC(w->bblk,   sizeof(double)  * ((int64_t) nr * g->maxnc * p7G_NSCELLS + 1));
+  ESL_ALLOC(w->broff,  sizeof(int64_t) * nr);
+  ESL_ALLOC(w->bxN,    sizeof(double)  * nr);
+  ESL_ALLOC(w->bxJ,    sizeof(double)  * nr);
+  ESL_ALLOC(w->bxC,    sizeof(double)  * nr);
+  ESL_ALLOC(w->wrk,    sizeof(double)  * (2 * g->maxnc + 3));
+  ESL_ALLOC(w->ppblk,  sizeof(float)   * ((int64_t) nr * g->maxnc * P7B_PP_NSCELLS + 1));
+  ESL_ALLOC(w->pproff, sizeof(int64_t) * nr);
+  ESL_ALLOC(w->ppxmx,  sizeof(float)   * ((int64_t) nr * p7G_NXCELLS));
+  return w;
+
+ ERROR:
+  p7b_ppwork_Destroy(w);
+  return NULL;
+}
+
+/* p7b_ppwork_fill(): recompute the posterior rows [lo..hi] of block <b>
+ * -- Forward block from fseed[b], Backward block from bseed[b], then
+ * p7b_decode_row() per row -- and point <view> at them.
+ *
+ * The per-row inputs handed to p7b_decode_row() are assembled exactly
+ * as p7b_backdecode() assembles them (same seed-vs-fx seam at r==lo,
+ * same gap[] adjustment of the Forward specials), so the rows produced
+ * here are bit-identical to the resident ones.
+ */
+static void
+p7b_ppwork_fill(P7B_PPWORK *w, const P7_PROFILE *gm, const P7B_GEO *g,
+                int b, int lo, int hi, P7B_PPVIEW *view)
+{
+  double  s_xN, s_xJ, s_xC;
+  int     r;
+  int64_t cum = 0;
+
+  p7b_fwd_block(w->dsq, gm, g, w->fseed, b, lo, hi, w->fblk, w->froff,
+                w->fxN, w->fxJ, w->fxC, &s_xN, &s_xJ, &s_xC);
+  p7b_bwd_block(w->dsq, gm, g, w->bseed, b, lo, hi, w->bblk, w->broff,
+                w->bxN, w->bxJ, w->bxC);
+
+  for (r = lo; r <= hi; r++)
+    {
+      int   kac = g->ka[r], kbc = g->kb[r];
+      double fwd_xN_prev, fwd_xJ_prev, fwd_xC_prev;
+
+      w->pproff[r-lo] = cum;
+
+      if (r == lo) { fwd_xN_prev = s_xN; fwd_xJ_prev = s_xJ; fwd_xC_prev = s_xC; }
+      else         { fwd_xN_prev = w->fxN[r-1-lo]; fwd_xJ_prev = w->fxJ[r-1-lo]; fwd_xC_prev = w->fxC[r-1-lo]; }
+      if (g->gap[r] > 0) {
+        fwd_xN_prev += g->gap[r] * gm->xsc[p7P_N][p7P_LOOP];
+        fwd_xJ_prev += g->gap[r] * gm->xsc[p7P_J][p7P_LOOP];
+        fwd_xC_prev += g->gap[r] * gm->xsc[p7P_C][p7P_LOOP];
+      }
+
+      p7b_decode_row(g, gm, w->fwdsc, kac, kbc,
+                     w->fblk + w->froff[r-lo], w->bblk + w->broff[r-lo],
+                     w->bxN[r-lo], w->bxJ[r-lo], w->bxC[r-lo],
+                     fwd_xN_prev, fwd_xJ_prev, fwd_xC_prev, w->wrk, P7B_PP_NSCELLS,
+                     w->ppblk + cum, w->ppxmx + (int64_t)(r-lo) * p7G_NXCELLS, w->st);
+
+      cum += (int64_t)(kbc - kac + 1) * P7B_PP_NSCELLS;
+    }
+
+  view->pp     = NULL;
+  view->ppblk  = w->ppblk;
+  view->pproff = w->pproff;
+  view->ppxmx  = w->ppxmx;
+  view->lo     = lo;
+  view->hi     = hi;
+}
+
+
+/* Function: p7_GCheckptFBDecode_Banded()
+ * Incept:   Brief 26_0526-016
+ *
+ * Purpose:  sqrt(nrow)-row checkpointed banded Forward + Backward +
+ *           posterior decoding. Drop-in replacement for the
+ *               my_p7_GForwardBanded + p7_GBackwardBanded + p7_GDecodingBanded
+ *           sequence, producing a byte-identical posterior matrix <pp>
+ *           and Forward score, but never materializing either full F or
+ *           B banded matrix (only the resident <pp> and O(sqrt(nrow))
+ *           working set).
+ *
+ * Args:     dsq       - digital sequence 1..L
+ *           L         - sequence length
+ *           gm        - profile (glocal)
+ *           pp        - RESULT: posterior matrix (created by caller from
+ *                       the same P7_GBANDS); filled here.
+ *           ret_fwdsc - RETURN: Forward score in nats
+ *           opt_st    - optRETURN: decode counts (see CM_P7_DECSTATS)
+ *
+ * Returns:  eslOK on success.
+ */
+int
+cm_p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm,
+                           P7_GMXB *pp, float *ret_fwdsc, CM_P7_DECSTATS *opt_st)
+{
+  int        status;
+  P7B_GEO   *g = NULL;
+  P7B_DFSEED *seed = NULL;
+  double     fwdsc = 0.;
+  int        b;
+
+  g = p7b_geo_Create(pp->bnd, gm->M, L);
+  if (g == NULL) { status = eslEMEM; goto ERROR; }
+
+  ESL_ALLOC(seed, sizeof(P7B_DFSEED) * (g->nblk > 0 ? g->nblk : 1));
+  for (b = 0; b < g->nblk; b++) { seed[b].dp = NULL; seed[b].valid = 0; }
+
+  if ((status = p7b_forward_seeds(dsq, gm, g, seed, &fwdsc)) != eslOK) goto ERROR;
+  if (opt_st) cm_p7_decstats_Init(opt_st);
+  if ((status = p7b_backdecode  (dsq, gm, g, seed, fwdsc, pp, opt_st)) != eslOK) goto ERROR;
+
+
+  for (b = 0; b < g->nblk; b++) if (seed[b].dp) free(seed[b].dp);
+  free(seed);
+  p7b_geo_Destroy(g);
+  if (ret_fwdsc) *ret_fwdsc = (float) fwdsc;
+  return eslOK;
+
+ ERROR:
+  if (seed) { for (b = 0; b < (g ? g->nblk : 0); b++) if (seed[b].dp) free(seed[b].dp); free(seed); }
+  if (g) p7b_geo_Destroy(g);
+  return status;
+}
+
+
+/* Function: cm_p7_GFBDecodeBandedDouble()
+ * Incept:   EPN, Thu Oct 22 2026 (w/Claude)  [brief 26_0821-141]
+ *
+ * Purpose:  The non-checkpointed engine's (INFERNAL_HMM_CKPT_OFF) banded
+ *           Forward + Backward + posterior decoding, in double precision.
+ *           Replaces the float
+ *               my_p7_GForwardBanded + p7_GBackwardBanded + p7_GDecodingBanded
+ *           sequence for cmalign's HMM-only alignment, which collapses at
+ *           genome scale (see the p7b_dlogsum() comment above).  Those
+ *           functions still serve cmsearch's --msvband/--vitband paths; since
+ *           brief 26_0821-151 their recursion is double too (through the same
+ *           row kernels), with float output matrices.
+ *
+ *           Full double F and B matrices are materialized -- that is what
+ *           distinguishes this engine from the checkpointed ones -- and
+ *           filled by the same per-row kernels (p7b_fwd_row/p7b_bwd_row),
+ *           with the same segment/gap handling, so all three engines give
+ *           identical posteriors.  The posterior is written into <pp>, a
+ *           3-cell P7_GMXB from p7_gmxb_Create(), ready for
+ *           p7_GOptimalAccuracyBanded()/p7_GOATraceBanded().  The double F/B
+ *           matrices are freed before returning, so the caller can then
+ *           allocate the (double, brief 26_0821-151) OA matrix without the
+ *           two overlapping.
+ *
+ * Args:     dsq       - digital sequence 1..L
+ *           L         - sequence length
+ *           gm        - profile
+ *           pp        - RESULT: posterior matrix, p7_gmxb_Create(bnd)
+ *           ret_fwdsc - RETURN: Forward score in nats
+ *           opt_bwdsc - optRETURN: Backward score in nats
+ *           opt_st    - optRETURN: decode counts (see CM_P7_DECSTATS)
+ *
+ * Returns:  eslOK on success; eslEMEM on allocation failure.
+ */
+int
+cm_p7_GFBDecodeBandedDouble(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm,
+                            P7_GMXB *pp, float *ret_fwdsc, float *opt_bwdsc,
+                            CM_P7_DECSTATS *opt_st)
+{
+  int      status;
+  P7B_GEO *g   = NULL;
+  double  *fdp = NULL, *bdp = NULL, *fx = NULL, *bx = NULL, *wrk = NULL;
+  int      M   = gm->M;
+  double   esc = p7_profile_IsLocal(gm) ? 0 : -eslINFINITY;
+  double   fwdsc, bwdsc;
+  double   xE, xN, xJ, xB, xC;
+  double   xE_o, xN_o, xJ_o, xB_o, xC_o;
+  const double *nbr;          /* previous (F) / next (B) row's dp, or NULL */
+  int      kn_a, kn_b;        /* that row's band                           */
+  int      r;
+
+  g = p7b_geo_Create(pp->bnd, M, L);
+  if (g == NULL) { status = eslEMEM; goto ERROR; }
+
+  /* dp offsets: g->dpoff[] indexes the compact 2-cell pp; the full F/B
+   * and this pp are 3-cell, so row r starts at dpoff[r]/2*3. */
+#define P7B_OFF3(r) (g->dpoff[(r)] / P7B_PP_NSCELLS * p7G_NSCELLS)
+
+  ESL_ALLOC(fdp, sizeof(double) * ((int64_t) pp->bnd->ncell * p7G_NSCELLS + 1));
+  ESL_ALLOC(bdp, sizeof(double) * ((int64_t) pp->bnd->ncell * p7G_NSCELLS + 1));
+  ESL_ALLOC(fx,  sizeof(double) * ((int64_t) g->nrow * 3 + 1));   /* F N,J,C after each row */
+  ESL_ALLOC(bx,  sizeof(double) * ((int64_t) g->nrow * 3 + 1));   /* B N,J,C after each row */
+  ESL_ALLOC(wrk, sizeof(double) * (2 * g->maxnc + 3));
+
+  /* Forward (mirror p7b_forward_seeds()) */
+  xN = 0.0; xJ = -eslINFINITY; xC = -eslINFINITY; xB = -eslINFINITY;
+  nbr = NULL; kn_a = kn_b = M+1;
+  for (r = 0; r < g->nrow; r++)
+    {
+      double *cur = fdp + P7B_OFF3(r);
+      if (g->gap[r] > 0 || r == 0) {
+        if (g->gap[r] > 0) {
+          xN += g->gap[r] * gm->xsc[p7P_N][p7P_LOOP];
+          xJ += g->gap[r] * gm->xsc[p7P_J][p7P_LOOP];
+          xC += g->gap[r] * gm->xsc[p7P_C][p7P_LOOP];
+        }
+        xB  = p7b_dlogsum( xN + gm->xsc[p7P_N][p7P_MOVE], xJ + gm->xsc[p7P_J][p7P_MOVE]);
+        nbr = NULL;
+      }
+      p7b_fwd_row(dsq, gm, M, esc, g->irow[r], g->ka[r], g->kb[r], nbr, kn_a, kn_b,
+                  xB, xN, xJ, xC, cur, &xE_o, &xN_o, &xJ_o, &xB_o, &xC_o);
+      xN = xN_o; xJ = xJ_o; xC = xC_o; xB = xB_o;
+      fx[3*r] = xN; fx[3*r+1] = xJ; fx[3*r+2] = xC;
+      nbr = cur; kn_a = g->ka[r]; kn_b = g->kb[r];
+    }
+  { int last_ib = (g->nrow > 0) ? g->irow[g->nrow-1] : 0;
+    int tail    = L - last_ib;
+    fwdsc = (tail > 0 ? xC + tail * gm->xsc[p7P_C][p7P_LOOP] : xC) + gm->xsc[p7P_C][p7P_MOVE];
+  }
+
+  /* Backward (mirror p7b_backward_seeds()) */
+  xC = gm->xsc[p7P_C][p7P_MOVE];
+  xE = xC + gm->xsc[p7P_E][p7P_MOVE];
+  xJ = xB = xN = -eslINFINITY;
+  nbr = NULL; kn_a = kn_b = M+1;
+  for (r = g->nrow - 1; r >= 0; r--)
+    {
+      int     i   = g->irow[r];
+      double *cur = bdp + P7B_OFF3(r);
+      if (r == g->nrow - 1 || g->gap[r+1] > 0) {
+        if (r < g->nrow - 1)   /* interior gap below the next segment (brief 26_0821-141) */
+          p7b_bwd_cross_gap(dsq, gm, M, g->irow[r+1], g->gap[r+1], nbr, kn_a, kn_b, &xC, &xJ, &xN, &xE);
+        else if (L - i > 0) { xC += (L - i) * gm->xsc[p7P_C][p7P_LOOP];   /* trailing rows: C only */
+                              xE  = p7b_dlogsum(xE, xC + gm->xsc[p7P_E][p7P_MOVE]); }
+        nbr = NULL; kn_a = kn_b = M+1;
+      }
+      p7b_bwd_row(dsq, gm, M, esc, i, L, g->ka[r], g->kb[r], nbr, kn_a, kn_b,
+                  &xC, &xJ, &xN, &xE, &xB, cur);
+      bx[3*r] = xN; bx[3*r+1] = xJ; bx[3*r+2] = xC;
+      nbr = cur; kn_a = g->ka[r]; kn_b = g->kb[r];
+    }
+  /* Backward total, row 0 (mirror p7_GBackwardBanded()): N(0) =
+   * logsum(N(1) + N_LOOP, B(0) + N_MOVE), B(0) summed over row 1's M cells. */
+  { int    i0  = (g->nrow > 0) ? g->irow[0] : L+1;
+    double xB0 = -eslINFINITY;   /* B of row i0-1: enter the first band row's M cells */
+    if (i0 <= L) {
+      float const *tsc = gm->tsc;
+      float const *rsc = gm->rsc[dsq[i0]];
+      int k;
+      for (k = ESL_MAX(1, g->ka[0]); k <= ESL_MIN(M, g->kb[0]); k++)
+        xB0 = p7b_dlogsum(xB0, bdp[(k - g->ka[0]) * p7G_NSCELLS + p7G_M] + TSC(p7P_BM, k-1) + MSC(k));
+    }
+    /* N(i0-1) from N(i0) and B(i0-1), then N loops down to row 0.  (brief
+     * 26_0821-141: B(i0-1) used to be counted only when i0 == 1.) */
+    bwdsc = p7b_dlogsum(xN + gm->xsc[p7P_N][p7P_LOOP], xB0 + gm->xsc[p7P_N][p7P_MOVE]);
+    if (i0 > 1) bwdsc += (i0 - 1) * gm->xsc[p7P_N][p7P_LOOP];
+  }
+
+  /* Decode (mirror p7b_backdecode()'s per-row assembly) */
+  if (opt_st) cm_p7_decstats_Init(opt_st);
+  for (r = 0; r < g->nrow; r++)
+    {
+      double pN = (r == 0) ? 0.0           : fx[3*(r-1)];
+      double pJ = (r == 0) ? -eslINFINITY  : fx[3*(r-1)+1];
+      double pC = (r == 0) ? -eslINFINITY  : fx[3*(r-1)+2];
+      if (g->gap[r] > 0) {
+        pN += g->gap[r] * gm->xsc[p7P_N][p7P_LOOP];
+        pJ += g->gap[r] * gm->xsc[p7P_J][p7P_LOOP];
+        pC += g->gap[r] * gm->xsc[p7P_C][p7P_LOOP];
+      }
+      p7b_decode_row(g, gm, fwdsc, g->ka[r], g->kb[r], fdp + P7B_OFF3(r), bdp + P7B_OFF3(r),
+                     bx[3*r], bx[3*r+1], bx[3*r+2], pN, pJ, pC, wrk, p7G_NSCELLS,
+                     pp->dp + P7B_OFF3(r), pp->xmx + (int64_t) r * p7G_NXCELLS, opt_st);
+    }
+#undef P7B_OFF3
+
+  free(fdp); free(bdp); free(fx); free(bx); free(wrk);
+  p7b_geo_Destroy(g);
+  if (ret_fwdsc) *ret_fwdsc = (float) fwdsc;
+  if (opt_bwdsc) *opt_bwdsc = (float) bwdsc;
+  return eslOK;
+
+ ERROR:
+  if (fdp) free(fdp);
+  if (bdp) free(bdp);
+  if (fx)  free(fx);
+  if (bx)  free(bx);
+  if (wrk) free(wrk);
+  if (g)   p7b_geo_Destroy(g);
+  return status;
+}
+
+/*****************************************************************
+ * STEP OA + TB: sqrt(nrow)-checkpointed banded optimal accuracy
+ *
+ * brief 26_0821-144: the OA values (sums of posteriors along a path,
+ * up to ~L) are double, storage included: the row kernel, seeds, row
+ * buffers, traceback window and traceback comparisons. In float, at
+ * genome scale (L ~ 2e5, ulp ~ 0.016) the rounding tipped near-ties:
+ * 186 of 204 HK genome alignments changed against a double shadow,
+ * up to 10% of residues on one mpox row (fr0 0.899). The posteriors
+ * themselves stay float.
+ *****************************************************************/
+
+#define P7B_TSCDELTA(s,k) ( (tsc[(k) * p7P_NTRANS + (s)] == -eslINFINITY) ? FLT_MIN : 1.0f )
+
+/* p7b_oa_row(): fill one banded OA row.  Verbatim copy of the per-row
+ * body of p7_GOptimalAccuracyBanded().  Reads the resident pp row
+ * (pp_dp cells, pp_xp specials); writes OA dp (ascending k) + returns
+ * specials. */
+static void
+p7b_oa_row(const P7_PROFILE *gm, int M, double esc,
+           int kac, int kbc, const double *dpp, int kap, int kbp,
+           const float *pp_dp, const float *pp_xp,
+           double xB, double xN_in, double xJ_in, double xC_in,
+           double *dpc,
+           double *o_xE, double *o_xN, double *o_xJ, double *o_xB, double *o_xC)
+{
+  float const *tsc = gm->tsc;
+  double  mvp, ivp, dvp, dc, sc, xE, pp_m, t1, t2;
+  int    k;
+  int    kbc2 = (kbc == M ? kbc - 1 : kbc);
+  const float *ppp = pp_dp;
+
+  dc = -eslINFINITY;
+  xE = -eslINFINITY;
+
+  if (dpp != NULL) dpp += (kac-1 > kap ? ESL_MIN(kac-kap-1, kbp-kap+1) * p7G_NSCELLS : 0);
+  if (dpp != NULL && kac > kap && kac-1 <= kbp) { mvp = *dpp++; ivp = *dpp++; dvp = *dpp++; }
+  else                                          { mvp = -eslINFINITY; ivp = -eslINFINITY; dvp = -eslINFINITY; }
+
+  for (k = kac; k <= kbc2; k++)
+    {
+      pp_m = ppp[0];
+      *dpc++ = sc = ESL_MAX(ESL_MAX(P7B_TSCDELTA(p7P_MM, k-1) * (mvp + pp_m),
+                                    P7B_TSCDELTA(p7P_IM, k-1) * (ivp + pp_m)),
+                            ESL_MAX(P7B_TSCDELTA(p7P_DM, k-1) * (dvp + pp_m),
+                                    P7B_TSCDELTA(p7P_BM, k-1) * (xB  + pp_m)));
+
+      if (dpp != NULL && k >= kap && k <= kbp) { mvp = *dpp++; ivp = *dpp++; dvp = *dpp++; }
+      else                                     { mvp = -eslINFINITY; ivp = -eslINFINITY; dvp = -eslINFINITY; }
+
+      *dpc++ = ESL_MAX(P7B_TSCDELTA(p7P_MI, k) * (mvp + ppp[1]),
+                       P7B_TSCDELTA(p7P_II, k) * (ivp + ppp[1]));
+
+      xE = ESL_MAX(xE, esc * sc);
+
+      *dpc++ = dc;
+      dc = ESL_MAX(P7B_TSCDELTA(p7P_MD, k) * sc, P7B_TSCDELTA(p7P_DD, k) * dc);
+
+      ppp += P7B_PP_NSCELLS;   /* brief 26_0526-017: pp is compact 2-cell (M,I) */
+    }
+
+  if (kbc2 < kbc) /* kbc==M unrolled */
+    {
+      pp_m = ppp[0];
+      *dpc++ = sc = ESL_MAX(ESL_MAX(P7B_TSCDELTA(p7P_MM, k-1) * (mvp + pp_m),
+                                    P7B_TSCDELTA(p7P_IM, k-1) * (ivp + pp_m)),
+                            ESL_MAX(P7B_TSCDELTA(p7P_DM, k-1) * (dvp + pp_m),
+                                    P7B_TSCDELTA(p7P_BM, k-1) * (xB  + pp_m)));
+      *dpc++ = -eslINFINITY;
+      *dpc++ = dc;
+      xE = ESL_MAX(xE, ESL_MAX(sc, dc));
+      ppp += P7B_PP_NSCELLS;   /* brief 26_0526-017: pp is compact 2-cell (M,I) */
+    }
+
+  *o_xE = xE;
+  t1 = (gm->xsc[p7P_N][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0f;
+  *o_xN = t1 * (xN_in + pp_xp[p7G_N]);
+  t1 = (gm->xsc[p7P_J][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0f;
+  t2 = (gm->xsc[p7P_E][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0f;
+  *o_xJ = ESL_MAX(t1 * (xJ_in + pp_xp[p7G_J]), t2 * xE);
+  t1 = (gm->xsc[p7P_N][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f;
+  t2 = (gm->xsc[p7P_J][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f;
+  *o_xB = ESL_MAX(t1 * (*o_xN), t2 * (*o_xJ));
+  t1 = (gm->xsc[p7P_C][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0f;
+  t2 = (gm->xsc[p7P_E][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f;
+  *o_xC = ESL_MAX(t1 * (xC_in + pp_xp[p7G_C]), t2 * xE);
+}
+
+/* p7b_oa_enter(): compute the entering OA state for a row, factoring the
+ * segment-start reset (OA resets N/J/C to -inf at a segment start; it
+ * does NOT advance them through the gap the way Forward does). */
+static void
+p7b_oa_seg_start(const P7_PROFILE *gm, double *xN, double *xJ, double *xC, double *xB, int do_reset)
+{
+  double t1, t2;
+  if (do_reset) { *xN = -eslINFINITY; *xJ = -eslINFINITY; *xC = -eslINFINITY; }
+  t1 = (gm->xsc[p7P_N][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f;
+  t2 = (gm->xsc[p7P_J][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f;
+  *xB = ESL_MAX(t1 * (*xN), t2 * (*xJ));
+}
+
+/* p7b_oa_seeds(): STEP OA.  Stream banded OA forward once, store the
+ * entering state per block, return the OA score.
+ *
+ * brief 26_0628-081: the posterior is read through <view>.  When <ppw>
+ * is NULL, <view> is the legacy resident pp and nothing else changes.
+ * When <ppw> is non-NULL the resident pp does not exist: at each block
+ * boundary the block's pp rows are recomputed into <ppw>'s O(B*maxnc)
+ * buffer and <view> is repointed at them.  The row loop, its order, and
+ * the per-row arithmetic are untouched either way. */
+static int
+p7b_oa_seeds(const P7_PROFILE *gm, const P7B_GEO *g, P7B_PPVIEW *view,
+             P7B_PPWORK *ppw, P7B_FSEED *seed, float *ret_oasc)
+{
+  int    status;
+  int    M = g->M, B = g->B;
+  double  esc = p7_profile_IsLocal(gm) ? 1.0f : 0.0f;
+  double *buf0 = NULL, *buf1 = NULL, *prev = NULL, *cur;
+  int    r, kap = M+1, kbp = M+1;
+  double  xN = 0.0f, xJ = -eslINFINITY, xC = -eslINFINITY, xB = -eslINFINITY;
+  double  xE_o, xN_o, xJ_o, xB_o, xC_o;
+
+  ESL_ALLOC(buf0, sizeof(double) * (g->maxnc * p7G_NSCELLS + 1));
+  ESL_ALLOC(buf1, sizeof(double) * (g->maxnc * p7G_NSCELLS + 1));
+
+  for (r = 0; r < g->nrow; r++)
+    {
+      int   kac = g->ka[r], kbc = g->kb[r];
+      const double *dpp;
+      int   seg_start = (g->gap[r] > 0) || (r == 0);
+      const float *pp_dp, *pp_xp;
+
+      if (ppw != NULL && (r % B) == 0)   /* r starts block r/B: refill the pp window */
+        p7b_ppwork_fill(ppw, gm, g, r / B, r, ESL_MIN(r + B - 1, g->nrow - 1), view);
+
+      pp_dp = p7b_ppview_dp(view, g, r);
+      pp_xp = p7b_ppview_xp(view, g, r);
+
+      cur = (prev == buf0) ? buf1 : buf0;
+
+      if (seg_start) { p7b_oa_seg_start(gm, &xN, &xJ, &xC, &xB, (g->gap[r] > 0)); dpp = NULL; }
+      else           { dpp = prev; }
+
+      p7b_oa_row(gm, M, esc, kac, kbc, dpp, kap, kbp, pp_dp, pp_xp,
+                 xB, xN, xJ, xC, cur, &xE_o, &xN_o, &xJ_o, &xB_o, &xC_o);
+
+      xN = xN_o; xJ = xJ_o; xC = xC_o; xB = xB_o;
+      kap = kac; kbp = kbc;
+      prev = cur;
+
+      if (r + 1 < g->nrow && ((r + 1) % B) == 0) {
+        int b = (r + 1) / B, nc = kbc - kac + 1;
+        ESL_ALLOC(seed[b].dp, sizeof(double) * nc * p7G_NSCELLS);
+        memcpy(seed[b].dp, cur, sizeof(double) * nc * p7G_NSCELLS);
+        seed[b].ka = kac; seed[b].kb = kbc;
+        seed[b].xN = xN; seed[b].xJ = xJ; seed[b].xC = xC; seed[b].xB = xB;
+        seed[b].valid = 1;
+      }
+    }
+
+  *ret_oasc = xC;   /* mirror p7_GOptimalAccuracyBanded: ret_e = xC after last row */
+  free(buf0); free(buf1);
+  return eslOK;
+
+ ERROR:
+  if (buf0) free(buf0);
+  if (buf1) free(buf1);
+  return status;
+}
+
+/* p7b_oa_fill_region(): recompute OA rows [lo..hi] from seed[b] into
+ * caller buffers, producing BOTH dp (oadp, packed, offsets in oaoff)
+ * and xmx (oaxmx, p7G_NXCELLS per row).  Used by the traceback window. */
+static void
+p7b_oa_fill_region(const P7_PROFILE *gm, const P7B_GEO *g, const P7B_PPVIEW *view,
+                   const P7B_FSEED *seed, int b, int lo, int hi,
+                   double *oadp, int64_t *oaoff, double *oaxmx)
+{
+  int    M = g->M;
+  double  esc = p7_profile_IsLocal(gm) ? 1.0f : 0.0f;
+  int    r, kap, kbp;
+  double  xN, xJ, xC, xB = -eslINFINITY;
+  int64_t cum = 0;
+
+  if (b == 0) { xN = 0.0f; xJ = -eslINFINITY; xC = -eslINFINITY; kap = kbp = M+1; }
+  else        { xN = seed[b].xN; xJ = seed[b].xJ; xC = seed[b].xC; xB = seed[b].xB;
+                kap = seed[b].ka; kbp = seed[b].kb; }
+
+  for (r = lo; r <= hi; r++)
+    {
+      int   kac = g->ka[r], kbc = g->kb[r];
+      double xE_o, xN_o, xJ_o, xB_o, xC_o;
+      double *dpc = oadp + cum;
+      double *xpc = oaxmx + (int64_t)(r - lo) * p7G_NXCELLS;
+      const double *dpp;
+      int   seg_start = (g->gap[r] > 0) || (r == 0);
+      const float *pp_dp = p7b_ppview_dp(view, g, r);
+      const float *pp_xp = p7b_ppview_xp(view, g, r);
+
+      if (seg_start) { p7b_oa_seg_start(gm, &xN, &xJ, &xC, &xB, (g->gap[r] > 0)); dpp = NULL; }
+      else           { dpp = (r == lo) ? seed[b].dp : (oadp + oaoff[r-1-lo]); }
+
+      p7b_oa_row(gm, M, esc, kac, kbc, dpp, kap, kbp, pp_dp, pp_xp,
+                 xB, xN, xJ, xC, dpc, &xE_o, &xN_o, &xJ_o, &xB_o, &xC_o);
+
+      xpc[p7G_E] = xE_o; xpc[p7G_N] = xN_o; xpc[p7G_J] = xJ_o; xpc[p7G_B] = xB_o; xpc[p7G_C] = xC_o;
+      oaoff[r-lo] = cum;
+      xN = xN_o; xJ = xJ_o; xC = xC_o; xB = xB_o;
+      kap = kac; kbp = kbc;
+      cum += (int64_t)(kbc - kac + 1) * p7G_NSCELLS;
+    }
+}
+
+/* On-demand recomputed OA window for the checkpointed traceback.
+ * brief 26_0628-081: when <ppw> is non-NULL the same window also holds
+ * the block's recomputed posterior rows (in <view>), so the traceback's
+ * PP_* accessors no longer need a resident pp either.  The window is
+ * B+1 rows -- one full block plus the +1 overlap row -- which is what
+ * lets the (i-1, i) row pairs in the C/J cases resolve without
+ * thrashing (see the accessor-ordering comment in p7b_oa_trace). */
+typedef struct {
+  const P7B_GEO    *g;
+  const int        *row_idx;
+  const P7_PROFILE *gm;
+  P7B_PPVIEW        view;
+  P7B_PPWORK       *ppw;      /* NULL => view.pp is the resident pp */
+  const P7B_FSEED  *seed;
+  int     B, nrow;
+  double  *oadp;  int64_t *oaoff;  double *oaxmx;
+  int     wlo, whi;
+} P7B_OAWIN;
+
+static void
+p7b_oawin_ensure(P7B_OAWIN *w, int r)
+{
+  if (r < w->wlo || r > w->whi) {
+    int b = r / w->B;
+    w->wlo = b * w->B;
+    w->whi = ESL_MIN((b+1) * w->B, w->nrow - 1);
+    if (w->ppw != NULL)   /* recompute this block's posterior rows first: OA reads them */
+      p7b_ppwork_fill(w->ppw, w->gm, w->g, b, w->wlo, w->whi, &w->view);
+    p7b_oa_fill_region(w->gm, w->g, &w->view, w->seed, b, w->wlo, w->whi, w->oadp, w->oaoff, w->oaxmx);
+  }
+}
+
+static double
+p7b_oawin_dp(P7B_OAWIN *w, int p, int k, int cell)
+{
+  int r;
+  if (p < 0 || p > w->g->L) return -eslINFINITY;
+  r = w->row_idx[p];
+  if (r < 0) return -eslINFINITY;
+  if (k < w->g->ka[r] || k > w->g->kb[r]) return -eslINFINITY;
+  p7b_oawin_ensure(w, r);
+  return w->oadp[ w->oaoff[r - w->wlo] + (int64_t)(k - w->g->ka[r]) * p7G_NSCELLS + cell ];
+}
+
+static double
+p7b_oawin_x(P7B_OAWIN *w, int p, int s)
+{
+  int r;
+  if (p == 0) return ((s == p7G_N || s == p7G_B) ? 0.0f : -eslINFINITY);
+  if (p < 0 || p > w->g->L) return -eslINFINITY;
+  r = w->row_idx[p];
+  if (r < 0) return -eslINFINITY;
+  p7b_oawin_ensure(w, r);
+  return w->oaxmx[ (int64_t)(r - w->wlo) * p7G_NXCELLS + s ];
+}
+
+/* brief 26_0628-081: pp is read through the same window as OA.  With a
+ * resident pp (w->ppw == NULL) no ensure() is needed and none is done,
+ * so the legacy path's recompute count is unchanged. */
+static float
+p7b_pp_dp(P7B_OAWIN *w, int p, int k, int cell)
+{
+  const P7B_GEO *g = w->g;
+  int r;
+  if (p < 0 || p > g->L) return -eslINFINITY;
+  r = w->row_idx[p];
+  if (r < 0) return -eslINFINITY;
+  if (k < g->ka[r] || k > g->kb[r]) return -eslINFINITY;
+  if (w->ppw != NULL) p7b_oawin_ensure(w, r);
+  /* brief 26_0526-017: 2-cell pp; cell in {p7G_M=0, p7G_I=1} */
+  return p7b_ppview_dp(&w->view, g, r)[ (int64_t)(k - g->ka[r]) * P7B_PP_NSCELLS + cell ];
+}
+
+static float
+p7b_pp_x(P7B_OAWIN *w, int p, int s)
+{
+  const P7B_GEO *g = w->g;
+  int r;
+  if (p == 0) return ((s == p7G_N || s == p7G_B) ? 0.0f : -eslINFINITY);
+  if (p < 0 || p > g->L) return -eslINFINITY;
+  r = w->row_idx[p];
+  if (r < 0) return -eslINFINITY;
+  if (w->ppw != NULL) p7b_oawin_ensure(w, r);
+  return p7b_ppview_xp(&w->view, g, r)[s];
+}
+
+/* p7b_oa_trace(): STEP TB.  Byte-exact reproduction of p7_GOATraceBanded,
+ * but the OA matrix is accessed through an on-demand recomputed window
+ * (one block + 1 overlap row) instead of a full resident matrix.
+ *
+ * brief 26_0628-081: when <ppw> is non-NULL, the posterior is windowed
+ * the same way (recomputed per block from the F/B seeds) instead of
+ * being fully resident; when <ppw> is NULL, <view> carries the legacy
+ * resident pp and behavior is unchanged. */
+static int
+p7b_oa_trace(const P7_PROFILE *gm, const P7B_GEO *g, const P7B_PPVIEW *view,
+             P7B_PPWORK *ppw, const P7B_FSEED *seed, P7_TRACE *tr)
+{
+  float const *tsc = gm->tsc;
+  int     M = g->M, L = g->L, B = g->B, nrow = g->nrow;
+  int     status;
+
+  /* pp lookup: resident (legacy) or windowed (ckpt-pp) */
+  int    *row_idx = NULL;   /* seq pos -> banded row r (-1 outside) */
+  int     i, k, r;
+
+  /* OA window state */
+  double  *oadp  = NULL;     /* B+1 rows of OA dp, packed       */
+  int64_t*oaoff = NULL;     /* [0..B] per-window-row dp offset */
+  double  *oaxmx = NULL;     /* [0..B] * p7G_NXCELLS            */
+  int     win_cap = B + 2;
+  P7B_OAWIN w;
+
+  int     sprv, scur;
+  double   postprob;
+
+  ESL_ALLOC(row_idx, sizeof(int) * (L + 1));
+  for (i = 0; i <= L; i++) row_idx[i] = -1;
+  for (r = 0; r < nrow; r++) row_idx[g->irow[r]] = r;
+
+  ESL_ALLOC(oadp,  sizeof(double)   * ((int64_t) win_cap * g->maxnc * p7G_NSCELLS + 1));
+  ESL_ALLOC(oaoff, sizeof(int64_t) * win_cap);
+  ESL_ALLOC(oaxmx, sizeof(double)   * ((int64_t) win_cap * p7G_NXCELLS));
+
+  w.g = g; w.row_idx = row_idx; w.gm = gm; w.view = *view; w.ppw = ppw; w.seed = seed;
+  w.B = B; w.nrow = nrow; w.oadp = oadp; w.oaoff = oaoff; w.oaxmx = oaxmx;
+  w.wlo = -1; w.whi = -2;
+
+  /* OA accessors (windowed, recompute on demand); PP accessors (resident).
+   * In the C/J cases that read both row i and row i-1, the LOWER row
+   * (i-1) is evaluated first so the +1 overlap row keeps row i in the
+   * window. */
+#define OA_M(p,kk) p7b_oawin_dp(&w, (p), (kk), p7G_M)
+#define OA_I(p,kk) p7b_oawin_dp(&w, (p), (kk), p7G_I)
+#define OA_D(p,kk) p7b_oawin_dp(&w, (p), (kk), p7G_D)
+#define OA_X(p,ss) p7b_oawin_x(&w, (p), (ss))
+#define PP_M(p,kk) p7b_pp_dp(&w, (p), (kk), p7G_M)
+#define PP_I(p,kk) p7b_pp_dp(&w, (p), (kk), p7G_I)
+#define PP_X(p,ss) p7b_pp_x(&w, (p), (ss))
+
+  i = L; k = 0;
+  if ((status = p7_trace_AppendWithPP(tr, p7T_T, k, i, 0.0)) != eslOK) goto ERROR;
+  if ((status = p7_trace_AppendWithPP(tr, p7T_C, k, i, 0.0)) != eslOK) goto ERROR;
+
+  sprv = p7T_C;
+  while (sprv != p7T_S)
+    {
+      switch (sprv) {
+      case p7T_M:
+        {
+          if (k - 1 == 0) {
+            /* Node 0 has no M/D state: the only valid entry into M1 is B->M1. */
+            scur = p7T_B;
+          } else {
+            double path[4];
+            int   state[4] = { p7T_M, p7T_I, p7T_D, p7T_B };
+            path[0] = P7B_TSCDELTA(p7P_MM, k-1) * OA_M(i-1, k-1);
+            path[1] = P7B_TSCDELTA(p7P_IM, k-1) * OA_I(i-1, k-1);
+            path[2] = P7B_TSCDELTA(p7P_DM, k-1) * OA_D(i-1, k-1);
+            path[3] = P7B_TSCDELTA(p7P_BM, k-1) * OA_X(i-1, p7G_B);
+            scur = state[esl_vec_DArgMax(path, 4)];
+          }
+          k--; i--;
+        }
+        break;
+      case p7T_D:
+        {
+          double path[2];
+          path[0] = P7B_TSCDELTA(p7P_MD, k-1) * OA_M(i, k-1);
+          path[1] = P7B_TSCDELTA(p7P_DD, k-1) * OA_D(i, k-1);
+          scur = (path[0] >= path[1]) ? p7T_M : p7T_D;
+          k--;
+        }
+        break;
+      case p7T_I:
+        {
+          double path[2];
+          path[0] = P7B_TSCDELTA(p7P_MI, k) * OA_M(i-1, k);
+          path[1] = P7B_TSCDELTA(p7P_II, k) * OA_I(i-1, k);
+          scur = (path[0] >= path[1]) ? p7T_M : p7T_I;
+          i--;
+        }
+        break;
+      case p7T_N:
+        scur = (i == 0) ? p7T_S : p7T_N;
+        break;
+      case p7T_C:
+        {
+          double t1c = (gm->xsc[p7P_C][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0f;
+          double t2c = (gm->xsc[p7P_E][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f;
+          double path[2];
+          path[0] = t1c * (OA_X(i-1, p7G_C) + PP_X(i, p7G_C));
+          path[1] = t2c *  OA_X(i, p7G_E);
+          scur = (path[0] > path[1]) ? p7T_C : p7T_E;
+        }
+        break;
+      case p7T_J:
+        {
+          double t1j = (gm->xsc[p7P_J][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0f;
+          double t2j = (gm->xsc[p7P_E][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0f;
+          double path[2];
+          path[0] = t1j * (OA_X(i-1, p7G_J) + PP_X(i, p7G_J));
+          path[1] = t2j *  OA_X(i, p7G_E);
+          scur = (path[0] > path[1]) ? p7T_J : p7T_E;
+        }
+        break;
+      case p7T_E:
+        {
+          double max  = -eslINFINITY;
+          int   smax = -1, kmax = -1;
+          int   ri   = row_idx[i];
+          if (! p7_profile_IsLocal(gm)) {
+            k = M;
+            scur = (OA_M(i, M) >= OA_D(i, M)) ? p7T_M : p7T_D;
+          } else {
+            if (ri >= 0) {
+              int ka = g->ka[ri], kb = g->kb[ri];
+              for (k = ka; k <= kb; k++) {
+                double mv = OA_M(i, k);
+                double dv = OA_D(i, k);
+                if (mv >= max) { max = mv; smax = p7T_M; kmax = k; }
+                if (dv >  max) { max = dv; smax = p7T_D; kmax = k; }
+              }
+            }
+            k = kmax; scur = smax;
+          }
+        }
+        break;
+      case p7T_B:
+        {
+          double t1b = (gm->xsc[p7P_N][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f;
+          double t2b = (gm->xsc[p7P_J][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0f;
+          double path[2];
+          path[0] = t1b * OA_X(i, p7G_N);
+          path[1] = t2b * OA_X(i, p7G_J);
+          if (gm->xsc[p7P_E][p7P_LOOP] == -eslINFINITY) scur = p7T_N;
+          else scur = (path[0] > path[1]) ? p7T_N : p7T_J;
+        }
+        break;
+      default:
+        status = eslEINVAL; goto ERROR;
+      }
+
+      if (scur == -1) { status = eslEINVAL; goto ERROR; }
+
+      switch (scur) {
+      case p7T_M: postprob = PP_M(i, k);                                 break;
+      case p7T_I: postprob = PP_I(i, k);                                 break;
+      case p7T_N: postprob = (scur == sprv) ? PP_X(i, p7G_N) : 0.0f;     break;
+      case p7T_C: postprob = (scur == sprv) ? PP_X(i, p7G_C) : 0.0f;     break;
+      case p7T_J: postprob = (scur == sprv) ? PP_X(i, p7G_J) : 0.0f;     break;
+      default:    postprob = 0.0f;                                       break;
+      }
+
+      if ((status = p7_trace_AppendWithPP(tr, scur, k, i, postprob)) != eslOK) goto ERROR;
+
+      if ((scur == p7T_N || scur == p7T_J || scur == p7T_C) && scur == sprv) i--;
+      sprv = scur;
+    }
+
+  tr->M = M; tr->L = L;
+  status = p7_trace_Reverse(tr);
+
+  free(row_idx); free(oadp); free(oaoff); free(oaxmx);
+  return status;
+
+#undef OA_M
+#undef OA_I
+#undef OA_D
+#undef OA_X
+#undef PP_M
+#undef PP_I
+#undef PP_X
+ ERROR:
+  if (row_idx) free(row_idx);
+  if (oadp)    free(oadp);
+  if (oaoff)   free(oaoff);
+  if (oaxmx)   free(oaxmx);
+  return status;
+}
+
+#undef P7B_TSCDELTA
+
+/* Function: p7_GCheckptOA_Banded()
+ * Incept:   Brief 26_0526-016
+ *
+ * Purpose:  sqrt(nrow)-row checkpointed banded optimal-accuracy alignment.
+ *           Drop-in replacement for the
+ *               p7_GOptimalAccuracyBanded + p7_GOATraceBanded
+ *           pair, producing a byte-identical OA trace (alignment + PP)
+ *           and OA score, but storing only ~sqrt(nrow) OA seed rows
+ *           instead of a full OA banded matrix; the traceback recomputes
+ *           OA row blocks from the seeds on demand.  Reads the resident
+ *           posterior <pp> (from p7_GCheckptFBDecode_Banded).
+ *
+ * Args:     gm       - profile
+ *           pp       - banded posterior matrix (resident)
+ *           tr       - RESULT: OA trace (caller-provided, Reuse'd)
+ *           ret_oasc - RETURN: OA score
+ *
+ * Returns:  eslOK on success.
+ */
+int
+cm_p7_GCheckptOA_Banded(const P7_PROFILE *gm, P7_GMXB *pp, P7_TRACE *tr, float *ret_oasc)
+{
+  int         status;
+  P7B_GEO    *g = NULL;
+  P7B_FSEED  *seed = NULL;
+  P7B_PPVIEW  view;
+  float       oasc = 0.;
+  int         b;
+
+  if (p7b_oa_band_check(pp->bnd, pp->bnd->L) != eslOK) return eslEINVAL;   /* brief 26_0821-144 */
+
+  g = p7b_geo_Create(pp->bnd, gm->M, pp->bnd->L);
+  if (g == NULL) { status = eslEMEM; goto ERROR; }
+
+  ESL_ALLOC(seed, sizeof(P7B_FSEED) * (g->nblk > 0 ? g->nblk : 1));
+  for (b = 0; b < g->nblk; b++) { seed[b].dp = NULL; seed[b].valid = 0; }
+
+  /* resident-pp view (brief 26_0628-081): ppw==NULL selects the legacy path */
+  view.pp = pp; view.ppblk = NULL; view.pproff = NULL; view.ppxmx = NULL;
+  view.lo = 0;  view.hi = g->nrow - 1;
+
+  if ((status = p7b_oa_seeds(gm, g, &view, NULL, seed, &oasc)) != eslOK) goto ERROR;
+  if ((status = p7b_oa_trace(gm, g, &view, NULL, seed, tr))    != eslOK) goto ERROR;
+
+  for (b = 0; b < g->nblk; b++) if (seed[b].dp) free(seed[b].dp);
+  free(seed);
+  p7b_geo_Destroy(g);
+  if (ret_oasc) *ret_oasc = oasc;
+  return eslOK;
+
+ ERROR:
+  if (seed) { for (b = 0; b < (g ? g->nblk : 0); b++) if (seed[b].dp) free(seed[b].dp); free(seed); }
+  if (g) p7b_geo_Destroy(g);
+  return status;
+}
+
+/* Function: p7_GCheckptFBDecodeOA_Banded()
+ * Incept:   brief 26_0628-081
+ *
+ * Purpose:  Fully checkpointed banded Forward/Backward/Decode/optimal-
+ *           accuracy/traceback -- the DOUBLE-checkpointed engine.  Drop-in
+ *           replacement for the
+ *               p7b_pp_Create + p7_GCheckptFBDecode_Banded + p7_GCheckptOA_Banded
+ *           sequence, producing a bit-identical Forward score, OA score
+ *           and OA trace (alignment + posterior annotation), but never
+ *           allocating the O(bnd->ncell) resident posterior that that
+ *           sequence needs.
+ *
+ *           Passes, in order:
+ *             A  p7b_forward_seeds()  -- stream Forward,  lay ~sqrt(nrow) F seeds
+ *             B1 p7b_backward_seeds() -- stream Backward, lay ~sqrt(nrow) B seeds
+ *             OA p7b_oa_seeds()       -- per block: recompute F and B rows from
+ *                                        their seeds, form that block's pp rows,
+ *                                        run OA over them ascending, lay OA seeds
+ *             TB p7b_oa_trace()       -- traceback over an on-demand recomputed
+ *                                        (pp + OA) block window
+ *
+ *           Peak resident DP term: O(sqrt(nrow) * maxnc) -- three seed
+ *           arrays plus a handful of one-block buffers.  Cost: two extra
+ *           O(ncell) recompute passes relative to the resident-pp engine.
+ *
+ * Args:     dsq       - digital sequence 1..L
+ *           L         - sequence length
+ *           gm        - profile
+ *           bnd       - the band (caller keeps ownership)
+ *           tr        - RESULT: OA trace (caller-provided; Reuse'd by caller)
+ *           ret_fwdsc - RETURN: Forward score in nats
+ *           ret_oasc  - RETURN: OA score
+ *           opt_st    - optRETURN: decode counts (see CM_P7_DECSTATS)
+ *
+ * Returns:  eslOK on success.
+ */
+int
+cm_p7_GCheckptFBDecodeOA_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm,
+                             P7_GBANDS *bnd, P7_TRACE *tr,
+                             float *ret_fwdsc, float *ret_oasc, CM_P7_DECSTATS *opt_st)
+{
+  int         status;
+  P7B_GEO    *g      = NULL;
+  P7B_DFSEED *fseed  = NULL;
+  P7B_BSEED  *bseed  = NULL;
+  P7B_FSEED  *oaseed = NULL;
+  P7B_PPWORK *ppw    = NULL;
+  P7B_PPVIEW  view;
+  double      fwdsc = 0.;
+  float       oasc  = 0.;
+  int         b;
+
+  if (p7b_oa_band_check(bnd, L) != eslOK) return eslEINVAL;   /* brief 26_0821-144 */
+
+  g = p7b_geo_Create(bnd, gm->M, L);
+  if (g == NULL) { status = eslEMEM; goto ERROR; }
+
+  ESL_ALLOC(fseed,  sizeof(P7B_DFSEED) * (g->nblk > 0 ? g->nblk : 1));
+  ESL_ALLOC(bseed,  sizeof(P7B_BSEED) * (g->nblk > 0 ? g->nblk : 1));
+  ESL_ALLOC(oaseed, sizeof(P7B_FSEED) * (g->nblk > 0 ? g->nblk : 1));
+  for (b = 0; b < g->nblk; b++) { fseed[b].dp  = NULL; fseed[b].valid  = 0; }
+  for (b = 0; b < g->nblk; b++) { bseed[b].dp  = NULL; bseed[b].valid  = 0; }
+  for (b = 0; b < g->nblk; b++) { oaseed[b].dp = NULL; oaseed[b].valid = 0; }
+
+  if ((status = p7b_forward_seeds (dsq, gm, g, fseed, &fwdsc)) != eslOK) goto ERROR;
+  if ((status = p7b_backward_seeds(dsq, gm, g, bseed))         != eslOK) goto ERROR;
+
+  ppw = p7b_ppwork_Create(dsq, g, fseed, bseed, fwdsc);
+  if (ppw == NULL) { status = eslEMEM; goto ERROR; }
+
+  view.pp = NULL; view.ppblk = NULL; view.pproff = NULL; view.ppxmx = NULL;
+  view.lo = 0; view.hi = -1;
+
+  if (opt_st) cm_p7_decstats_Init(opt_st);
+  ppw->st = opt_st;     /* count each row once, in the OA pass ... */
+  if ((status = p7b_oa_seeds(gm, g, &view, ppw, oaseed, &oasc))  != eslOK) goto ERROR;
+  ppw->st = NULL;       /* ... not again in the traceback's recompute */
+  if ((status = p7b_oa_trace(gm, g, &view, ppw, oaseed, tr))     != eslOK) goto ERROR;
+
+
+  for (b = 0; b < g->nblk; b++) { if (fseed[b].dp)  free(fseed[b].dp);
+                                  if (bseed[b].dp)  free(bseed[b].dp);
+                                  if (oaseed[b].dp) free(oaseed[b].dp); }
+  free(fseed); free(bseed); free(oaseed);
+  p7b_ppwork_Destroy(ppw);
+  p7b_geo_Destroy(g);
+  if (ret_fwdsc) *ret_fwdsc = (float) fwdsc;
+  if (ret_oasc)  *ret_oasc  = oasc;
+  return eslOK;
+
+ ERROR:
+  for (b = 0; b < (g ? g->nblk : 0); b++) {
+    if (fseed  && fseed[b].dp)  free(fseed[b].dp);
+    if (bseed  && bseed[b].dp)  free(bseed[b].dp);
+    if (oaseed && oaseed[b].dp) free(oaseed[b].dp);
+  }
+  if (fseed)  free(fseed);
+  if (bseed)  free(bseed);
+  if (oaseed) free(oaseed);
+  if (ppw)    p7b_ppwork_Destroy(ppw);
+  if (g)      p7b_geo_Destroy(g);
+  return status;
+}
+
+/* Function: cm_nodepad_cmpint()
+ * Helper for qsort in cm_ComputeP7CMNodePad().
+ */
+static int cm_nodepad_cmpint(const void *a, const void *b) {
+  int x = *(const int *)a, y = *(const int *)b;
+  return (x<y)?-1:(x>y);
+}
+
+/* Structure for work units passed through the work queue
+ * in the threaded cm_ComputeP7CMNodePad() path.
+ * A small recycling pool of these structs cycles between reader and workers.
+ *
+ * The master thread performs all RNG-consuming steps (EmitParsetree and
+ * flanking-residue generation) in sample order, then hands the emitted
+ * parsetree + sequence + flanked digitized sequence to a worker via this
+ * struct. The worker does pure Viterbi DP and deficit recording, then
+ * frees the cm_tr/esq/emb allocations (ownership transfers on pickup).
+ * This makes results deterministic regardless of thread scheduling, and
+ * bit-for-bit identical to the serial path.
+ */
+typedef struct {
+  int           idx;    /* sample index to process; -1 = sentinel (stop signal) */
+  Parsetree_t  *cm_tr;  /* emitted CM parsetree (filled by master; freed by worker) */
+  ESL_SQ       *esq;    /* emitted sequence     (filled by master; freed by worker) */
+  ESL_DSQ      *emb;    /* flanked digitized sequence (filled by master; freed by worker) */
+  int           L;      /* emitted sequence length */
+  int           L_emb;  /* total length of emb = 2*flank + L */
+} CM_NODEPAD_WORK;
+
+#ifdef HMMER_THREADS
+/* Per-worker info for threaded cm_ComputeP7CMNodePad().
+ * Each worker maintains its own per-node deficit arrays and p7 objects.
+ * The main thread merges the deficit arrays after all workers finish.
+ */
+typedef struct {
+  CM_t           *cm;         /* shared CM (read-only) */
+  ESL_WORK_QUEUE *queue;      /* shared work queue */
+  P7_BG          *bg;         /* per-worker p7 background model */
+  P7_PROFILE     *gm;         /* per-worker p7 profile */
+  P7_GMX         *gx;         /* per-worker p7 DP matrix */
+  P7_TRACE       *p7tr;       /* per-worker p7 trace */
+  int           **deficits;   /* deficits[k][0..def_n[k]-1]: per-node deficit values */
+  int            *def_n;      /* def_n[k]: number of deficits recorded at node k */
+  int            *def_alloc;  /* def_alloc[k]: allocated size of deficits[k] */
+  int             M;          /* number of HMM nodes (copy for convenience) */
+  int             status;     /* eslOK or error code set by worker */
+  char            errbuf[eslERRBUFSIZE]; /* error message if status != eslOK */
+} CM_NODEPAD_WINFO;
+
+/* cm_nodepad_thread_worker()
+ * Worker function for threaded cm_ComputeP7CMNodePad().
+ * Each worker pulls work items from the work queue. Each item contains
+ * an emitted CM parsetree, emitted sequence, and flanked digitized
+ * sequence already prepared by the master thread (the only caller of
+ * the RNG). The worker runs Viterbi banding, records deficits into its
+ * own per-node arrays, then frees cm_tr/esq/emb (ownership transferred
+ * on pickup). Stops on sentinel (idx == -1).
+ *
+ * This design guarantees bit-for-bit determinism across thread counts
+ * and scheduling: all RNG consumption happens on the master thread in
+ * strict sample order, identical to the serial path.
+ */
+static void
+cm_nodepad_thread_worker(void *arg)
+{
+  ESL_THREADS      *obj = (ESL_THREADS *) arg;
+  int               workeridx;
+  CM_NODEPAD_WINFO *winfo;
+  CM_NODEPAD_WORK  *work = NULL;
+  void             *newwork;
+  CM_t             *cm;
+  int               M;
+  const int         flank = 500;
+  int               seen[10000];  /* per-worker local array; avoids static thread-safety issue */
+
+  esl_threads_Started(obj, &workeridx);
+  winfo = (CM_NODEPAD_WINFO *) esl_threads_GetData(obj, workeridx);
+
+  cm = winfo->cm;
+  M  = winfo->M;
+
+  winfo->status = eslOK;
+
+  esl_workqueue_WorkerUpdate(winfo->queue, NULL, &newwork);
+  work = (CM_NODEPAD_WORK *) newwork;
+
+  while (work->idx >= 0)   /* sentinel: idx == -1 means stop */
+    {
+      Parsetree_t *cm_tr = work->cm_tr;
+      ESL_SQ      *esq   = work->esq;
+      ESL_DSQ     *emb   = work->emb;
+      int          L     = work->L;
+      int          L_emb = work->L_emb;
+      int         *i2k   = NULL;
+      int         *kmin  = NULL;
+      int         *kmax  = NULL;
+      int          ncells = 0;
+      int          p, t;
+      int          distinct_k, emit_pins, kk;
+
+      p7_ProfileConfig(cm->fp7, winfo->bg, winfo->gm, L_emb, p7_GLOCAL);
+      p7_gmx_GrowTo(winfo->gx, M, L_emb);
+
+      if (p7_Seq2BandsVit(winfo->errbuf, winfo->gm, winfo->gx, winfo->bg, winfo->p7tr,
+                          emb, L_emb, /*pad=*/0, /*nodepad=*/NULL, /*hopback=*/0, /*vitend=*/0,
+                          &i2k, &kmin, &kmax, &ncells) != eslOK) {
+        if (i2k)  free(i2k);
+        if (kmin) free(kmin);
+        if (kmax) free(kmax);
+        free(emb);
+        FreeParsetree(cm_tr); esl_sq_Destroy(esq);
+        work->cm_tr = NULL; work->esq = NULL; work->emb = NULL;
+        goto next_item;
+      }
+
+      /* Reject Viterbi traces that don't find the embedded emit (degenerate alignments). */
+      distinct_k = 0;
+      for (kk = 0; kk <= M && kk < 10000; kk++) seen[kk] = 0;
+      for (p = 1; p <= L_emb; p++) {
+        if (i2k[p] >= 1 && i2k[p] <= M && i2k[p] < 10000 && !seen[i2k[p]]) { seen[i2k[p]] = 1; distinct_k++; }
+      }
+      if (distinct_k < M / 2) {
+        free(i2k); free(kmin); free(kmax); free(emb);
+        FreeParsetree(cm_tr); esl_sq_Destroy(esq);
+        work->cm_tr = NULL; work->esq = NULL; work->emb = NULL;
+        goto next_item;
+      }
+      emit_pins = 0;
+      for (p = flank + 1; p <= flank + L; p++) {
+        if (i2k[p] >= 1 && i2k[p] <= M) emit_pins++;
+      }
+      if (emit_pins < L / 4 || ncells == 0) {
+        free(i2k); free(kmin); free(kmax); free(emb);
+        FreeParsetree(cm_tr); esl_sq_Destroy(esq);
+        work->cm_tr = NULL; work->esq = NULL; work->emb = NULL;
+        goto next_item;
+      }
+
+      /* Walk parsetree; record per-node deficits into worker-local arrays. */
+      for (t = 0; t < cm_tr->n; t++) {
+        int v    = cm_tr->state[t];
+        int ipos = cm_tr->emitl[t];
+        int jpos = cm_tr->emitr[t];
+        int hn1  = cm->cp9map->cs2hn[v][0];
+        int hn2  = cm->cp9map->cs2hn[v][1];
+        int hs1  = cm->cp9map->cs2hs[v][0];
+        int hs2  = cm->cp9map->cs2hs[v][1];
+
+        #define CMNP_W_RECORD(true_k, pos_local) do {                                    \
+          int _pos = (pos_local) + flank;                                                \
+          if ((true_k) >= 1 && (true_k) <= M && _pos >= 1 && _pos <= L_emb) {           \
+            int _def;                                                                    \
+            if (kmin[_pos] == -1 || kmax[_pos] == -1)          _def = M;                \
+            else if ((true_k) >= kmin[_pos] && (true_k) <= kmax[_pos]) _def = 0;        \
+            else if ((true_k) < kmin[_pos])                    _def = kmin[_pos] - (true_k); \
+            else                                               _def = (true_k) - kmax[_pos]; \
+            if (winfo->def_n[(true_k)] >= winfo->def_alloc[(true_k)]) {                 \
+              int _newsz = winfo->def_alloc[(true_k)] ? winfo->def_alloc[(true_k)] * 2 : 16; \
+              int *_tmp = realloc(winfo->deficits[(true_k)], sizeof(int) * _newsz);     \
+              if (_tmp == NULL) {                                                        \
+                free(i2k); free(kmin); free(kmax); free(emb);                            \
+                FreeParsetree(cm_tr); esl_sq_Destroy(esq);                               \
+                work->cm_tr = NULL; work->esq = NULL; work->emb = NULL;                 \
+                winfo->status = eslEMEM; goto worker_done;                               \
+              }                                                                          \
+              winfo->deficits[(true_k)] = _tmp;                                         \
+              winfo->def_alloc[(true_k)] = _newsz;                                      \
+            }                                                                           \
+            winfo->deficits[(true_k)][winfo->def_n[(true_k)]++] = _def;                \
+          }                                                                             \
+        } while(0)
+
+        if (hn1 >= 0) {
+          int pos1;
+          if      (hs1 == 0) { pos1 = (cm->stid[v] == MATR_MR) ? jpos : ipos; CMNP_W_RECORD(hn1, pos1); }
+          else if (hs1 == 1) { pos1 = (cm->sttype[v] == IR_st)  ? jpos : ipos; CMNP_W_RECORD(hn1, pos1); }
+        }
+        if (hn2 >= 0) {
+          if      (hs2 == 0) CMNP_W_RECORD(hn2, jpos);
+          else if (hs2 == 1) CMNP_W_RECORD(hn2, jpos);
+        }
+        #undef CMNP_W_RECORD
+      }
+
+      free(i2k); free(kmin); free(kmax); free(emb);
+      FreeParsetree(cm_tr); esl_sq_Destroy(esq);
+      work->cm_tr = NULL; work->esq = NULL; work->emb = NULL;
+
+    next_item:
+      esl_workqueue_WorkerUpdate(winfo->queue, work, &newwork);
+      work = (CM_NODEPAD_WORK *) newwork;
+      continue;
+    }
+
+ worker_done:
+  esl_workqueue_WorkerUpdate(winfo->queue, work, NULL);
+  esl_threads_Finished(obj, workeridx);
+  return;
+}
+#endif /* HMMER_THREADS */
+
+/* Function: cm_ComputeP7CMNodePad()
+ * Synopsis: Compute per-HMM-node p7 band pads by Monte Carlo simulation.
+ *
+ * Purpose:  Empirically derive per-node band-pad widths for the p7 HMM in <cm>.
+ *           Emits <nsamples> parsetrees from the CM, embeds each in random
+ *           flanking residues (500 nt each side), runs Viterbi banding with
+ *           pad=0, and for every emitting CM state records the band deficit
+ *           at the true HMM node. The <quantile> of per-node deficit
+ *           distributions becomes the stored pad. Algorithm matches
+ *           p7bandsim.c (the standalone CLI equivalent).
+ *
+ *           On success, populates cm->p7_cm_nodepad[0..fp7->M], sets
+ *           cm->p7_cm_nodepad_M = fp7->M, and raises CMH_P7NODEPAD.
+ *
+ *           Caller must ensure cm_Configure() has been called and that
+ *           cm->fp7 and cm->cp9map are valid.
+ *
+ *           Uses GLOCAL p7 profile (matches p7bandsim default). Expensive:
+ *           ~nsamples * O(M*L) Viterbi DPs.
+ *
+ *           When <ncpu> > 1 and HMMER_THREADS is defined, the Monte Carlo
+ *           simulation is parallelized across <ncpu> worker threads using
+ *           the esl_threads/esl_workqueue pattern. Each worker thread runs
+ *           its own independent RNG (seeded from the master <r>) so results
+ *           differ from the serial path but are statistically equivalent.
+ *           When <ncpu> <= 1 the serial code path is used unchanged.
+ *
+ * Returns:  <eslOK> on success.
+ *           <eslEINVAL> if cm->fp7 or cm->cp9map is NULL (with errbuf message).
+ *           <eslEMEM> on allocation failure.
+ */
+int
+cm_ComputeP7CMNodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, int ncpu, char *errbuf)
+{
+  int         status;
+  P7_HMM     *hmm   = NULL;
+  P7_BG      *bg    = NULL;
+  P7_PROFILE *gm    = NULL;
+  P7_GMX     *gx    = NULL;
+  P7_TRACE   *p7tr  = NULL;
+  int       **deficits  = NULL;
+  int        *def_n     = NULL;
+  int        *def_alloc = NULL;
+  int        *pad_out   = NULL;
+  int         M;
+  int         k;
+  const int   flank = 500;  /* p7bandsim default; flanks emitted residue each side */
+
+  if (cm->fp7    == NULL) ESL_XFAIL(eslEINVAL, errbuf, "cm_ComputeP7CMNodePad: CM has no fp7 filter HMM");
+  if (cm->cp9map == NULL) ESL_XFAIL(eslEINVAL, errbuf, "cm_ComputeP7CMNodePad: CM has no cp9map (was cm_Configure called?)");
+
+  hmm = cm->fp7;
+  M   = hmm->M;
+
+#ifdef HMMER_THREADS
+  if (ncpu > 1)
+    {
+      /* Threaded path: distribute nsamples across ncpu worker threads.
+       * Pattern mirrors cm_p7_Tau() in cm_p7_modelmaker.c.
+       * Each worker runs its own RNG (seeded from master r), accumulates
+       * per-node deficit arrays locally, and the main thread merges them.
+       */
+      ESL_THREADS       *threadObj  = NULL;
+      ESL_WORK_QUEUE    *queue      = NULL;
+      CM_NODEPAD_WINFO  *winfo      = NULL;
+      CM_NODEPAD_WORK   *wpool      = NULL;   /* recycling pool of work items */
+      P7_BG             *master_bg  = NULL;   /* master's bg for FChoose flank emission */
+      int                npool;
+      int                next_s;             /* next sample index to dispatch */
+      int                sentinels_sent;
+      int                j;
+      void              *newptr;
+      CM_NODEPAD_WORK   *work;
+
+      /* 1. Create per-worker data. Workers consume RNG-free, so no per-worker RNG. */
+      ESL_ALLOC(winfo, sizeof(CM_NODEPAD_WINFO) * ncpu);
+      for (j = 0; j < ncpu; j++) {
+        winfo[j].cm      = cm;
+        winfo[j].queue   = NULL;   /* filled below */
+        winfo[j].bg      = p7_bg_Create(hmm->abc);
+        winfo[j].gm      = p7_profile_Create(hmm->M, hmm->abc);
+        p7_ProfileConfig(hmm, winfo[j].bg, winfo[j].gm, 400, p7_GLOCAL);
+        winfo[j].gx      = p7_gmx_Create(hmm->M, 400);
+        winfo[j].p7tr    = p7_trace_Create();
+        winfo[j].M       = M;
+        winfo[j].status  = eslOK;
+        winfo[j].errbuf[0] = '\0';
+        ESL_ALLOC(winfo[j].deficits,  sizeof(int *) * (M + 1));
+        ESL_ALLOC(winfo[j].def_n,     sizeof(int)   * (M + 1));
+        ESL_ALLOC(winfo[j].def_alloc, sizeof(int)   * (M + 1));
+        for (k = 0; k <= M; k++) { winfo[j].deficits[k] = NULL; winfo[j].def_n[k] = 0; winfo[j].def_alloc[k] = 0; }
+        if (winfo[j].bg == NULL || winfo[j].gm == NULL ||
+            winfo[j].gx == NULL || winfo[j].p7tr == NULL) { status = eslEMEM; goto THREADED_ERROR; }
+      }
+
+      /* Master's own bg for FChoose flank emission — keeps RNG use on one thread. */
+      master_bg = p7_bg_Create(hmm->abc);
+      if (master_bg == NULL) { status = eslEMEM; goto THREADED_ERROR; }
+
+      /* 2. Create recycling pool of work items. */
+      npool = ncpu * 2;
+      ESL_ALLOC(wpool, sizeof(CM_NODEPAD_WORK) * npool);
+      for (j = 0; j < npool; j++) {
+        wpool[j].idx   = -1;
+        wpool[j].cm_tr = NULL;
+        wpool[j].esq   = NULL;
+        wpool[j].emb   = NULL;
+        wpool[j].L     = 0;
+        wpool[j].L_emb = 0;
+      }
+
+      /* 3. Set up threads and work queue. */
+      threadObj = esl_threads_Create(&cm_nodepad_thread_worker);
+      queue     = esl_workqueue_Create(npool);
+      for (j = 0; j < ncpu; j++) {
+        winfo[j].queue = queue;
+        esl_threads_AddThread(threadObj, &winfo[j]);
+      }
+
+      /* 4. Initialize queue with empty (recycled) work items. */
+      for (j = 0; j < npool; j++)
+        esl_workqueue_Init(queue, &wpool[j]);
+
+      /* 5. Reader loop: master emits parsetree+flanks in sample order (the only
+       *    RNG consumer), then hands each fully-built work unit to a worker.
+       *    Sentinels (idx=-1) shut down workers when we run out of samples.
+       */
+      esl_workqueue_Reset(queue);
+      esl_threads_WaitForStart(threadObj);
+
+      next_s         = 0;
+      sentinels_sent = 0;
+
+      status = esl_workqueue_ReaderUpdate(queue, NULL, &newptr);
+      if (status != eslOK) goto THREADED_ERROR;
+      work = (CM_NODEPAD_WORK *) newptr;
+
+      while (sentinels_sent < ncpu)
+        {
+          if (next_s < nsamples) {
+            Parsetree_t *cm_tr_local = NULL;
+            ESL_SQ      *esq_local   = NULL;
+            ESL_DSQ     *emb_local   = NULL;
+            int          L_local;
+            int          L_emb_local;
+            char         name[32];
+            int          p;
+
+            snprintf(name, sizeof(name), "sim%d", next_s);
+            if ((status = EmitParsetree(cm, errbuf, r, name, TRUE, &cm_tr_local, &esq_local, &L_local)) != eslOK)
+              goto THREADED_ERROR;
+            L_emb_local = 2 * flank + L_local;
+            emb_local = malloc(sizeof(ESL_DSQ) * (L_emb_local + 2));
+            if (emb_local == NULL) {
+              FreeParsetree(cm_tr_local); esl_sq_Destroy(esq_local);
+              status = eslEMEM; goto THREADED_ERROR;
+            }
+            emb_local[0] = emb_local[L_emb_local + 1] = eslDSQ_SENTINEL;
+            for (p = 1;                    p <= flank;         p++) emb_local[p] = esl_rnd_FChoose(r, master_bg->f, hmm->abc->K);
+            for (p = 1;                    p <= L_local;       p++) emb_local[flank + p] = esq_local->dsq[p];
+            for (p = flank + L_local + 1;  p <= L_emb_local;   p++) emb_local[p] = esl_rnd_FChoose(r, master_bg->f, hmm->abc->K);
+
+            work->idx   = next_s++;
+            work->cm_tr = cm_tr_local;
+            work->esq   = esq_local;
+            work->emb   = emb_local;
+            work->L     = L_local;
+            work->L_emb = L_emb_local;
+          } else {
+            work->idx   = -1;   /* sentinel */
+            work->cm_tr = NULL;
+            work->esq   = NULL;
+            work->emb   = NULL;
+            sentinels_sent++;
+          }
+          status = esl_workqueue_ReaderUpdate(queue, work, &newptr);
+          if (status != eslOK) goto THREADED_ERROR;
+          work = (CM_NODEPAD_WORK *) newptr;
+        }
+
+      esl_threads_WaitForFinish(threadObj);
+      esl_workqueue_Complete(queue);
+
+      /* 6. Check for errors from workers. */
+      for (j = 0; j < ncpu; j++) {
+        if (winfo[j].status != eslOK) {
+          ESL_XFAIL(winfo[j].status, errbuf, "%s", winfo[j].errbuf);
+        }
+      }
+
+      /* 7. Merge per-worker deficit arrays into combined arrays. */
+      ESL_ALLOC(deficits,  sizeof(int *) * (M + 1));
+      ESL_ALLOC(def_n,     sizeof(int)   * (M + 1));
+      ESL_ALLOC(def_alloc, sizeof(int)   * (M + 1));
+      for (k = 0; k <= M; k++) { deficits[k] = NULL; def_n[k] = 0; def_alloc[k] = 0; }
+
+      for (j = 0; j < ncpu; j++) {
+        for (k = 1; k <= M; k++) {
+          int n = winfo[j].def_n[k];
+          if (n == 0) continue;
+          if (def_n[k] + n > def_alloc[k]) {
+            int newsz = def_alloc[k] + n;
+            int *tmp = realloc(deficits[k], sizeof(int) * newsz);
+            if (tmp == NULL) { status = eslEMEM; goto THREADED_ERROR; }
+            deficits[k]  = tmp;
+            def_alloc[k] = newsz;
+          }
+          memcpy(deficits[k] + def_n[k], winfo[j].deficits[k], sizeof(int) * n);
+          def_n[k] += n;
+        }
+      }
+
+      /* 8. Clean up thread resources. */
+      for (j = 0; j < ncpu; j++) {
+        p7_bg_Destroy(winfo[j].bg);
+        p7_profile_Destroy(winfo[j].gm);
+        p7_gmx_Destroy(winfo[j].gx);
+        p7_trace_Destroy(winfo[j].p7tr);
+        if (winfo[j].deficits != NULL) {
+          int kk;
+          for (kk = 0; kk <= M; kk++) if (winfo[j].deficits[kk] != NULL) free(winfo[j].deficits[kk]);
+          free(winfo[j].deficits);
+        }
+        if (winfo[j].def_n)     free(winfo[j].def_n);
+        if (winfo[j].def_alloc) free(winfo[j].def_alloc);
+      }
+      free(winfo);   winfo = NULL;
+      free(wpool);   wpool = NULL;
+      if (master_bg) p7_bg_Destroy(master_bg);
+      esl_workqueue_Destroy(queue);
+      esl_threads_Destroy(threadObj);
+
+      goto AGGREGATE;
+
+    THREADED_ERROR:
+      /* Clean up thread resources on error. Also free any emissions in
+       * work items that workers haven't consumed yet (owned by master on error).
+       */
+      if (wpool != NULL) {
+        for (j = 0; j < npool; j++) {
+          if (wpool[j].cm_tr != NULL) FreeParsetree(wpool[j].cm_tr);
+          if (wpool[j].esq   != NULL) esl_sq_Destroy(wpool[j].esq);
+          if (wpool[j].emb   != NULL) free(wpool[j].emb);
+        }
+      }
+      if (winfo != NULL) {
+        for (j = 0; j < ncpu; j++) {
+          if (winfo[j].bg      != NULL) p7_bg_Destroy(winfo[j].bg);
+          if (winfo[j].gm      != NULL) p7_profile_Destroy(winfo[j].gm);
+          if (winfo[j].gx      != NULL) p7_gmx_Destroy(winfo[j].gx);
+          if (winfo[j].p7tr    != NULL) p7_trace_Destroy(winfo[j].p7tr);
+          if (winfo[j].deficits != NULL) {
+            int kk;
+            for (kk = 0; kk <= M; kk++) if (winfo[j].deficits[kk] != NULL) free(winfo[j].deficits[kk]);
+            free(winfo[j].deficits);
+          }
+          if (winfo[j].def_n)     free(winfo[j].def_n);
+          if (winfo[j].def_alloc) free(winfo[j].def_alloc);
+        }
+        free(winfo);
+      }
+      if (wpool     != NULL) free(wpool);
+      if (master_bg != NULL) p7_bg_Destroy(master_bg);
+      if (queue     != NULL) esl_workqueue_Destroy(queue);
+      if (threadObj != NULL) esl_threads_Destroy(threadObj);
+      goto ERROR;
+    }
+  else
+#endif /* HMMER_THREADS */
+    {
+      /* Serial path (ncpu <= 1): original behavior, unchanged. */
+      int s, t;
+
+      bg   = p7_bg_Create(hmm->abc);
+      gm   = p7_profile_Create(hmm->M, hmm->abc);
+      p7_ProfileConfig(hmm, bg, gm, 400, p7_GLOCAL);  /* length reconfigured per-sample below */
+      gx   = p7_gmx_Create(hmm->M, 400);
+      p7tr = p7_trace_Create();
+
+      ESL_ALLOC(deficits,  sizeof(int *) * (M + 1));
+      ESL_ALLOC(def_n,     sizeof(int)   * (M + 1));
+      ESL_ALLOC(def_alloc, sizeof(int)   * (M + 1));
+      for (k = 0; k <= M; k++) { deficits[k] = NULL; def_n[k] = 0; def_alloc[k] = 0; }
+
+      for (s = 0; s < nsamples; s++) {
+        Parsetree_t *cm_tr = NULL;
+        ESL_SQ      *esq   = NULL;
+        int          L;
+        char         name[32];
+        ESL_DSQ     *emb   = NULL;
+        int         *i2k   = NULL;
+        int         *kmin  = NULL;
+        int         *kmax  = NULL;
+        int          ncells = 0;
+        int          L_emb;
+        int          p;
+        int          distinct_k, emit_pins, kk;
+        int          seen[10000];  /* local array; safe for serial path */
+
+        snprintf(name, sizeof(name), "sim%d", s);
+        if ((status = EmitParsetree(cm, errbuf, r, name, TRUE, &cm_tr, &esq, &L)) != eslOK) goto ERROR;
+
+        L_emb = 2 * flank + L;
+        ESL_ALLOC(emb, sizeof(ESL_DSQ) * (L_emb + 2));
+        emb[0] = emb[L_emb + 1] = eslDSQ_SENTINEL;
+        for (p = 1;              p <= flank;       p++) emb[p] = esl_rnd_FChoose(r, bg->f, hmm->abc->K);
+        for (p = 1;              p <= L;           p++) emb[flank + p] = esq->dsq[p];
+        for (p = flank + L + 1;  p <= L_emb;       p++) emb[p] = esl_rnd_FChoose(r, bg->f, hmm->abc->K);
+
+        p7_ProfileConfig(hmm, bg, gm, L_emb, p7_GLOCAL);
+        p7_gmx_GrowTo(gx, M, L_emb);
+
+        if (p7_Seq2BandsVit(errbuf, gm, gx, bg, p7tr, emb, L_emb, /*pad=*/0, /*nodepad=*/NULL, /*hopback=*/0, /*vitend=*/0,
+                            &i2k, &kmin, &kmax, &ncells) != eslOK) {
+          if (i2k)  free(i2k);
+          if (kmin) free(kmin);
+          if (kmax) free(kmax);
+          free(emb);
+          FreeParsetree(cm_tr); esl_sq_Destroy(esq);
+          continue;
+        }
+
+        /* Reject Viterbi traces that don't find the embedded emit (degenerate alignments). */
+        distinct_k = 0;
+        for (kk = 0; kk <= M && kk < 10000; kk++) seen[kk] = 0;
+        for (p = 1; p <= L_emb; p++) {
+          if (i2k[p] >= 1 && i2k[p] <= M && i2k[p] < 10000 && !seen[i2k[p]]) { seen[i2k[p]] = 1; distinct_k++; }
+        }
+        if (distinct_k < M / 2) {
+          free(i2k); free(kmin); free(kmax); free(emb);
+          FreeParsetree(cm_tr); esl_sq_Destroy(esq);
+          continue;
+        }
+        emit_pins = 0;
+        for (p = flank + 1; p <= flank + L; p++) {
+          if (i2k[p] >= 1 && i2k[p] <= M) emit_pins++;
+        }
+        if (emit_pins < L / 4 || ncells == 0) {
+          free(i2k); free(kmin); free(kmax); free(emb);
+          FreeParsetree(cm_tr); esl_sq_Destroy(esq);
+          continue;
+        }
+
+        /* Walk parsetree; record per-node deficits. */
+        for (t = 0; t < cm_tr->n; t++) {
+          int v    = cm_tr->state[t];
+          int ipos = cm_tr->emitl[t];
+          int jpos = cm_tr->emitr[t];
+          int hn1  = cm->cp9map->cs2hn[v][0];
+          int hn2  = cm->cp9map->cs2hn[v][1];
+          int hs1  = cm->cp9map->cs2hs[v][0];
+          int hs2  = cm->cp9map->cs2hs[v][1];
+
+          #define CMNP_RECORD(true_k, pos_local) do {                                     \
+            int pos = (pos_local) + flank;                                                \
+            if ((true_k) >= 1 && (true_k) <= M && pos >= 1 && pos <= L_emb) {             \
+              int def;                                                                    \
+              if (kmin[pos] == -1 || kmax[pos] == -1)         def = M;                    \
+              else if ((true_k) >= kmin[pos] && (true_k) <= kmax[pos]) def = 0;           \
+              else if ((true_k) < kmin[pos])                  def = kmin[pos] - (true_k); \
+              else                                            def = (true_k) - kmax[pos]; \
+              if (def_n[(true_k)] >= def_alloc[(true_k)]) {                               \
+                int newsz = def_alloc[(true_k)] ? def_alloc[(true_k)] * 2 : 16;           \
+                int *tmp = realloc(deficits[(true_k)], sizeof(int) * newsz);              \
+                if (tmp == NULL) { status = eslEMEM; goto ERROR; }                        \
+                deficits[(true_k)] = tmp;                                                 \
+                def_alloc[(true_k)] = newsz;                                              \
+              }                                                                           \
+              deficits[(true_k)][def_n[(true_k)]++] = def;                                \
+            }                                                                             \
+          } while(0)
+
+          if (hn1 >= 0) {
+            int pos1;
+            if      (hs1 == 0) { pos1 = (cm->stid[v] == MATR_MR) ? jpos : ipos; CMNP_RECORD(hn1, pos1); }
+            else if (hs1 == 1) { pos1 = (cm->sttype[v] == IR_st) ? jpos : ipos; CMNP_RECORD(hn1, pos1); }
+          }
+          if (hn2 >= 0) {
+            if      (hs2 == 0) CMNP_RECORD(hn2, jpos);
+            else if (hs2 == 1) CMNP_RECORD(hn2, jpos);
+          }
+          #undef CMNP_RECORD
+        }
+
+        free(i2k); free(kmin); free(kmax); free(emb);
+        FreeParsetree(cm_tr); esl_sq_Destroy(esq);
+      }
+    } /* end serial path */
+
+ AGGREGATE:
+  /* Aggregate: per-node quantile of deficits. */
+  {
+    int idx_q;
+    ESL_ALLOC(pad_out, sizeof(int) * (M + 1));
+    pad_out[0] = 0;
+    for (k = 1; k <= M; k++) {
+      if (def_n[k] == 0) { pad_out[k] = 0; continue; }
+      qsort(deficits[k], def_n[k], sizeof(int), cm_nodepad_cmpint);
+      idx_q = (int)(quantile * (def_n[k] - 1) + 0.5);
+      if (idx_q >= def_n[k]) idx_q = def_n[k] - 1;
+      pad_out[k] = deficits[k][idx_q];
+    }
+  }
+
+  /* Publish to CM. Replace any existing pad array. */
+  if (cm->p7_cm_nodepad != NULL) free(cm->p7_cm_nodepad);
+  cm->p7_cm_nodepad   = pad_out;
+  cm->p7_cm_nodepad_M = M;
+  cm->flags       |= CMH_P7NODEPAD;
+  pad_out = NULL;  /* ownership transferred */
+
+  status = eslOK;
+
+ ERROR:
+  if (pad_out != NULL)  free(pad_out);
+  if (deficits != NULL) { for (k = 0; k <= M; k++) if (deficits[k] != NULL) free(deficits[k]); free(deficits); }
+  if (def_n    != NULL) free(def_n);
+  if (def_alloc != NULL) free(def_alloc);
+  if (p7tr != NULL) p7_trace_Destroy(p7tr);
+  if (gx   != NULL) p7_gmx_Destroy(gx);
+  if (gm   != NULL) p7_profile_Destroy(gm);
+  if (bg   != NULL) p7_bg_Destroy(bg);
+  return status;
+}
+
+
+/*****************************************************************
+ * P7_GBANDS from per-row kmin/kmax arrays
+ *****************************************************************/
+
+/* p7_GBands_FromKminKmax():
+ * Convert per-row kmin[1..L]/kmax[1..L] arrays into a single-segment
+ * P7_GBANDS (no holes; rows 1..L are all in band).
+ * The bnd struct is reused (caller may pass a freshly-Created or Reuse'd one).
+ */
+int
+cm_p7_GBands_FromKminKmax(int *kmin, int *kmax, int L, int M, P7_GBANDS *bnd)
+{
+  int i;
+  int status;
+
+  bnd->L = L;
+  bnd->M = M;
+  if ((status = p7_gbands_Reuse(bnd)) != eslOK) return status;
+
+  /* Append rows 1..L as a single segment: p7_gbands_Append handles
+   * segment opening/closing automatically when consecutive i's are
+   * appended. */
+  for (i = 1; i <= L; i++) {
+    int ka = kmin[i], kb = kmax[i];
+    if (ka < 1)   ka = 1;
+    if (kb > M)   kb = M;
+    if (ka > kb)  { ka = 1; kb = M; }   /* safety */
+    if ((status = p7_gbands_Append(bnd, i, ka, kb)) != eslOK) return status;
+  }
+  return eslOK;
+}
+
+
+/*****************************************************************
+ * Unbanded generic Forward/Backward with a double recursion
+ * (brief 26_0821-161)
+ *
+ * HMMER's p7_GForward()/p7_GBackward() carry each cell and special as
+ * a float and add with p7_FLogsum(), whose table is truncated to the
+ * lower 0.001-nat entry and so always over-adds.  Per row that bias is
+ * tiny, but it accumulates along the sequence: the glocal Forward score
+ * drifts up by about 0.035 bits per kb of target (brief 26_0821-157:
+ * +0.1 bits on a 3 kb window, +2 bits on a 19 kb viral genome, +26
+ * bits on the 394 kb iid sequences cmbuild scores to calibrate a
+ * 197 kb model), and the Forward and Backward totals disagree.
+ *
+ * These are the same recursions, with the same log-sum call order, but
+ * every value the recursion reads is a double and the log-sum is
+ * p7b_dlogsum().  The DP matrix keeps HMMER's float P7_GMX: each
+ * finished cell is stored as a float, so a cell carries one rounding
+ * and the error no longer grows with the row.  The API is that of
+ * p7_GForward()/p7_GBackward(), so the matrices feed HMMER's
+ * p7_GDomainDecoding(), p7_GDecoding(), p7_GNull2_ByExpectation() and
+ * p7_GOptimalAccuracy() unchanged.  Used for cmsearch/cmscan glocal
+ * envelope definition (cm_pipeline.c pli_p7_env_def(),
+ * cm_p7_domaindef.c) and, through cm_p7_GForwardDblScore(), for
+ * cmbuild's glocal Forward calibration (cm_p7_modelmaker.c).
+ *****************************************************************/
+
+#define DROW(row,k,s) ((row)[(k) * p7G_NSCELLS + (s)])
+
+/* p7b_gforward_dbl(): the Forward recursion of p7_GForward()
+ * (hmmer/src/generic_fwdback.c) with double cells, specials and
+ * log-sum, on two double rows.  If <gx> is non-NULL (grown to M x L)
+ * a float copy of each finished row is stored in it.  Score in nats,
+ * in double, in <*opt_sc>. */
+static int
+p7b_gforward_dbl(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMX *gx, double *opt_sc)
+{
+  float const *tsc = gm->tsc;
+  int          M   = gm->M;
+  double       esc = p7_profile_IsLocal(gm) ? 0. : -eslINFINITY;
+  double      *prv = NULL, *cur = NULL, *tmp;
+  double       xN, xB, xE, xJ, xC, pB, pJ, pC, pN;
+  double       sc;
+  int          i, k, status;
+
+  ESL_ALLOC(prv, sizeof(double) * (M+1) * p7G_NSCELLS);
+  ESL_ALLOC(cur, sizeof(double) * (M+1) * p7G_NSCELLS);
+
+  for (k = 0; k <= M; k++) DROW(prv,k,p7G_M) = DROW(prv,k,p7G_I) = DROW(prv,k,p7G_D) = -eslINFINITY;
+  xN = 0.; xB = gm->xsc[p7P_N][p7P_MOVE]; xE = xC = xJ = -eslINFINITY;
+  if (gx) {
+    float *xmx = gx->xmx; float **dp = gx->dp;
+    XMX(0,p7G_N) = xN; XMX(0,p7G_B) = xB; XMX(0,p7G_E) = XMX(0,p7G_C) = XMX(0,p7G_J) = -eslINFINITY;
+    for (k = 0; k <= M; k++) MMX(0,k) = IMX(0,k) = DMX(0,k) = -eslINFINITY;
+  }
+
+  for (i = 1; i <= L; i++)
+    {
+      float const *rsc = gm->rsc[dsq[i]];
+      pB = xB; pJ = xJ; pC = xC; pN = xN;
+      DROW(cur,0,p7G_M) = DROW(cur,0,p7G_I) = DROW(cur,0,p7G_D) = -eslINFINITY;
+      xE = -eslINFINITY;
+      for (k = 1; k < M; k++)
+	{
+	  sc = p7b_dlogsum(p7b_dlogsum(DROW(prv,k-1,p7G_M) + TSC(p7P_MM,k-1),
+				       DROW(prv,k-1,p7G_I) + TSC(p7P_IM,k-1)),
+			   p7b_dlogsum(pB                  + TSC(p7P_BM,k-1),
+				       DROW(prv,k-1,p7G_D) + TSC(p7P_DM,k-1)));
+	  DROW(cur,k,p7G_M) = sc + MSC(k);
+	  sc = p7b_dlogsum(DROW(prv,k,p7G_M) + TSC(p7P_MI,k),
+			   DROW(prv,k,p7G_I) + TSC(p7P_II,k));
+	  DROW(cur,k,p7G_I) = sc + ISC(k);
+	  DROW(cur,k,p7G_D) = p7b_dlogsum(DROW(cur,k-1,p7G_M) + TSC(p7P_MD,k-1),
+					  DROW(cur,k-1,p7G_D) + TSC(p7P_DD,k-1));
+	  xE = p7b_dlogsum(p7b_dlogsum(DROW(cur,k,p7G_M) + esc, DROW(cur,k,p7G_D) + esc), xE);
+	}
+      sc = p7b_dlogsum(p7b_dlogsum(DROW(prv,M-1,p7G_M) + TSC(p7P_MM,M-1),
+				   DROW(prv,M-1,p7G_I) + TSC(p7P_IM,M-1)),
+		       p7b_dlogsum(pB                    + TSC(p7P_BM,M-1),
+				   DROW(prv,M-1,p7G_D) + TSC(p7P_DM,M-1)));
+      DROW(cur,M,p7G_M) = sc + MSC(M);
+      DROW(cur,M,p7G_I) = -eslINFINITY;
+      DROW(cur,M,p7G_D) = p7b_dlogsum(DROW(cur,M-1,p7G_M) + TSC(p7P_MD,M-1),
+				      DROW(cur,M-1,p7G_D) + TSC(p7P_DD,M-1));
+      xE = p7b_dlogsum(p7b_dlogsum(DROW(cur,M,p7G_M), DROW(cur,M,p7G_D)), xE);
+      xJ = p7b_dlogsum(pJ + gm->xsc[p7P_J][p7P_LOOP], xE + gm->xsc[p7P_E][p7P_LOOP]);
+      xC = p7b_dlogsum(pC + gm->xsc[p7P_C][p7P_LOOP], xE + gm->xsc[p7P_E][p7P_MOVE]);
+      xN = pN + gm->xsc[p7P_N][p7P_LOOP];
+      xB = p7b_dlogsum(xN + gm->xsc[p7P_N][p7P_MOVE], xJ + gm->xsc[p7P_J][p7P_MOVE]);
+
+      if (gx) {
+	float *xmx = gx->xmx; float **dp = gx->dp;
+	for (k = 0; k <= M; k++) { MMX(i,k) = DROW(cur,k,p7G_M); IMX(i,k) = DROW(cur,k,p7G_I); DMX(i,k) = DROW(cur,k,p7G_D); }
+	XMX(i,p7G_E) = xE; XMX(i,p7G_J) = xJ; XMX(i,p7G_C) = xC; XMX(i,p7G_N) = xN; XMX(i,p7G_B) = xB;
+      }
+      tmp = prv; prv = cur; cur = tmp;
+    }
+  if (opt_sc) *opt_sc = xC + gm->xsc[p7P_C][p7P_MOVE];
+  if (gx) { gx->M = M; gx->L = L; }
+  free(prv); free(cur);
+  return eslOK;
+
+ ERROR:
+  if (prv) free(prv);
+  if (cur) free(cur);
+  if (opt_sc) *opt_sc = 0.;
+  return status;
+}
+
+/* Function: cm_p7_GForwardDbl()
+ * Incept:   EPN, Thu Oct 29 2026 (w/Claude)
+ *
+ * Purpose:  The Forward algorithm of p7_GForward(), with a double
+ *           recursion (see the section comment above).  Same
+ *           arguments and same float output: <gx> (allocated for at
+ *           least M x L) gets the Forward matrix, <opt_sc> the score
+ *           in nats.
+ *
+ * Returns:  <eslOK> on success.
+ *
+ * Throws:   <eslEMEM> on allocation failure.
+ */
+int
+cm_p7_GForwardDbl(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMX *gx, float *opt_sc)
+{
+  double sc;
+  int    status;
+
+  status = p7b_gforward_dbl(dsq, L, gm, gx, &sc);
+  if (opt_sc) *opt_sc = (float) sc;
+  return status;
+}
+
+/* Function: cm_p7_GForwardDblScore()
+ * Incept:   EPN, Thu Oct 29 2026 (w/Claude)
+ *
+ * Purpose:  Forward score only, from the same double recursion as
+ *           cm_p7_GForwardDbl(), on two rows of DP memory and no
+ *           matrix.  The score is returned in double.  Replaces the
+ *           float two-row cm_p7_GForwardScoreOnly() for cmbuild's
+ *           glocal Forward calibration (cm_p7_Tau()).
+ *
+ *           Reads only the read-only p7b_dlogsum() table, so it is
+ *           safe to call from concurrent threads.
+ *
+ * Args:     dsq    - digital sequence, 1..L
+ *           L      - length of dsq
+ *           gm     - profile (configured for length L)
+ *           opt_sc - optRETURN: Forward lod score in nats
+ *
+ * Returns:  <eslOK> on success.
+ *
+ * Throws:   <eslEMEM> on allocation failure; <*opt_sc> is 0.
+ */
+int
+cm_p7_GForwardDblScore(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, double *opt_sc)
+{
+  return p7b_gforward_dbl(dsq, L, gm, NULL, opt_sc);
+}
+
+/* Function: cm_p7_GBackwardDbl()
+ * Incept:   EPN, Thu Oct 29 2026 (w/Claude)
+ *
+ * Purpose:  The Backward algorithm of p7_GBackward()
+ *           (hmmer/src/generic_fwdback.c), with a double recursion on
+ *           two double rows (see the section comment above).  Same
+ *           arguments and same float output: <gx> (allocated for at
+ *           least M x L) gets the Backward matrix, <opt_sc> the score
+ *           in nats.
+ *
+ * Returns:  <eslOK> on success.
+ *
+ * Throws:   <eslEMEM> on allocation failure.
+ */
+int
+cm_p7_GBackwardDbl(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMX *gx, float *opt_sc)
+{
+  float const *tsc = gm->tsc;
+  float const *rsc = NULL;
+  float       *xmx = gx->xmx;
+  float      **dp  = gx->dp;
+  int          M   = gm->M;
+  double       esc = p7_profile_IsLocal(gm) ? 0. : -eslINFINITY;
+  double      *nxt = NULL, *cur = NULL, *tmp;
+  double       xN, xB, xE, xJ, xC;
+  int          i, k, status;
+
+  ESL_ALLOC(nxt, sizeof(double) * (M+1) * p7G_NSCELLS);
+  ESL_ALLOC(cur, sizeof(double) * (M+1) * p7G_NSCELLS);
+
+  /* row L */
+  xJ = xB = xN = -eslINFINITY;
+  xC = gm->xsc[p7P_C][p7P_MOVE];
+  xE = xC + gm->xsc[p7P_E][p7P_MOVE];
+  DROW(cur,M,p7G_M) = DROW(cur,M,p7G_D) = xE;
+  DROW(cur,M,p7G_I) = -eslINFINITY;
+  for (k = M-1; k >= 1; k--) {
+    DROW(cur,k,p7G_M) = p7b_dlogsum(xE + esc, DROW(cur,k+1,p7G_D) + TSC(p7P_MD,k));
+    DROW(cur,k,p7G_D) = p7b_dlogsum(xE + esc, DROW(cur,k+1,p7G_D) + TSC(p7P_DD,k));
+    DROW(cur,k,p7G_I) = -eslINFINITY;
+  }
+  DROW(cur,0,p7G_M) = DROW(cur,0,p7G_I) = DROW(cur,0,p7G_D) = -eslINFINITY;
+  for (k = 0; k <= M; k++) { MMX(L,k) = DROW(cur,k,p7G_M); IMX(L,k) = DROW(cur,k,p7G_I); DMX(L,k) = DROW(cur,k,p7G_D); }
+  XMX(L,p7G_J) = xJ; XMX(L,p7G_B) = xB; XMX(L,p7G_N) = xN; XMX(L,p7G_C) = xC; XMX(L,p7G_E) = xE;
+  tmp = nxt; nxt = cur; cur = tmp;
+
+  for (i = L-1; i >= 1; i--)
+    {
+      rsc = gm->rsc[dsq[i+1]];
+      xB = DROW(nxt,1,p7G_M) + TSC(p7P_BM,0) + MSC(1);
+      for (k = 2; k <= M; k++) xB = p7b_dlogsum(xB, DROW(nxt,k,p7G_M) + TSC(p7P_BM,k-1) + MSC(k));
+      xJ = p7b_dlogsum(xJ + gm->xsc[p7P_J][p7P_LOOP], xB + gm->xsc[p7P_J][p7P_MOVE]);
+      xC = xC + gm->xsc[p7P_C][p7P_LOOP];
+      xE = p7b_dlogsum(xJ + gm->xsc[p7P_E][p7P_LOOP], xC + gm->xsc[p7P_E][p7P_MOVE]);
+      xN = p7b_dlogsum(xN + gm->xsc[p7P_N][p7P_LOOP], xB + gm->xsc[p7P_N][p7P_MOVE]);
+      DROW(cur,M,p7G_M) = DROW(cur,M,p7G_D) = xE;
+      DROW(cur,M,p7G_I) = -eslINFINITY;
+      for (k = M-1; k >= 1; k--)
+	{
+	  DROW(cur,k,p7G_M) = p7b_dlogsum(p7b_dlogsum(DROW(nxt,k+1,p7G_M) + TSC(p7P_MM,k) + MSC(k+1),
+						      DROW(nxt,k,  p7G_I) + TSC(p7P_MI,k) + ISC(k)),
+					  p7b_dlogsum(xE + esc,
+						      DROW(cur,k+1,p7G_D) + TSC(p7P_MD,k)));
+	  DROW(cur,k,p7G_I) = p7b_dlogsum(DROW(nxt,k+1,p7G_M) + TSC(p7P_IM,k) + MSC(k+1),
+					  DROW(nxt,k,  p7G_I) + TSC(p7P_II,k) + ISC(k));
+	  DROW(cur,k,p7G_D) = p7b_dlogsum(DROW(nxt,k+1,p7G_M) + TSC(p7P_DM,k) + MSC(k+1),
+					  p7b_dlogsum(DROW(cur,k+1,p7G_D) + TSC(p7P_DD,k), xE + esc));
+	}
+      DROW(cur,0,p7G_M) = DROW(cur,0,p7G_I) = DROW(cur,0,p7G_D) = -eslINFINITY;
+      for (k = 0; k <= M; k++) { MMX(i,k) = DROW(cur,k,p7G_M); IMX(i,k) = DROW(cur,k,p7G_I); DMX(i,k) = DROW(cur,k,p7G_D); }
+      XMX(i,p7G_B) = xB; XMX(i,p7G_J) = xJ; XMX(i,p7G_C) = xC; XMX(i,p7G_E) = xE; XMX(i,p7G_N) = xN;
+      tmp = nxt; nxt = cur; cur = tmp;
+    }
+
+  /* row 0: only N, B */
+  rsc = gm->rsc[dsq[1]];
+  xB = DROW(nxt,1,p7G_M) + TSC(p7P_BM,0) + MSC(1);
+  for (k = 2; k <= M; k++) xB = p7b_dlogsum(xB, DROW(nxt,k,p7G_M) + TSC(p7P_BM,k-1) + MSC(k));
+  xN = p7b_dlogsum(xN + gm->xsc[p7P_N][p7P_LOOP], xB + gm->xsc[p7P_N][p7P_MOVE]);
+  XMX(0,p7G_B) = xB; XMX(0,p7G_J) = XMX(0,p7G_C) = XMX(0,p7G_E) = -eslINFINITY; XMX(0,p7G_N) = xN;
+  for (k = M; k >= 0; k--) MMX(0,k) = IMX(0,k) = DMX(0,k) = -eslINFINITY;
+  if (opt_sc) *opt_sc = (float) xN;
+  gx->M = M; gx->L = L;
+  free(nxt); free(cur);
+  return eslOK;
+
+ ERROR:
+  if (nxt) free(nxt);
+  if (cur) free(cur);
+  return status;
+}
+#undef DROW
+
+/* Function: cm_p7_GNull2_ByExpectationDbl()
+ * Incept:   EPN, Thu Oct 29 2026 (w/Claude)
+ *
+ * Purpose:  p7_GNull2_ByExpectation() (hmmer/src/generic_null2.c) with
+ *           the arithmetic in double: the expected state usage is summed
+ *           over the <Ld> rows of the posterior matrix <pp> in double,
+ *           and the per-residue null2 log odds are summed over the 2M
+ *           emitting states with p7b_dlogsum() instead of p7_FLogsum().
+ *
+ *           p7_FLogsum()'s truncated table over-adds on each of those
+ *           2M terms, so every residue's null2 log odds comes out too
+ *           high by the same small amount, and the envelope's null2
+ *           correction (their sum over the envelope) grows with its
+ *           length: 0.1 bits too high for a 130-nt Rfam envelope, 4 to
+ *           8 bits for a 7.7 to 10.8 kb genome (brief 26_0821-161).
+ *
+ *           <pp> is read only (HMMER's version uses its row 0 as
+ *           workspace). Output <null2> is as p7_GNull2_ByExpectation()'s.
+ *
+ * Returns:  <eslOK> on success.
+ *
+ * Throws:   <eslEMEM> on allocation failure.
+ */
+int
+cm_p7_GNull2_ByExpectationDbl(const P7_PROFILE *gm, const P7_GMX *pp, float *null2)
+{
+  int      M  = gm->M;
+  int      Ld = pp->L;
+  int      n  = (M+1) * p7G_NSCELLS;
+  double  *w  = NULL;
+  double   wx[p7G_NXCELLS];
+  double   xfactor, logLd, sc;
+  int      x, i, k, status;
+
+  ESL_ALLOC(w, sizeof(double) * n);
+  /* expected number of times each emitting state was used, as log frequencies */
+  for (k = 0; k < n;            k++) w[k]  = pp->dp[1][k];
+  for (k = 0; k < p7G_NXCELLS; k++) wx[k] = pp->xmx[p7G_NXCELLS + k];
+  for (i = 2; i <= Ld; i++) {
+    for (k = 0; k < n;            k++) w[k]  += pp->dp[i][k];
+    for (k = 0; k < p7G_NXCELLS; k++) wx[k] += pp->xmx[i*p7G_NXCELLS + k];
+  }
+  logLd = log((double) Ld);
+  for (k = 0; k < n;            k++) w[k]  = log(w[k])  - logLd;
+  for (k = 0; k < p7G_NXCELLS; k++) wx[k] = log(wx[k]) - logLd;
+
+  /* null2 log odds: posterior-weighted sum over the emission vectors */
+  xfactor = p7b_dlogsum(p7b_dlogsum(wx[p7G_N], wx[p7G_C]), wx[p7G_J]);
+  for (x = 0; x < gm->abc->K; x++)
+    {
+      sc = -eslINFINITY;
+      for (k = 1; k < M; k++)
+	{
+	  sc = p7b_dlogsum(sc, w[k*p7G_NSCELLS + p7G_M] + p7P_MSC(gm, k, x));
+	  sc = p7b_dlogsum(sc, w[k*p7G_NSCELLS + p7G_I] + p7P_ISC(gm, k, x));
+	}
+      sc = p7b_dlogsum(sc, w[M*p7G_NSCELLS + p7G_M] + p7P_MSC(gm, M, x));
+      sc = p7b_dlogsum(sc, xfactor);
+      null2[x] = (float) exp(sc);
+    }
+
+  /* valid scores for all degeneracies, by averaging the odds ratios */
+  esl_abc_FAvgScVec(gm->abc, null2); /* does not set gap, nonres, missing  */
+  null2[gm->abc->K]    = 1.0;        /* gap character    */
+  null2[gm->abc->Kp-2] = 1.0;        /* nonresidue "*"   */
+  null2[gm->abc->Kp-1] = 1.0;        /* missing data "~" */
+
+  free(w);
+  return eslOK;
+
+ ERROR:
+  return status;
+}
+
+/*****************************************************************
+ * Unbanded optimal accuracy alignment with a double OA matrix
+ * (brief 26_0821-161), for glocal envelope rescoring.
+ *****************************************************************/
+
+/* Function: cm_p7_gmxd_CreateOver()
+ * Incept:   EPN, Fri Oct 30 2026 (w/Claude)
+ *
+ * Purpose:  Create a double OA matrix for <M> x <L>, putting as many of
+ *           its rows as fit into the DP memory of <spare>, a float
+ *           P7_GMX whose contents the caller no longer needs, and
+ *           allocating the rest. In glocal envelope rescoring <spare> is
+ *           the envelope's Forward matrix, which is dead once posteriors
+ *           are decoded (HMMER's p7_GOptimalAccuracy() overwrites it
+ *           too), so the double matrix costs one float matrix more, not
+ *           two. <spare> may be NULL.
+ *
+ * Returns:  the new matrix, or NULL on allocation failure. Free with
+ *           cm_p7_gmxd_Destroy(); <spare> must outlive it and must not
+ *           be used while it exists.
+ */
+CM_P7_GMXD *
+cm_p7_gmxd_CreateOver(P7_GMX *spare, int M, int L)
+{
+  CM_P7_GMXD *gx     = NULL;
+  size_t      rowlen = (size_t) (M+1) * p7G_NSCELLS;   /* doubles per row */
+  size_t      nfit   = 0;
+  size_t      i;
+  int         status;
+
+  ESL_ALLOC(gx, sizeof(CM_P7_GMXD));
+  gx->M = M; gx->L = L; gx->dp = NULL; gx->xmx = NULL; gx->own = NULL;
+  ESL_ALLOC(gx->dp,  sizeof(double *) * (L+1));
+  ESL_ALLOC(gx->xmx, sizeof(double)   * (L+1) * p7G_NXCELLS);
+  if (spare != NULL) nfit = ((size_t) spare->ncells * p7G_NSCELLS * sizeof(float)) / (sizeof(double) * rowlen);
+  if (nfit > (size_t) L+1) nfit = (size_t) L+1;
+  if (nfit < (size_t) L+1) ESL_ALLOC(gx->own, sizeof(double) * rowlen * ((size_t) L+1 - nfit));
+  for (i = 0; i < nfit;          i++) gx->dp[i] = ((double *) spare->dp_mem) + i * rowlen;
+  for (     ; i < (size_t) L+1;  i++) gx->dp[i] = gx->own + (i - nfit) * rowlen;
+  return gx;
+
+ ERROR:
+  cm_p7_gmxd_Destroy(gx);
+  return NULL;
+}
+
+void
+cm_p7_gmxd_Destroy(CM_P7_GMXD *gx)
+{
+  if (gx == NULL) return;
+  if (gx->dp)  free(gx->dp);
+  if (gx->xmx) free(gx->xmx);
+  if (gx->own) free(gx->own);
+  free(gx);
+}
+
+#define TSCDELTA(s,k) ( (tsc[(k) * p7P_NTRANS + (s)] == -eslINFINITY) ? FLT_MIN : 1.0)
+static inline float goad_get_postprob(const P7_GMX *pp, int scur, int sprv, int k, int i);
+static inline int   goad_select_m(const P7_PROFILE *gm, const CM_P7_GMXD *gx, int i, int k);
+static inline int   goad_select_d(const P7_PROFILE *gm, const CM_P7_GMXD *gx, int i, int k);
+static inline int   goad_select_i(const P7_PROFILE *gm, const CM_P7_GMXD *gx, int i, int k);
+static inline int   goad_select_n(int i);
+static inline int   goad_select_c(const P7_PROFILE *gm, const P7_GMX *pp, const CM_P7_GMXD *gx, int i);
+static inline int   goad_select_j(const P7_PROFILE *gm, const P7_GMX *pp, const CM_P7_GMXD *gx, int i);
+static inline int   goad_select_e(const P7_PROFILE *gm, const CM_P7_GMXD *gx, int i, int *ret_k);
+static inline int   goad_select_b(const P7_PROFILE *gm, const CM_P7_GMXD *gx, int i);
+
+/* Function: cm_p7_GOptimalAccuracyDbl()
+ * Incept:   EPN, Fri Oct 30 2026 (w/Claude)
+ *
+ * Purpose:  p7_GOptimalAccuracy() (hmmer/src/generic_optacc.c) with the
+ *           OA matrix <gx> in double. The posterior matrix <pp> stays
+ *           HMMER's float P7_GMX, as in the banded OA (brief
+ *           26_0821-151): a posterior is a probability in [0,1] and
+ *           carries one rounding, but an OA cell is a sum of up to L of
+ *           them, and in float that sum loses about 2^-24 of its size
+ *           per add. Over a 4 kb envelope that was enough to place one
+ *           gap differently from a double OA (brief 26_0821-161).
+ *           Recurrence and max order are HMMER's.
+ *
+ * Returns:  <eslOK>; <*ret_e> is the OA score (expected number of
+ *           correctly aligned residues), as a float.
+ */
+int
+cm_p7_GOptimalAccuracyDbl(const P7_PROFILE *gm, const P7_GMX *pp, CM_P7_GMXD *gx, float *ret_e)
+{
+  int          L    = pp->L;
+  double     **dp   = gx->dp;
+  double      *xmx  = gx->xmx;
+  float const *tsc  = gm->tsc;
+  int          i,k;
+  int          M    = gm->M;
+  double       esc  = p7_profile_IsLocal(gm) ? 1.0 : 0.0;
+  double       t1, t2;
+
+  /* Initialization of the zero row (i=0; no residues to account for.  */
+  XMX(0,p7G_N) = 0.;                                          /* S->N, p=1            */
+  XMX(0,p7G_B) = 0.;                                          /* S->N->B, no N-tail   */
+  XMX(0,p7G_E) = XMX(0,p7G_C) = XMX(0,p7G_J) = -eslINFINITY;  /* need seq to get here */
+  for (k = 0; k <= M; k++)
+    MMX(0,k) = IMX(0,k) = DMX(0,k) = -eslINFINITY;            /* need seq to get here */
+
+  for (i = 1; i <= L; i++)
+    {
+      MMX(i,0) = IMX(i,0) = DMX(i,0) = XMX(i,p7G_E) = -eslINFINITY;
+
+      for (k = 1; k < M; k++)
+	{
+	  MMX(i,k)     = ESL_MAX(ESL_MAX(TSCDELTA(p7P_MM, k-1) * (MMX(i-1,k-1)  + pp->dp[i][k*p7G_NSCELLS + p7G_M]),
+					 TSCDELTA(p7P_IM, k-1) * (IMX(i-1,k-1)  + pp->dp[i][k*p7G_NSCELLS + p7G_M])),
+				 ESL_MAX(TSCDELTA(p7P_DM, k-1) * (DMX(i-1,k-1)  + pp->dp[i][k*p7G_NSCELLS + p7G_M]),
+					 TSCDELTA(p7P_BM, k-1) * (XMX(i-1,p7G_B)+ pp->dp[i][k*p7G_NSCELLS + p7G_M])));
+
+	  XMX(i,p7G_E) = ESL_MAX(XMX(i,p7G_E), 
+				 esc * MMX(i,k));
+
+	  IMX(i,k)     = ESL_MAX(TSCDELTA(p7P_MI, k) * (MMX(i-1,k) + pp->dp[i][k*p7G_NSCELLS + p7G_I]),
+				 TSCDELTA(p7P_II, k) * (IMX(i-1,k) + pp->dp[i][k*p7G_NSCELLS + p7G_I]));
+
+	  DMX(i,k)     = ESL_MAX(TSCDELTA(p7P_MD, k-1) * MMX(i,k-1),
+				 TSCDELTA(p7P_DD, k-1) * DMX(i,k-1));
+	} 
+
+      /* last node (k=M) is unrolled; it has no I state, and it has a p=1.0 {MD}->E transition even in local mode */
+      MMX(i,M)     = ESL_MAX(ESL_MAX(TSCDELTA(p7P_MM, M-1) * (MMX(i-1,M-1)  + pp->dp[i][M*p7G_NSCELLS + p7G_M]),
+				     TSCDELTA(p7P_IM, M-1) * (IMX(i-1,M-1)  + pp->dp[i][M*p7G_NSCELLS + p7G_M])),
+			     ESL_MAX(TSCDELTA(p7P_DM, M-1) * (DMX(i-1,M-1)  + pp->dp[i][M*p7G_NSCELLS + p7G_M]),
+				     TSCDELTA(p7P_BM, M-1) * (XMX(i-1,p7G_B)+ pp->dp[i][M*p7G_NSCELLS + p7G_M])));
+
+      DMX(i,M)     = ESL_MAX(TSCDELTA(p7P_MD, M-1) * MMX(i,M-1),
+			     TSCDELTA(p7P_DD, M-1) * DMX(i,M-1));
+
+      /* note: we calculated XMX before DMX in the loop, because we probably had MMX(i,k) in a register. 
+       * but now we can't do that, because XMX depends on DMX
+       */
+      XMX(i,p7G_E) = ESL_MAX(XMX(i,p7G_E), ESL_MAX(MMX(i,M), DMX(i, M)));
+
+      /* now the special states; it's important that E is already done, and B is done after N,J */
+      t1 = ( (gm->xsc[p7P_J][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0);
+      t2 = ( (gm->xsc[p7P_E][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0);
+      XMX(i, p7G_J) = ESL_MAX( t1 * (XMX(i-1,p7G_J) + pp->xmx[i*p7G_NXCELLS + p7G_J]),
+			       t2 * XMX(i,  p7G_E));
+
+      t1 = ( (gm->xsc[p7P_C][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0);
+      t2 = ( (gm->xsc[p7P_E][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0);
+      XMX(i,p7G_C) = ESL_MAX( t1 * (XMX(i-1,p7G_C) + pp->xmx[i*p7G_NXCELLS + p7G_C]),
+			      t2 * XMX(i,  p7G_E));
+      
+      t1 = ( (gm->xsc[p7P_N][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0);
+      XMX(i,p7G_N) = t1 *  (XMX(i-1,p7G_N) + pp->xmx[i*p7G_NXCELLS + p7G_N]);
+
+      t1 = ( (gm->xsc[p7P_N][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0);
+      t2 = ( (gm->xsc[p7P_J][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0);
+      XMX(i,p7G_B) = ESL_MAX( t1 * XMX(i,  p7G_N), 
+			      t2 * XMX(i,  p7G_J));
+    }
+  
+  gx->M = M; gx->L = L;
+  *ret_e = (float) XMX(L,p7G_C);
+  return eslOK;
+}
+
+
+/* Function: cm_p7_GOATraceDbl()
+ * Incept:   EPN, Fri Oct 30 2026 (w/Claude)
+ *
+ * Purpose:  p7_GOATrace() on a double OA matrix from
+ *           cm_p7_GOptimalAccuracyDbl(); same traceback, same tie rules.
+ *
+ * Returns:  <eslOK> on success.
+ *
+ * Throws:   <eslEINVAL> if the traceback fails; <eslEMEM> on allocation
+ *           failure growing <tr>.
+ */
+int
+cm_p7_GOATraceDbl(const P7_PROFILE *gm, const P7_GMX *pp, const CM_P7_GMXD *gx, P7_TRACE *tr)
+{
+  int           i   = gx->L;	/* position in seq (1..L)         */
+  int           k   = 0;	/* position in model (1..M)       */
+  float        postprob;
+  int          sprv, scur;
+  int          status;
+
+#if eslDEBUGLEVEL > 0
+  if (tr->N != 0) ESL_EXCEPTION(eslEINVAL, "trace isn't empty: forgot to Reuse()?");
+#endif
+
+  if ((status = p7_trace_AppendWithPP(tr, p7T_T, k, i, 0.0)) != eslOK) return status;
+  if ((status = p7_trace_AppendWithPP(tr, p7T_C, k, i, 0.0)) != eslOK) return status;
+
+  sprv = p7T_C;
+  while (sprv != p7T_S) 
+    {
+      switch (sprv) {
+      case p7T_M: scur = goad_select_m(gm,     gx, i, k);  k--; i--; break;
+      case p7T_D: scur = goad_select_d(gm,     gx, i, k);  k--;      break;
+      case p7T_I: scur = goad_select_i(gm,     gx, i, k);       i--; break;
+      case p7T_N: scur = goad_select_n(i);                           break;
+      case p7T_C: scur = goad_select_c(gm, pp, gx, i);               break;
+      case p7T_J: scur = goad_select_j(gm, pp, gx, i);               break;
+      case p7T_E: scur = goad_select_e(gm,     gx, i, &k);           break;
+      case p7T_B: scur = goad_select_b(gm,     gx, i);               break;
+      default: ESL_EXCEPTION(eslEINVAL, "bogus state in traceback");
+      }
+      if (scur == -1) ESL_EXCEPTION(eslEINVAL, "OA traceback choice failed");
+
+      postprob = goad_get_postprob(pp, scur, sprv, k, i);
+      if ((status = p7_trace_AppendWithPP(tr, scur, k, i, postprob)) != eslOK) return status;
+
+      /* For NCJ, we had to defer i decrement. */
+      if ( (scur == p7T_N || scur == p7T_J || scur == p7T_C) && scur == sprv) i--;
+      sprv = scur;
+    }
+  tr->M = gm->M;
+  tr->L = gx->L;
+  return p7_trace_Reverse(tr);
+}
+
+
+
+static inline float
+goad_get_postprob(const P7_GMX *pp, int scur, int sprv, int k, int i)
+{
+  float **dp  = pp->dp;
+  float  *xmx = pp->xmx;
+
+  switch (scur) {
+  case p7T_M: return MMX(i,k);
+  case p7T_I: return IMX(i,k);
+  case p7T_N: if (sprv == scur) return XMX(i,p7G_N);
+  case p7T_C: if (sprv == scur) return XMX(i,p7G_C); 
+  case p7T_J: if (sprv == scur) return XMX(i,p7G_J); 
+  default:    return 0.0;
+  }
+}
+
+static inline int
+goad_select_m(const P7_PROFILE *gm, const CM_P7_GMXD *gx, int i, int k)
+{
+  double      **dp   = gx->dp;	/* so {MDI}MX() macros work       */
+  double       *xmx  = gx->xmx;	/* so XMX() macro works           */
+  float const *tsc  = gm->tsc;	/* so TSCDELTA() macro works */
+  double path[4];
+  int   state[4] = { p7T_M, p7T_I, p7T_D, p7T_B };
+
+  path[0] = TSCDELTA(p7P_MM, k-1) * MMX(i-1,k-1);
+  path[1] = TSCDELTA(p7P_IM, k-1) * IMX(i-1,k-1);
+  path[2] = TSCDELTA(p7P_DM, k-1) * DMX(i-1,k-1);
+  path[3] = TSCDELTA(p7P_BM, k-1) * XMX(i-1,p7G_B);
+  return state[esl_vec_DArgMax(path, 4)];
+}
+
+static inline int
+goad_select_d(const P7_PROFILE *gm, const CM_P7_GMXD *gx, int i, int k)
+{
+  double      **dp   = gx->dp;	/* so {MDI}MX() macros work       */
+  float const *tsc  = gm->tsc;	/* so TSCDELTA() macro works */
+  double        path[2];
+
+  path[0] = TSCDELTA(p7P_MD, k-1) * MMX(i, k-1);
+  path[1] = TSCDELTA(p7P_DD, k-1) * DMX(i, k-1);
+  return ((path[0] >= path[1]) ? p7T_M : p7T_D);
+}
+
+static inline int
+goad_select_i(const P7_PROFILE *gm, const CM_P7_GMXD *gx, int i, int k)
+{
+  double      **dp   = gx->dp;	/* so {MDI}MX() macros work       */
+  float const *tsc  = gm->tsc;	/* so TSCDELTA() macro works */
+  double        path[2];
+
+  path[0] = TSCDELTA(p7P_MI, k) * MMX(i-1,k);
+  path[1] = TSCDELTA(p7P_II, k) * IMX(i-1,k);
+  return ((path[0] >= path[1]) ? p7T_M : p7T_I);
+}
+
+static inline int
+goad_select_n(int i)
+{
+  return ((i==0) ? p7T_S : p7T_N);
+}
+
+static inline int
+goad_select_c(const P7_PROFILE *gm, const P7_GMX *pp, const CM_P7_GMXD *gx, int i)
+{
+  double  t1   =  ( (gm->xsc[p7P_C][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0);
+  double  t2   =  ( (gm->xsc[p7P_E][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0);
+  double *xmx  = gx->xmx;	/* so XMX() macro works           */
+  double  path[2];
+
+  path[0] = t1 * (XMX(i-1, p7G_C) + pp->xmx[i*p7G_NXCELLS + p7G_C]);
+  path[1] = t2 *  XMX(i,p7G_E);
+  return  ((path[0] > path[1]) ? p7T_C : p7T_E);
+}
+
+static inline int
+goad_select_j(const P7_PROFILE *gm, const P7_GMX *pp, const CM_P7_GMXD *gx, int i)
+{
+  double  t1   = ( (gm->xsc[p7P_J][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0);
+  double  t2   = ( (gm->xsc[p7P_E][p7P_LOOP] == -eslINFINITY) ? FLT_MIN : 1.0);
+  double *xmx  = gx->xmx;	/* so XMX() macro works           */
+  double  path[2];
+
+  path[0] = t1 * (XMX(i-1,p7G_J) + pp->xmx[i*p7G_NXCELLS + p7G_J]);
+  path[1] = t2 * XMX(i,p7G_E);
+  return  ((path[0] > path[1]) ? p7T_J : p7T_E);
+}
+
+static inline int
+goad_select_e(const P7_PROFILE *gm, const CM_P7_GMXD *gx, int i, int *ret_k)
+{
+  double **dp   = gx->dp;	/* so {MDI}MX() macros work       */
+  double   max  = -eslINFINITY;
+  int     smax = -1;		/* will be returned as "error code" if no max found */
+  int     kmax = -1;
+  int     k;
+
+  if (! p7_profile_IsLocal(gm)) /* glocal/global is easier */
+    {
+      *ret_k = gm->M;
+      return ((MMX(i,gm->M) >= DMX(i,gm->M)) ? p7T_M : p7T_D);
+    }
+
+  for (k = 1; k <= gm->M; k++)
+    {
+      if (MMX(i,k) >= max) { max = MMX(i,k); smax = p7T_M; kmax = k; }
+      if (DMX(i,k) >  max) { max = DMX(i,k); smax = p7T_D; kmax = k; }
+    }
+  *ret_k = kmax;
+  return smax;
+}
+
+static inline int
+goad_select_b(const P7_PROFILE *gm, const CM_P7_GMXD *gx, int i)
+{
+  double t1 = ( (gm->xsc[p7P_N][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0);
+  double t2 = ( (gm->xsc[p7P_J][p7P_MOVE] == -eslINFINITY) ? FLT_MIN : 1.0);
+  double *xmx  = gx->xmx;	/* so XMX() macro works           */
+  double path[2];
+
+  path[0] = t1 * XMX(i, p7G_N);
+  path[1] = t2 * XMX(i, p7G_J);
+  return  ((path[0] > path[1]) ? p7T_N : p7T_J);
+}
+#undef TSCDELTA
+
+
+/*****************************************************************
+ * Unit tests (brief 26_0821-141)
+ *   make cm_p7_band_utest; ./cm_p7_band_utest
+ *****************************************************************/
+#ifdef CM_P7_BAND_TESTDRIVE
+
+#include "esl_getopts.h"
+#include "esl_random.h"
+#include "esl_randomseq.h"
+
+/* utest_dlogsum(): p7b_dlogsum() against exact log(e^a + e^b), over the
+ * table's whole range, at the score magnitudes genome-scale F/B reach. */
+static void
+utest_dlogsum(void)
+{
+  double base[3] = { 0.0, -150000.0, 150000.0 };
+  double d, exact, err, maxerr = 0.;
+  int    j;
+
+  for (j = 0; j < 3; j++)
+    for (d = 0.0; d < 40.0; d += 0.000731) {
+      exact = base[j] + log1p(exp(-d));
+      err   = fabs(p7b_dlogsum(base[j], base[j] - d) - exact);
+      if (err > maxerr) maxerr = err;
+      if (p7b_dlogsum(base[j] - d, base[j]) != p7b_dlogsum(base[j], base[j] - d))
+        esl_fatal("utest_dlogsum: not symmetric at d=%g", d);
+    }
+  /* linear interpolation over 0.001-nat steps: error <= h^2/8 * max|f''| ~ 3e-8 */
+  if (maxerr > 1e-7) esl_fatal("utest_dlogsum: max error %g nats > 1e-7", maxerr);
+  if (p7b_dlogsum(-eslINFINITY, 2.5) != 2.5)                    esl_fatal("utest_dlogsum: -inf + b != b");
+  if (p7b_dlogsum(2.5, -eslINFINITY) != 2.5)                    esl_fatal("utest_dlogsum: a + -inf != a");
+  if (p7b_dlogsum(-eslINFINITY, -eslINFINITY) != -eslINFINITY)  esl_fatal("utest_dlogsum: -inf + -inf != -inf");
+}
+
+/* utest_generic_dbl(): cm_p7_GForwardDbl()/cm_p7_GBackwardDbl()/
+ * cm_p7_GForwardDblScore() (brief 26_0821-161).
+ *  1. Short target, glocal/uniglocal/local: every cell and both totals
+ *     agree with HMMER's float p7_GForward()/p7_GBackward() to 0.05
+ *     nats, Forward and Backward totals agree, and the score-only
+ *     kernel returns the Forward score.
+ *  2. Long iid target under a glocal profile (the cmbuild calibration
+ *     regime, L = 4M): the double Forward and Backward totals agree to
+ *     1e-3 nats.  Control: the float Forward is off from the double one
+ *     by more than 0.1 nats (~0.19 at M = 1000, L = 4000; the drift
+ *     grows with both M and L), so the input reaches the regime the
+ *     test is for. */
+static void
+utest_generic_dbl(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, int be_verbose)
+{
+  int         modes[3] = { p7_GLOCAL, p7_UNIGLOCAL, p7_LOCAL };
+  int         M  = 60, L = 300, LL = 4000, MM = 1000;
+  P7_HMM     *hmm = NULL;
+  P7_BG      *bg  = p7_bg_Create(abc);
+  P7_PROFILE *gm  = NULL;
+  P7_GMX     *fx  = NULL, *bx = NULL, *ff = NULL, *fb = NULL;
+  ESL_DSQ    *dsq = NULL;
+  float       fF, fB, dF, dB, v1, v2;
+  double      dS, dmax;
+  int         m, i, k, s;
+
+  /* 1. short target, all cells */
+  if (p7_hmm_Sample(r, M, abc, &hmm) != eslOK) esl_fatal("utest_generic_dbl: p7_hmm_Sample failed");
+  gm  = p7_profile_Create(M, abc);
+  dsq = malloc(sizeof(ESL_DSQ) * (LL+2));
+  fx  = p7_gmx_Create(M, L); bx = p7_gmx_Create(M, L);
+  ff  = p7_gmx_Create(M, L); fb = p7_gmx_Create(M, L);
+  for (m = 0; m < 3; m++)
+    {
+      p7_ProfileConfig(hmm, bg, gm, L, modes[m]);
+      esl_rsq_xfIID(r, bg->f, abc->K, L, dsq);
+      p7_GForward (dsq, L, gm, ff, &fF);
+      p7_GBackward(dsq, L, gm, fb, &fB);
+      if (cm_p7_GForwardDbl (dsq, L, gm, fx, &dF) != eslOK) esl_fatal("utest_generic_dbl: cm_p7_GForwardDbl failed");
+      if (cm_p7_GBackwardDbl(dsq, L, gm, bx, &dB) != eslOK) esl_fatal("utest_generic_dbl: cm_p7_GBackwardDbl failed");
+      if (cm_p7_GForwardDblScore(dsq, L, gm, &dS) != eslOK) esl_fatal("utest_generic_dbl: cm_p7_GForwardDblScore failed");
+      if (fabs(fF - dF) > 0.05 || fabs(fB - dB) > 0.05) esl_fatal("utest_generic_dbl: mode %d: float/double totals F %.4f/%.4f B %.4f/%.4f", m, fF, dF, fB, dB);
+      if (fabs(dF - dB) > 1e-4)                           esl_fatal("utest_generic_dbl: mode %d: double F %.6f != B %.6f", m, dF, dB);
+      if ((float) dS != dF)                               esl_fatal("utest_generic_dbl: mode %d: score-only %.6f != Forward %.6f", m, dS, dF);
+      for (i = 0; i <= L; i++)
+	{
+	  for (k = 0; k <= M; k++)
+	    for (s = 0; s < p7G_NSCELLS; s++) {
+	      v1 = ff->dp[i][k*p7G_NSCELLS+s]; v2 = fx->dp[i][k*p7G_NSCELLS+s];
+	      if (! (v1 == v2 || fabs(v1 - v2) <= 0.05)) esl_fatal("utest_generic_dbl: mode %d: Forward cell %d,%d,%d %g vs %g", m, i, k, s, v1, v2);
+	      v1 = fb->dp[i][k*p7G_NSCELLS+s]; v2 = bx->dp[i][k*p7G_NSCELLS+s];
+	      if (! (v1 == v2 || fabs(v1 - v2) <= 0.05)) esl_fatal("utest_generic_dbl: mode %d: Backward cell %d,%d,%d %g vs %g", m, i, k, s, v1, v2);
+	    }
+	  for (s = 0; s < p7G_NXCELLS; s++) {
+	    v1 = ff->xmx[i*p7G_NXCELLS+s]; v2 = fx->xmx[i*p7G_NXCELLS+s];
+	    if (! (v1 == v2 || fabs(v1 - v2) <= 0.05)) esl_fatal("utest_generic_dbl: mode %d: Forward special %d,%d %g vs %g", m, i, s, v1, v2);
+	    v1 = fb->xmx[i*p7G_NXCELLS+s]; v2 = bx->xmx[i*p7G_NXCELLS+s];
+	    if (! (v1 == v2 || fabs(v1 - v2) <= 0.05)) esl_fatal("utest_generic_dbl: mode %d: Backward special %d,%d %g vs %g", m, i, s, v1, v2);
+	  }
+	}
+    }
+  p7_gmx_Destroy(fx); p7_gmx_Destroy(bx); p7_gmx_Destroy(ff); p7_gmx_Destroy(fb);
+  p7_profile_Destroy(gm); p7_hmm_Destroy(hmm);
+
+  /* 2. long iid target, glocal */
+  if (p7_hmm_Sample(r, MM, abc, &hmm) != eslOK) esl_fatal("utest_generic_dbl: p7_hmm_Sample failed");
+  gm = p7_profile_Create(MM, abc);
+  p7_ProfileConfig(hmm, bg, gm, LL, p7_GLOCAL);
+  esl_rsq_xfIID(r, bg->f, abc->K, LL, dsq);
+  fx = p7_gmx_Create(MM, LL);
+  if (cm_p7_GForwardDblScore(dsq, LL, gm, &dS) != eslOK) esl_fatal("utest_generic_dbl: cm_p7_GForwardDblScore failed");
+  if (cm_p7_GBackwardDbl(dsq, LL, gm, fx, &dB)  != eslOK) esl_fatal("utest_generic_dbl: cm_p7_GBackwardDbl failed");
+  p7_GForward(dsq, LL, gm, fx, &fF);
+  dmax = fabs(dS - dB);
+  if (be_verbose) printf("utest_generic_dbl: L=%d M=%d  double F %.4f B %.4f  float F %.4f\n", LL, MM, dS, dB, fF);
+  if (dmax > 1e-3)          esl_fatal("utest_generic_dbl: long target: double F %.4f and B %.4f differ by %g nats", dS, dB, dmax);
+  if (fabs(fF - dS) < 0.1)  esl_fatal("utest_generic_dbl: long target: float Forward %.4f within 0.1 nats of double %.4f; input does not reach the drift regime", fF, dS);
+
+  p7_gmx_Destroy(fx);
+  free(dsq);
+  p7_profile_Destroy(gm); p7_hmm_Destroy(hmm); p7_bg_Destroy(bg);
+}
+
+/* utest_null2_dbl(): cm_p7_GNull2_ByExpectationDbl() (brief 26_0821-161)
+ * against an exact reference (double sums, exact log(e^a + e^b)) on the
+ * posterior of a glocal profile with M = 1000 over an L = 1000 target:
+ * every residue's null2 log odds must agree to 1e-5 nats.  Control:
+ * HMMER's p7_GNull2_ByExpectation() is off from the reference by more
+ * than 1e-5 nats for some residue, the error the double version
+ * removes, so the test can tell them apart. */
+static void
+utest_null2_dbl(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, int be_verbose)
+{
+  int         M = 1000, L = 1000, K = abc->K;
+  P7_HMM     *hmm = NULL;
+  P7_BG      *bg  = p7_bg_Create(abc);
+  P7_PROFILE *gm  = p7_profile_Create(M, abc);
+  P7_GMX     *fx  = p7_gmx_Create(M, L);
+  P7_GMX     *bx  = p7_gmx_Create(M, L);
+  ESL_DSQ    *dsq = malloc(sizeof(ESL_DSQ) * (L+2));
+  float       n2d[p7_MAXCODE], n2f[p7_MAXCODE];
+  double     *w   = calloc((M+1) * p7G_NSCELLS, sizeof(double));
+  double      wx[p7G_NXCELLS] = { 0. }, ref[p7_MAXCODE], xf, a, b, errd = 0., errf = 0.;
+  int         i, k, x;
+
+  if (p7_hmm_Sample(r, M, abc, &hmm) != eslOK) esl_fatal("utest_null2_dbl: p7_hmm_Sample failed");
+  p7_ProfileConfig(hmm, bg, gm, L, p7_GLOCAL);
+  esl_rsq_xfIID(r, bg->f, K, L, dsq);
+  cm_p7_GForwardDbl (dsq, L, gm, fx, NULL);
+  cm_p7_GBackwardDbl(dsq, L, gm, bx, NULL);
+  p7_GDecoding(gm, fx, bx, bx);   /* bx is now the posterior matrix */
+  if (cm_p7_GNull2_ByExpectationDbl(gm, bx, n2d) != eslOK) esl_fatal("utest_null2_dbl: cm_p7_GNull2_ByExpectationDbl failed");
+
+  /* exact reference */
+#define XLS(a,b) ( ((a) > (b)) ? ((b) == -eslINFINITY ? (a) : (a) + log1p(exp((b)-(a)))) : ((a) == -eslINFINITY ? (b) : (b) + log1p(exp((a)-(b)))) )
+  for (i = 1; i <= L; i++) {
+    for (k = 0; k < (M+1)*p7G_NSCELLS; k++) w[k]  += bx->dp[i][k];
+    for (k = 0; k < p7G_NXCELLS;       k++) wx[k] += bx->xmx[i*p7G_NXCELLS + k];
+  }
+  for (k = 0; k < (M+1)*p7G_NSCELLS; k++) w[k]  = log(w[k])  - log((double) L);
+  for (k = 0; k < p7G_NXCELLS;       k++) wx[k] = log(wx[k]) - log((double) L);
+  a  = XLS(wx[p7G_N], wx[p7G_C]);
+  xf = XLS(a, wx[p7G_J]);
+  for (x = 0; x < K; x++) {
+    ref[x] = -eslINFINITY;
+    for (k = 1; k < M; k++) {
+      b = w[k*p7G_NSCELLS + p7G_M] + p7P_MSC(gm, k, x); ref[x] = XLS(ref[x], b);
+      b = w[k*p7G_NSCELLS + p7G_I] + p7P_ISC(gm, k, x); ref[x] = XLS(ref[x], b);
+    }
+    b = w[M*p7G_NSCELLS + p7G_M] + p7P_MSC(gm, M, x); ref[x] = XLS(ref[x], b);
+    ref[x] = XLS(ref[x], xf);
+  }
+#undef XLS
+  p7_GNull2_ByExpectation(gm, bx, n2f);   /* last: it overwrites bx row 0 */
+  for (x = 0; x < K; x++) {
+    errd = ESL_MAX(errd, fabs(log(n2d[x]) - ref[x]));
+    errf = ESL_MAX(errf, fabs(log(n2f[x]) - ref[x]));
+  }
+  if (be_verbose) printf("utest_null2_dbl: M=%d L=%d  max |log null2 - exact|: double %.3g  float %.3g nats\n", M, L, errd, errf);
+  if (errd > 1e-5)  esl_fatal("utest_null2_dbl: double null2 off from exact by %g nats", errd);
+  if (errf <= 1e-5) esl_fatal("utest_null2_dbl: float null2 within %g nats of exact; the control does not separate the two", errf);
+
+  free(w); free(dsq);
+  p7_gmx_Destroy(fx); p7_gmx_Destroy(bx);
+  p7_profile_Destroy(gm); p7_hmm_Destroy(hmm); p7_bg_Destroy(bg);
+}
+
+static int
+trace_differs(const P7_TRACE *t1, const P7_TRACE *t2)
+{
+  int z;
+  if (t1->N != t2->N) return TRUE;
+  for (z = 0; z < t1->N; z++)
+    if (t1->st[z] != t2->st[z] || t1->k[z] != t2->k[z] || t1->i[z] != t2->i[z] || t1->pp[z] != t2->pp[z])
+      return TRUE;
+  return FALSE;
+}
+
+/* utest_oa_dbl(): cm_p7_GOptimalAccuracyDbl()/cm_p7_GOATraceDbl() and
+ * cm_p7_gmxd_CreateOver() (brief 26_0821-161).
+ *  1. On a short glocal envelope (M = 60, a homolog emitted from the
+ *     model) the double OA gives HMMER's float trace and OA score (to
+ *     1e-3).
+ *  2. The double matrix gives bit-identical results whether all of its
+ *     rows, some of them, or none fit in the spare float matrix.
+ *  3. On a long one (M = 1000) double and float OA scores
+ *     differ by less than 0.05; with <be_verbose> the difference is
+ *     printed (float accumulation error, the reason for the change). */
+static void
+utest_oa_dbl(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, int be_verbose)
+{
+  int         Ms[2] = { 60, 1000 };
+  P7_BG      *bg  = p7_bg_Create(abc);
+  int         t, z, a;
+
+  for (t = 0; t < 2; t++)
+    {
+      int         M = Ms[t], L;
+      P7_HMM     *hmm = NULL;
+      P7_PROFILE *gm  = p7_profile_Create(M, abc);
+      P7_GMX     *fx, *pp, *fo, *sm;
+      ESL_SQ     *sq  = esl_sq_CreateDigital(abc);
+      P7_TRACE   *trf = p7_trace_CreateWithPP();
+      P7_TRACE   *trd[3];
+      CM_P7_GMXD *ox;
+      float       oaf, oad[3];
+
+      if (p7_hmm_Sample(r, M, abc, &hmm) != eslOK) esl_fatal("utest_oa_dbl: p7_hmm_Sample failed");
+      do { esl_sq_Reuse(sq); p7_CoreEmit(r, hmm, sq, NULL); } while (sq->n < 2);   /* a homolog, no flanks */
+      L  = sq->n;
+      p7_ProfileConfig(hmm, bg, gm, L, p7_UNIGLOCAL);
+      fx = p7_gmx_Create(M, L);   pp = p7_gmx_Create(M, L);   fo = p7_gmx_Create(M, L);
+      sm = p7_gmx_Create(M, L/3);  /* spare that holds only some of the double rows */
+      cm_p7_GForwardDbl (sq->dsq, sq->n, gm, fx, NULL);
+      cm_p7_GBackwardDbl(sq->dsq, sq->n, gm, pp, NULL);
+      p7_GDecoding(gm, fx, pp, pp);
+
+      p7_GOptimalAccuracy(gm, pp, fo, &oaf);
+      fo->M = M; fo->L = sq->n;   /* p7_GOptimalAccuracy() leaves these to the caller; p7_GOATrace() reads L */
+      p7_GOATrace(gm, pp, fo, trf);
+      for (a = 0; a < 3; a++) {
+	trd[a] = p7_trace_CreateWithPP();
+	ox = cm_p7_gmxd_CreateOver((a == 0) ? fx : ((a == 1) ? sm : NULL), M, sq->n);
+	if (ox == NULL) esl_fatal("utest_oa_dbl: cm_p7_gmxd_CreateOver failed");
+	cm_p7_GOptimalAccuracyDbl(gm, pp, ox, &oad[a]);
+	if (cm_p7_GOATraceDbl(gm, pp, ox, trd[a]) != eslOK) esl_fatal("utest_oa_dbl: cm_p7_GOATraceDbl failed");
+	cm_p7_gmxd_Destroy(ox);
+      }
+      if (oad[1] != oad[0] || oad[2] != oad[0] || trace_differs(trd[1], trd[0]) || trace_differs(trd[2], trd[0]))
+	esl_fatal("utest_oa_dbl: M=%d: result depends on how the double matrix's rows are placed", M);
+      if (be_verbose) printf("utest_oa_dbl: M=%d L=%d  OA float %.4f double %.4f  (diff %.2g)  traces %s\n",
+			     M, (int) sq->n, oaf, oad[0], oaf - oad[0], trace_differs(trf, trd[0]) ? "differ" : "same");
+      if (fabs(oaf - oad[0]) > ((t == 0) ? 1e-3 : 0.05)) esl_fatal("utest_oa_dbl: M=%d: OA float %.4f vs double %.4f", M, oaf, oad[0]);
+      if (t == 0 && trace_differs(trf, trd[0]))          esl_fatal("utest_oa_dbl: M=%d: double OA trace differs from HMMER's", M);
+
+      for (a = 0; a < 3; a++) p7_trace_Destroy(trd[a]);
+      p7_trace_Destroy(trf); esl_sq_Destroy(sq);
+      p7_gmx_Destroy(fx); p7_gmx_Destroy(pp); p7_gmx_Destroy(fo); p7_gmx_Destroy(sm);
+      p7_profile_Destroy(gm); p7_hmm_Destroy(hmm);
+    }
+  p7_bg_Destroy(bg);
+}
+
+static void
+check_decstats(const char *engine, const CM_P7_DECSTATS *st, int L)
+{
+  if (st->nrow != L)        esl_fatal("utest_genome_scale: %s decoded %ld rows, expected %d", engine, (long) st->nrow, L);
+  if (st->ndead != 0)       esl_fatal("utest_genome_scale: %s has %ld dead rows", engine, (long) st->ndead);
+  if (st->nnonfinite != 0)  esl_fatal("utest_genome_scale: %s has %ld non-finite cells", engine, (long) st->nnonfinite);
+  if (st->fb_incons > 1e-3) esl_fatal("utest_genome_scale: %s F/B inconsistent by %g nats", engine, st->fb_incons);
+}
+
+/* float_fb_incons(): runs the float-output banded Forward/Backward that
+ * cmalign's HMM-only path used before brief 26_0821-141 (still used by
+ * cmsearch --msvband/--vitband; double recursion since brief 26_0821-151)
+ * and returns the same F/B-inconsistency measure as CM_P7_DECSTATS's
+ * fb_incons: how far any row's max of F+B minus the Forward total falls
+ * outside [-log(nstates), 0]. */
+static double
+float_fb_incons(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GBANDS *bnd)
+{
+  P7_GMXB *fx = p7_gmxb_Create(bnd);
+  P7_GMXB *bx = p7_gmxb_Create(bnd);
+  float    fsc;
+  double   incons = 0., pN = 0., pJ = -eslINFINITY, pC = -eslINFINITY;
+  int64_t  c = 0;
+  int      r, k, nk;
+
+  cm_p7_GForwardBanded (dsq, L, gm, fx, &fsc);
+  cm_p7_GBackwardBanded(dsq, L, gm, bx, NULL);
+  for (r = 0; r < bnd->nrow; r++)   /* one segment, rows 1..L */
+    {
+      double rowmax = -eslINFINITY, v, d;
+      nk = bnd->kmem[2*r+1] - bnd->kmem[2*r] + 1;
+      for (k = 0; k < nk; k++, c++) {
+        v = (double) fx->dp[c*p7G_NSCELLS + p7G_M] + bx->dp[c*p7G_NSCELLS + p7G_M]; if (v > rowmax) rowmax = v;
+        v = (double) fx->dp[c*p7G_NSCELLS + p7G_I] + bx->dp[c*p7G_NSCELLS + p7G_I]; if (v > rowmax) rowmax = v;
+      }
+      v = pN + bx->xmx[r*p7G_NXCELLS + p7G_N] + gm->xsc[p7P_N][p7P_LOOP]; if (v > rowmax) rowmax = v;
+      v = pJ + bx->xmx[r*p7G_NXCELLS + p7G_J] + gm->xsc[p7P_J][p7P_LOOP]; if (v > rowmax) rowmax = v;
+      v = pC + bx->xmx[r*p7G_NXCELLS + p7G_C] + gm->xsc[p7P_C][p7P_LOOP]; if (v > rowmax) rowmax = v;
+      d = rowmax - fsc;
+      v = ESL_MAX(d, -log((double) (2*nk + 3)) - d);
+      if (v > incons) incons = v;
+      pN = fx->xmx[r*p7G_NXCELLS + p7G_N]; pJ = fx->xmx[r*p7G_NXCELLS + p7G_J]; pC = fx->xmx[r*p7G_NXCELLS + p7G_C];
+    }
+  p7_gmxb_Destroy(fx);
+  p7_gmxb_Destroy(bx);
+  return incons;
+}
+
+/* utest_genome_scale(): the regime that broke the float kernels (brief
+ * 26_0821-140): banded F/B at |score| >= 2^16 nats, where a float's ulp is
+ * >= 2^-7 nats and per-row rounding drifts F + B apart along the
+ * sequence.  The drift needs a SYSTEMATIC rounding bias, which comes from
+ * the same few score increments recurring row after row, as they do in a
+ * real nucleotide profile; a random protein HMM's varied increments
+ * round like a random walk and barely drift.  So: an ungapped RNA HMM of
+ * length M whose nodes are all identical, skewed to emit A (+1.2 nats per
+ * A), aligned on a diagonal band of half-width <W> to a sequence emitted
+ * from it.  ~10^5 residues reach 2^16 nats in a couple of seconds.  The
+ * profile is configured the way cmalign's default HMM-only
+ * mode configures it (local, 5'/3' truncation).  Runs all three HMM-OA
+ * engines and requires: no dead rows, no non-finite cells, F and B
+ * consistent along every row, matching Forward and Backward totals, and
+ * identical posteriors, scores and OA traces across the engines.  The
+ * float-output kernels cm_p7_GForwardBanded()/cm_p7_GBackwardBanded()
+ * must pass the same consistency check (to 0.05 nats).  While they ran
+ * their recursion in float they failed it by ~40 nats on this input,
+ * which is the evidence the input reaches the regime this test is for.
+ *
+ * <pA> is each node's A emission probability; <do_fb_control> selects the
+ * case.  TRUE: the F/B case above (pA 0.85, ungapped, diagonal band).
+ * FALSE (brief 26_0821-151): the OA case.  There every posterior on that
+ * input is exactly 1, so a float OA matrix sums integers and agrees with
+ * a double one.  Here the model has indels (1% M->I, M->D) and the band
+ * is centered on the emitting trace; with identical nodes the alignment
+ * is shift-invariant, so posteriors spread over the band and the OA sums
+ * (~10^4) are fractional.  Engines 0, 1 and 2 must then still give the
+ * same OA score and trace, which a float OA matrix in engine 0 does not
+ * (OA 10898.0049 vs 10898.0762).  Its control: the traced posteriors
+ * summed in float and in double must disagree. */
+static void
+utest_genome_scale(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, int M, int W, double pA, int do_fb_control, int be_verbose)
+{
+  P7_HMM     *hmm  = NULL;
+  P7_BG      *bg   = p7_bg_Create(abc);
+  P7_PROFILE *gm   = p7_profile_Create(M, abc);
+  ESL_SQ     *sq   = esl_sq_CreateDigital(abc);
+  int        *kmin = NULL;
+  int        *kmax = NULL;
+  P7_GBANDS  *bnd  = p7_gbands_Create();
+  P7_GMXB    *pp0  = NULL, *pp1 = NULL;
+  CM_P7_GMXBD *gx0 = NULL;
+  P7_TRACE   *tr0  = p7_trace_CreateWithPP();
+  P7_TRACE   *tr1  = p7_trace_CreateWithPP();
+  P7_TRACE   *tr2  = p7_trace_CreateWithPP();
+  P7_TRACE   *etr  = p7_trace_Create();
+  CM_P7_DECSTATS st0, st1, st2;
+  float       f0, b0, f1, f2, oa0, oa1, oa2;
+  double      fincons = 0.;
+  float       fpath   = 0.;   /* the OA trace's posteriors summed in float  */
+  double      dpath   = 0.;   /* ... and in double                          */
+  int         z;
+  int64_t     c;
+  int         i, k, L;
+
+  if (p7_hmm_SampleUngapped(r, M, abc, &hmm) != eslOK)             esl_fatal("utest_genome_scale: p7_hmm_SampleUngapped() failed");
+  for (k = 1; k <= M; k++) {
+    for (i = 0; i < abc->K; i++) hmm->mat[k][i] = (i == 0) ? pA : (1. - pA) / (abc->K - 1);
+    for (i = 0; i < abc->K; i++) hmm->ins[k][i] = hmm->ins[1][i];
+    if (k < M) for (i = 0; i < p7H_NTRANSITIONS; i++) hmm->t[k][i] = hmm->t[1][i];
+    if (! do_fb_control && k < M) {   /* OA case: indels, so the alignment is uncertain */
+      hmm->t[k][p7H_MM] = 0.98; hmm->t[k][p7H_MI] = 0.01; hmm->t[k][p7H_MD] = 0.01;
+      hmm->t[k][p7H_IM] = 0.50; hmm->t[k][p7H_II] = 0.50;
+      hmm->t[k][p7H_DM] = 0.50; hmm->t[k][p7H_DD] = 0.50;
+    }
+  }
+  if (p7_CoreEmit(r, hmm, sq, etr) != eslOK)                       esl_fatal("utest_genome_scale: p7_CoreEmit() failed");
+  L = sq->n;
+  if (p7_ProfileConfig(hmm, bg, gm, L, p7_LOCAL) != eslOK)         esl_fatal("utest_genome_scale: p7_ProfileConfig() failed");
+  if (p7_ProfileConfig5PrimeAnd3PrimeTrunc(gm, L) != eslOK)        esl_fatal("utest_genome_scale: trunc config failed");
+  kmin = malloc(sizeof(int) * (L+1));
+  kmax = malloc(sizeof(int) * (L+1));
+  if (do_fb_control)   /* diagonal band */
+    for (i = 1; i <= L; i++) { kmin[i] = ESL_MAX(1, i - W); kmax[i] = ESL_MIN(M, i + W); }
+  else {               /* indels: center each row on the emitting node */
+    for (z = 0; z < etr->N; z++)
+      if (etr->i[z] > 0) { kmin[etr->i[z]] = ESL_MAX(1, etr->k[z] - W); kmax[etr->i[z]] = ESL_MIN(M, etr->k[z] + W); }
+  }
+  if (cm_p7_GBands_FromKminKmax(kmin, kmax, L, M, bnd) != eslOK)   esl_fatal("utest_genome_scale: band setup failed");
+  bnd->L = L; bnd->M = M;   /* cm_p7_GBands_FromKminKmax() sets these before p7_gbands_Reuse() zeroes them */
+
+  /* engine 0: non-checkpointed */
+  pp0 = p7_gmxb_Create(bnd);
+  if (cm_p7_GFBDecodeBandedDouble(sq->dsq, L, gm, pp0, &f0, &b0, &st0) != eslOK) esl_fatal("utest_genome_scale: engine 0 failed");
+  gx0 = cm_p7_gmxbd_Create(bnd);
+  if (cm_p7_GOptimalAccuracyBanded(gm, pp0, gx0, &oa0) != eslOK)   esl_fatal("utest_genome_scale: engine 0 OA failed");
+  if (cm_p7_GOATraceBanded(gm, pp0, gx0, tr0) != eslOK)             esl_fatal("utest_genome_scale: engine 0 trace failed");
+  /* engine 1: resident posterior */
+  pp1 = p7b_pp_Create(bnd);
+  if (cm_p7_GCheckptFBDecode_Banded(sq->dsq, L, gm, pp1, &f1, &st1) != eslOK) esl_fatal("utest_genome_scale: engine 1 failed");
+  if (cm_p7_GCheckptOA_Banded(gm, pp1, tr1, &oa1) != eslOK)         esl_fatal("utest_genome_scale: engine 1 OA failed");
+  /* engine 2: double-checkpointed */
+  if (cm_p7_GCheckptFBDecodeOA_Banded(sq->dsq, L, gm, bnd, tr2, &f2, &oa2, &st2) != eslOK) esl_fatal("utest_genome_scale: engine 2 failed");
+
+  /* the test only means something at genome-scale magnitudes ... */
+  if (do_fb_control  && fabs(f0)  < 65536.) esl_fatal("utest_genome_scale: |Forward| = %g nats < 2^16; raise -M", fabs(f0));
+  if (!do_fb_control && fabs(oa0) < 4096.)  esl_fatal("utest_genome_scale: OA score %g < 2^12; raise -M", fabs(oa0));
+  /* ... where the float-output kernels (cmsearch's banded F/B) must stay
+   * consistent too.  Before brief 26_0821-151 they also ran the recursion
+   * in float and failed this by ~40 nats on this input; now only the
+   * stored values are rounded, which costs ~0.003 nats. */
+  if (do_fb_control && (fincons = float_fb_incons(sq->dsq, L, gm, bnd)) > 0.05)
+    esl_fatal("utest_genome_scale: float-output F/B inconsistent by %g nats", fincons);
+  /* OA positive control (brief 26_0821-151): with fractional posteriors,
+   * the OA sums ~L in float lose bits a double keeps.  Summing the traced
+   * path's own posteriors in float and in double must disagree, or the
+   * input is too easy to tell a float OA matrix from a double one. */
+  for (z = 0; z < tr1->N; z++) { fpath += tr1->pp[z]; dpath += tr1->pp[z]; }
+  if (! do_fb_control && fpath == (float) dpath)
+    esl_fatal("utest_genome_scale: OA control failed: float and double path sums agree (%.4f); raise -M or lower pA", dpath);
+
+  if (be_verbose)
+    printf("pA=%.2f L=%d Forward=%.4f Backward=%.4f nats; float F/B inconsistency %.3f nats; double: dead=%ld nonfinite=%ld incons=%g drift_max=%g; OA %.4f, path pp sum float %.4f double %.4f\n",
+           pA, L, f0, b0, fincons, (long) st0.ndead, (long) st0.nnonfinite, st0.fb_incons, st0.drift_max, oa0, fpath, dpath);
+  check_decstats("engine 0", &st0, L);
+  check_decstats("engine 1", &st1, L);
+  check_decstats("engine 2", &st2, L);
+  if (fabs(f0 - b0) > 0.05)            esl_fatal("utest_genome_scale: Forward %.4f != Backward %.4f", f0, b0);
+  if (f0 != f1 || f0 != f2)            esl_fatal("utest_genome_scale: engine Forward scores differ: %.4f %.4f %.4f", f0, f1, f2);
+  if (oa0 != oa1 || oa0 != oa2)        esl_fatal("utest_genome_scale: engine OA scores differ: %.4f %.4f %.4f", oa0, oa1, oa2);
+  for (c = 0; c < bnd->ncell; c++)
+    for (k = 0; k < P7B_PP_NSCELLS; k++)
+      if (pp0->dp[c * p7G_NSCELLS + k] != pp1->dp[c * P7B_PP_NSCELLS + k])
+        esl_fatal("utest_genome_scale: engine 0/1 posteriors differ at cell %ld", (long) c);
+  if (trace_differs(tr0, tr1) || trace_differs(tr0, tr2))
+    esl_fatal("utest_genome_scale: engine OA traces differ");
+
+  free(kmin); free(kmax);
+  p7_gmxb_Destroy(pp0); cm_p7_gmxbd_Destroy(gx0); p7_gmxb_Destroy(pp1);
+  p7_trace_Destroy(tr0); p7_trace_Destroy(tr1); p7_trace_Destroy(tr2); p7_trace_Destroy(etr);
+  esl_sq_Destroy(sq);
+  p7_gbands_Destroy(bnd); p7_profile_Destroy(gm); p7_bg_Destroy(bg); p7_hmm_Destroy(hmm);
+}
+
+/* utest_gap_band(): a band with unbanded gaps, under a profile with
+ * finite N and C loops (p7_UNIGLOCAL, as cmalign -g --notrunc --hmm
+ * configures it).  The sequence is a random 5' flank, a sequence emitted
+ * from the model, and a random 3' flank; the band is rows LG+1..gapa-1,
+ * then (after an interior gap) rows gapb+1..L, all full width, so the
+ * correct parse stays in N through the gap(s) and enters the model in the
+ * second segment.  <LG> is the length of the leading gap (0: interior gap
+ * only).  Requires Forward and Backward totals to agree (double engine 0
+ * and the float originals), no dead rows, no non-finite cells, consistent
+ * F/B, identical Forward scores and posteriors from engines 0 and 1, that
+ * all three engines' OA refuse the gapped band (see the note at the OA
+ * check), and that the regime is real: the N posterior dominates the
+ * first band row.  Before brief 26_0821-141's commit 9, Backward charged
+ * only C's loops across a gap and never entered the model from a gap row,
+ * so the totals disagreed and this test failed. */
+static void
+utest_gap_band(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, int M, int LG)
+{
+  int         n5 = 120, n3 = 100, gapa = 101, gapb = 115;
+  P7_HMM     *hmm  = NULL;
+  P7_BG      *bg   = p7_bg_Create(abc);
+  P7_PROFILE *gm   = p7_profile_Create(M, abc);
+  ESL_SQ     *core = esl_sq_CreateDigital(abc);
+  ESL_DSQ    *dsq  = NULL;
+  P7_GBANDS  *bnd  = p7_gbands_Create();
+  P7_GMXB    *pp0  = NULL, *pp1 = NULL, *fx = NULL, *bx = NULL;
+  P7_TRACE   *tr1  = p7_trace_CreateWithPP();
+  P7_TRACE   *tr2  = p7_trace_CreateWithPP();
+  P7_TRACE   *tr0  = p7_trace_CreateWithPP();
+  CM_P7_GMXBD *gx0 = NULL;
+  CM_P7_DECSTATS st[3];
+  float       f0, b0, f1, f2, oa0, oa1, oa2, ff, fb;
+  int64_t     c;
+  int         i, k, L, e;
+
+  if (p7_hmm_Sample(r, M, abc, &hmm) != eslOK)  esl_fatal("utest_gap_band: p7_hmm_Sample() failed");
+  if (p7_CoreEmit(r, hmm, core, NULL) != eslOK) esl_fatal("utest_gap_band: p7_CoreEmit() failed");
+  L = n5 + core->n + n3;
+  dsq = malloc(sizeof(ESL_DSQ) * (L + 2));
+  if (esl_rsq_xfIID(r, bg->f, abc->K, L, dsq) != eslOK) esl_fatal("utest_gap_band: esl_rsq_xfIID() failed");
+  memcpy(dsq + n5 + 1, core->dsq + 1, core->n);
+  if (p7_ProfileConfig(hmm, bg, gm, L, p7_UNIGLOCAL) != eslOK) esl_fatal("utest_gap_band: p7_ProfileConfig() failed");
+  if (gm->xsc[p7P_N][p7P_LOOP] == -eslINFINITY) esl_fatal("utest_gap_band: N loop is not finite");
+
+  p7_gbands_Reuse(bnd);
+  for (i = LG + 1; i <= L; i++)
+    if (i < gapa || i > gapb) p7_gbands_Append(bnd, i, 1, M);
+  bnd->L = L; bnd->M = M;
+  if (bnd->nseg != 2) esl_fatal("utest_gap_band: expected 2 band segments, got %d", bnd->nseg);
+
+  pp0 = p7_gmxb_Create(bnd);
+  if (cm_p7_GFBDecodeBandedDouble(dsq, L, gm, pp0, &f0, &b0, &st[0]) != eslOK) esl_fatal("utest_gap_band: engine 0 failed");
+  pp1 = p7b_pp_Create(bnd);
+  if (cm_p7_GCheckptFBDecode_Banded(dsq, L, gm, pp1, &f1, &st[1]) != eslOK) esl_fatal("utest_gap_band: engine 1 failed");
+
+  /* the float originals (cmsearch --msvband/--vitband) must agree with themselves too */
+  fx = p7_gmxb_Create(bnd); bx = p7_gmxb_Create(bnd);
+  cm_p7_GForwardBanded (dsq, L, gm, fx, &ff);
+  cm_p7_GBackwardBanded(dsq, L, gm, bx, &fb);
+
+  if (! isfinite(f0))          esl_fatal("utest_gap_band: no parse (Forward %g)", f0);
+  if (fabs(f0 - b0) > 1e-3)    esl_fatal("utest_gap_band: double Forward %.4f != Backward %.4f", f0, b0);
+  if (fabs(ff - fb) > 1e-2)    esl_fatal("utest_gap_band: float Forward %.4f != Backward %.4f", ff, fb);
+  for (e = 0; e < 2; e++) {
+    if (st[e].nrow != bnd->nrow) esl_fatal("utest_gap_band: engine %d decoded %ld rows, expected %d", e, (long) st[e].nrow, bnd->nrow);
+    if (st[e].ndead != 0)        esl_fatal("utest_gap_band: engine %d has %ld dead rows", e, (long) st[e].ndead);
+    if (st[e].nnonfinite != 0)   esl_fatal("utest_gap_band: engine %d has %ld non-finite cells", e, (long) st[e].nnonfinite);
+    if (st[e].fb_incons > 1e-3)  esl_fatal("utest_gap_band: engine %d F/B inconsistent by %g nats", e, st[e].fb_incons);
+  }
+  if (f0 != f1)                 esl_fatal("utest_gap_band: engine 0/1 Forward scores differ: %.4f %.4f", f0, f1);
+  for (c = 0; c < bnd->ncell; c++)
+    for (k = 0; k < P7B_PP_NSCELLS; k++)
+      if (pp0->dp[c * p7G_NSCELLS + k] != pp1->dp[c * P7B_PP_NSCELLS + k])
+        esl_fatal("utest_gap_band: engine 0/1 posteriors differ at cell %ld", (long) c);
+  /* OA: every engine must refuse a band with unbanded rows (brief
+   * 26_0821-144). Their OA fills reset N/J/C to -inf at a gap, so the OA
+   * score would be -inf and the trace would not follow the posterior;
+   * p7b_oa_band_check() throws eslEINVAL instead. (Before that, engine 0's
+   * traceback also read tsc[] out of bounds on this band; the "M1 is
+   * entered only from B" guard in cm_p7_GOATraceBanded stays as defense.) */
+  esl_exception_SetHandler(&esl_nonfatal_handler);
+  gx0 = cm_p7_gmxbd_Create(bnd);
+  if (cm_p7_GOptimalAccuracyBanded(gm, pp0, gx0, &oa0) != eslEINVAL)  esl_fatal("utest_gap_band: engine 0 OA accepted a gapped band");
+  if (cm_p7_GCheckptOA_Banded(gm, pp1, tr1, &oa1) != eslEINVAL)       esl_fatal("utest_gap_band: engine 1 OA accepted a gapped band");
+  if (cm_p7_GCheckptFBDecodeOA_Banded(dsq, L, gm, bnd, tr2, &f2, &oa2, &st[2]) != eslEINVAL)
+                                                                       esl_fatal("utest_gap_band: engine 2 accepted a gapped band");
+  esl_exception_ResetDefaultHandler();
+  /* the regime is real: the first band row is 5' flank (N), reached only through the leading gap */
+  if (pp0->xmx[p7G_N] < 0.5) esl_fatal("utest_gap_band: N posterior at the first band row only %g", pp0->xmx[p7G_N]);
+
+  free(dsq);
+  p7_gmxb_Destroy(pp0); p7_gmxb_Destroy(pp1); p7_gmxb_Destroy(fx); p7_gmxb_Destroy(bx);
+  p7_trace_Destroy(tr1); p7_trace_Destroy(tr2);
+  cm_p7_gmxbd_Destroy(gx0); p7_trace_Destroy(tr0);
+  esl_sq_Destroy(core); p7_gbands_Destroy(bnd); p7_profile_Destroy(gm); p7_bg_Destroy(bg); p7_hmm_Destroy(hmm);
+}
+
+static ESL_OPTIONS options[] = {
+  /* name     type          default  env  range toggles reqs incomp  help                                     docgroup*/
+  { "-h",        eslARG_NONE, FALSE, NULL, NULL,  NULL,  NULL, NULL, "show brief help and exit",               0 },
+  { "--version", eslARG_NONE, FALSE, NULL, NULL,  NULL,  NULL, NULL, "show version info and exit",             0 },
+  { "-s",     eslARG_INT,      "42", NULL, NULL,  NULL,  NULL, NULL, "set random number seed to <n>",          0 },
+  { "-M",     eslARG_INT,  "100000", NULL, "n>0", NULL,  NULL, NULL, "profile length for the genome-scale test", 0 },
+  { "-W",     eslARG_INT,      "10", NULL, "n>0", NULL,  NULL, NULL, "band half-width for the genome-scale test", 0 },
+  { "-v",     eslARG_NONE,    FALSE, NULL, NULL,  NULL,  NULL, NULL, "print the genome-scale test's scores and margins", 0 },
+  {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+};
+static char usage[]  = "[-options]";
+static char banner[] = "unit test driver for cm_p7_band.c (HMM-only banded F/B/decode)";
+
+int
+main(int argc, char **argv)
+{
+  ESL_GETOPTS    *go  = cm_CreateDefaultApp("cm_p7_band_utest", options, 0, argc, argv, banner, usage);
+  ESL_RANDOMNESS *r   = esl_randomness_CreateFast(esl_opt_GetInteger(go, "-s"));
+  ESL_ALPHABET   *abc = esl_alphabet_Create(eslRNA);
+
+  p7_FLogsumInit();
+  utest_dlogsum();
+  utest_generic_dbl(r, abc, esl_opt_GetBoolean(go, "-v"));
+  utest_null2_dbl(r, abc, esl_opt_GetBoolean(go, "-v"));
+  utest_oa_dbl(r, abc, esl_opt_GetBoolean(go, "-v"));
+  utest_genome_scale(r, abc, esl_opt_GetInteger(go, "-M"), esl_opt_GetInteger(go, "-W"), 0.85, TRUE,  esl_opt_GetBoolean(go, "-v"));
+  /* brief 26_0821-151: fractional posteriors, so the OA sums need double */
+  utest_genome_scale(r, abc, esl_opt_GetInteger(go, "-M"), esl_opt_GetInteger(go, "-W"), 0.70, FALSE, esl_opt_GetBoolean(go, "-v"));
+  { ESL_ALPHABET *nt = esl_alphabet_Create(eslRNA); int t;
+    for (t = 0; t < 5; t++) { utest_gap_band(r, nt, 40, 40); utest_gap_band(r, nt, 40, 0); }   /* several random draws */
+    esl_alphabet_Destroy(nt); }
+
+  esl_alphabet_Destroy(abc);
+  esl_randomness_Destroy(r);
+  esl_getopts_Destroy(go);
+  return 0;
+}
+#endif /*CM_P7_BAND_TESTDRIVE*/
