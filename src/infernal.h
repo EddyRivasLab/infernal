@@ -17,35 +17,33 @@
  *   12. CP9Bands_t:         sequence and CM specific HMM bands
  *   13. CP9trace_t:         traceback structure for CP9 HMMs
  *   14. CP9Map_t:           map from a CM to a CP9 HMM and vice versa
- *   15. CMSubMap_t:         map of a template CM to a sub CM and vice versa
- *   16. CMSubInfo_t:        sub CM information, used for validating the sub CM construction procedure
- *   17. RSEARCH constants
- *   18. CM_MX:              CM dynamic programming matrix; non-banded, non-truncated
- *   19. CM_TR_MX:           CM dynamic programming matrix; non-banded, truncated
- *   20. CM_HB_MX:           CM dynamic programming matrix; HMM banded, non-truncated
- *   21. CM_TR_HB_MX:        CM dynamic programming matrix; HMM banded, truncated
- *   22. CM_SHADOW_MX:       CM shadow matrix, for DP tracebacks; non-banded, non-truncated
- *   23. CM_TR_SHADOW_MX:    CM shadow matrix, for DP tracebacks; non-banded, truncated
- *   24. CM_HB_SHADOW_MX:    CM shadow matrix, for DP tracebacks; HMM banded, non-truncated
- *   25. CM_TR_HB_SHADOW_MX: CM shadow matrix, for DP tracebacks; HMM banded, truncated
- *   26. CM_EMIT_MX:         CM emit matrix, info on PP of emitted residues; non-banded, non-truncated
- *   27. CM_TR_EMIT_MX:      CM emit matrix, info on PP of emitted residues; non-banded, truncated
- *   28. CM_HB_EMIT_MX:      CM emit matrix, info on PP of emitted residues; HMM banded, non-truncated
- *   29. CM_TR_HB_EMIT_MX:   CM emit matrix, info on PP of emitted residues; HMM banded, truncated
- *   30. CM_QDBINFO:         model specific QDB information, including 2 sets of bands
- *   31. CM_SCAN_MX:         matrices used for scanning CM DP algorithms; non-truncated
- *   32. CM_TR_SCAN_MX:      matrices used for scanning CM DP algorithms; truncated
- *   33. CM_TR_PENALTIES:    pass, state and locality-specific truncated alignment penalties
- *   34. CM_t:               a covariance model
- *   35. CM_FILE:            a CM save file or database, open for reading
- *   36. CM_PLI_ACCT:        pass specific statistics for a search/scan pipeline
- *   37. CM_PIPELINE:        the accelerated seq/profile comparison pipeline 
- *   38. CM_ALIDISPLAY:      an alignment formatted for printing (replaces FancyAli_t)
- *   39. CM_HIT:             a hit between a CM and a sequence
- *   40. CM_TOPHITS:         ranked list of top-scoring hits
- *   41. CM_P7_OM_BLOCK:     block of P7_OPROFILEs and related info, for cmscan
- *   42. CM_ALNDATA:         information for alignment of a sequence to a CM
- *   43. Routines in Infernal's exposed API
+ *   15. RSEARCH constants
+ *   16. CM_MX:              CM dynamic programming matrix; non-banded, non-truncated
+ *   17. CM_TR_MX:           CM dynamic programming matrix; non-banded, truncated
+ *   18. CM_HB_MX:           CM dynamic programming matrix; HMM banded, non-truncated
+ *   19. CM_TR_HB_MX:        CM dynamic programming matrix; HMM banded, truncated
+ *   20. CM_SHADOW_MX:       CM shadow matrix, for DP tracebacks; non-banded, non-truncated
+ *   21. CM_TR_SHADOW_MX:    CM shadow matrix, for DP tracebacks; non-banded, truncated
+ *   22. CM_HB_SHADOW_MX:    CM shadow matrix, for DP tracebacks; HMM banded, non-truncated
+ *   23. CM_TR_HB_SHADOW_MX: CM shadow matrix, for DP tracebacks; HMM banded, truncated
+ *   24. CM_EMIT_MX:         CM emit matrix, info on PP of emitted residues; non-banded, non-truncated
+ *   25. CM_TR_EMIT_MX:      CM emit matrix, info on PP of emitted residues; non-banded, truncated
+ *   26. CM_HB_EMIT_MX:      CM emit matrix, info on PP of emitted residues; HMM banded, non-truncated
+ *   27. CM_TR_HB_EMIT_MX:   CM emit matrix, info on PP of emitted residues; HMM banded, truncated
+ *   28. CM_QDBINFO:         model specific QDB information, including 2 sets of bands
+ *   29. CM_SCAN_MX:         matrices used for scanning CM DP algorithms; non-truncated
+ *   30. CM_TR_SCAN_MX:      matrices used for scanning CM DP algorithms; truncated
+ *   31. CM_TR_PENALTIES:    pass, state and locality-specific truncated alignment penalties
+ *   32. CM_t:               a covariance model
+ *   33. CM_FILE:            a CM save file or database, open for reading
+ *   34. CM_PLI_ACCT:        pass specific statistics for a search/scan pipeline
+ *   35. CM_PIPELINE:        the accelerated seq/profile comparison pipeline 
+ *   36. CM_ALIDISPLAY:      an alignment formatted for printing (replaces FancyAli_t)
+ *   37. CM_HIT:             a hit between a CM and a sequence
+ *   38. CM_TOPHITS:         ranked list of top-scoring hits
+ *   39. CM_P7_OM_BLOCK:     block of P7_OPROFILEs and related info, for cmscan
+ *   40. CM_ALNDATA:         information for alignment of a sequence to a CM
+ *   41. Routines in Infernal's exposed API
  *   
  * Also, see impl_{sse,vmx}/impl_{sse,vmx}.h for additional API
  * specific to the acceleration layer.
@@ -69,6 +67,8 @@
 #include "esl_sqfile.h"
 
 #include "hmmer.h"
+#include "p7_gbands.h"
+#include "p7_gmxb.h"
 
 #ifdef HAVE_MPI
 #include "mpi.h"
@@ -85,7 +85,6 @@
 #define DEFAULT_PBEGIN              0.05           /* EPN 06.29.07 (formerly 0.5) */
 #define DEFAULT_PEND                0.05           /* EPN 06.29.07 (formerly 0.5) */
 #define DEFAULT_ETARGET             0.59           /* EPN 07.10.07 (formerly (v0.7->v0.8)= 2.-0.54 = 1.46 */
-#define DEFAULT_ETARGET_HMMFILTER   0.38           /* EPN 04.16.12 */
 #define DEFAULT_NULL2_OMEGA         0.000015258791 /* 1/(2^16), the hard-coded prior probability of the null2 model */
 #define DEFAULT_NULL3_OMEGA         0.000015258791 /* 1/(2^16), the hard-coded prior probability of the null3 model */
 #define V1P0_NULL2_OMEGA            0.03125        /* 1/(2^5),  the prior probability of the null2 model for v0.56->v1.0.2 */
@@ -98,6 +97,7 @@
 #define DEFAULT_HB_MXSIZE_MAX_W     3000.          /* a CM window size (cm->W) of this or higher results in max matrix size (DEFAULT_HB_MXSIZE_MAX_MB) */
 #define DEFAULT_HB_MXSIZE_MIN_MB    256.           /* minimum for auto-determined maximum HMM banded matrix size */
 #define DEFAULT_HB_MXSIZE_MIN_W     1000.          /* a CM window size (cm->W) of this or lower results in min matrix size (DEFAULT_HB_MXSIZE_MIN_MB) */
+#define CM_KMERCHAIN_DEFAULT_MINM   4000           /* cmalign: models with CLEN > this get kmerchain p7 bands by default (brief 26_0821-155) */
 
 /* Hard-coded values (not changeable by command-line options). 
  * All of these are related to HMM band tightening to reduce
@@ -120,6 +120,7 @@
 
 /* P7 HMM E-value parameters, borrowed from HMMER, but with 2 new additions: CM_p7_GMU and CM_p7_GLAMBDA */
 #define CM_p7_NEVPARAM 8  /* number of statistical parameters stored in cm->p7_evparam */
+#define CM_HP7_NALPHA 7 /* HMM-only transform's CM prior alphas: MM MI MD IM II DM DD (brief 26_0821-165) */
 enum cm_p7_evparams_e {CM_p7_LMMU  = 0, CM_p7_LMLAMBDA = 1, CM_p7_LVMU = 2,  CM_p7_LVLAMBDA = 3, CM_p7_LFTAU = 4, CM_p7_LFLAMBDA = 5, CM_p7_GFMU = 6, CM_p7_GFLAMBDA = 7 };
 #define CM_p7_EVPARAM_UNSET -99999.0f  /* if p7_evparam[0] is unset, then all unset */
 
@@ -734,10 +735,41 @@ typedef struct cp9_mx_s {
   /* variables added for HMMER3 p7 HMM banding of CP9 HMM dp algorithms */
   int *kmin;            /* OPTIONAL (can be null) [0.1..i..rows] = k, minimum node for residue i is k */
   int *kmax;            /* OPTIONAL (can be null) [0.1..i..rows] = k, maximum node for residue i is k */
-  int64_t ncells_allocated; /* number of cells allocated in matrix */
-  int64_t ncells_valid;     /* number of cells currently valid in the matrix */
+  int64_t ncells_allocated; /* number of cells allocated in matrix (int64: a non-banded genome-scale CP9 mx is (L+1)*(M+1) ~ 4e10 cells, overflows int32) */
+  int64_t ncells_valid;     /* number of cells currently valid in the matrix (int64, see ncells_allocated) */
 
 } CP9_MX;
+
+
+/* CP9_FMX: float-precision mirror of CP9_MX, used by the float-DP CP9
+ * F/B/Posterior path that drives truncated cmalign --p7band band derivation.
+ * The integer-log CP9 F/B accumulates ~3% per-cell precision drift on long
+ * sequences (~1.3% deficit per node-occupancy in glocal mode) that makes the
+ * pocc-based sp/ep predictor unreliable. The float path uses p7_FLogsum for
+ * log-space accumulation, which has ~0.0001 log per call error and is
+ * sufficient for L=10K accumulation. This struct is the exact analogue of
+ * CP9_MX with int*->float* throughout.
+ */
+typedef struct cp9_fmx_s {
+  float **mmx;                  /* match scores  [0.1..N][0..M] */
+  float **imx;                  /* insert scores [0.1..N][0..M] */
+  float **dmx;                  /* delete scores [0.1..N][0..M] */
+  float **elmx;                 /* end local scores [0.1..N][0..M] */
+  float  *erow;                 /* score for E state [0.1..N] */
+  /* Hidden ptrs where the real memory is kept */
+  float *mmx_mem, *imx_mem, *dmx_mem, *elmx_mem;
+
+  int    M;             /* number of nodes in HMM this mx corresponds to, never changes */
+  int    rows;          /* generally L or 2, # of DP rows in seq dimension */
+  float  size_Mb;       /* current size of matrix in Megabytes */
+
+  /* variables added for HMMER3 p7 HMM banding of CP9 HMM dp algorithms */
+  int *kmin;            /* OPTIONAL (can be null) [0.1..i..rows] = k, minimum node for residue i is k */
+  int *kmax;            /* OPTIONAL (can be null) [0.1..i..rows] = k, maximum node for residue i is k */
+  int64_t ncells_allocated; /* number of cells allocated in matrix (int64, see CP9_MX) */
+  int64_t ncells_valid;     /* number of cells currently valid in the matrix (int64, see CP9_MX) */
+
+} CP9_FMX;
 
 
 /*************************************************************************************
@@ -804,18 +836,82 @@ typedef struct cp9bands_s {
   int **hdmax;                /* [0..cm_M-1][0..(jmax[v]-jmin[v])] 
 			       * hdmin[v][j0] = last position in band on d for state v, and position
 			       * j = jmin[v] + j0.*/
-  int *hdmin_mem;             /* actual memory for hdmin */
-  int *hdmax_mem;             /* actual memory for hdmax */
+  int *hdmin_mem;             /* actual memory for hdmin (DEPRECATED, brief 26_0430-157: no longer allocated; d-bands recomputed on demand via hd_min()/hd_max(), kept NULL) */
+  int *hdmax_mem;             /* actual memory for hdmax (DEPRECATED, brief 26_0430-157, kept NULL) */
+  int *hd_dn;                 /* [0..cm_M-1] per-state d-band floor used by hd_min()/hd_max() recompute:
+			       * E_st states store -1 (sentinel: hdmin=hdmax=0 for all j); all other states
+			       * store dn = do_trunc ? max(StateLeftDelta,StateRightDelta) : StateDelta (>=0).
+			       * Set by ij2d_bands(). Replaces the flat hdmin_mem/hdmax_mem cache (brief 26_0430-157). */
   int *safe_hdmin;            /* [0..cm_M-1] safe_hdmin[v] = min_d (hdmin[v][j0]) (over all valid j0) */
   int *safe_hdmax;            /* [0..cm_M-1] safe_hdmax[v] = max_d (hdmax[v][j0]) (over all valid j0) */
 
   /* info on size of bands */
-  int64_t hd_needed;          /* Sum_v cp9b->jmax[v] - cp9b->jmin[v] + 1, number of hd arrays needed (int64: can exceed 2^31 for genome-scale M*L) */
+  int64_t hd_needed;          /* Sum_v cp9b->jmax[v] - cp9b->jmin[v] + 1, number of hd arrays needed (int64: genome-scale truncated band volume exceeds 2^31, can exceed 2^31 for very large M*L e.g. HSV M=152K L=150K; brief 26_0316-097 + 26_0430-147) */
   int64_t hd_alloced;         /* number of hd arrays currently alloc'ed (int64, see hd_needed) */
 
   double   tau;               /* tau used to calculate current bands */
+  double   hmm_sc;            /* CP9 Forward score (bits) of the sequence these bands were last
+                               * calculated for, if Forward/Backward ran in alignment (not scan)
+                               * mode; -eslINFINITY if not. DispatchSqAlignment() uses it to
+                               * center CM alignment DP scores. */
+
+  /* --mxsize fallback for the end-band hull, cp9_EndHullRetryBands() (brief 26_0821-103) */
+  int      im_widened;        /* TRUE if the !trunc dead-node widening gave the last node's insert (ROOT_IR's source) a band with no posterior evidence */
+  int      endhull_retry;     /* TRUE while cp9_EndHullRetryBands() is re-deriving bands */
 
 } CP9Bands_t;
+
+/* Checkpointed CP9 band calculation (cp9_dp_ckpt.c): the HMM bands for
+ * several posterior mass thresholds at once, from a checkpointed
+ * Forward/Backward that needs O(sqrt(L) * M) memory instead of full
+ * L x M matrices.
+ */
+typedef struct cp9_ckptbands_s {
+  int  M;          /* number of nodes in the CP9 HMM */
+  int  nthr;       /* number of distinct thresholds */
+  int *thr;        /* [0..nthr-1] integer log posterior mass thresholds, ascending */
+  /* [t*(M+1)+k] band min/max of node k's match (m), insert (i) and
+   * delete (d) states for threshold thr[t], -1 if not reached */
+  int *pn_min_m, *pn_max_m;
+  int *pn_min_i, *pn_max_i;
+  int *pn_min_d, *pn_max_d;
+  int *occ;        /* [1..M] summed posterior of node k's match and delete states */
+  int  sc;         /* Backward score (log P(seq|HMM), scaled int) */
+} CP9_CKPTBANDS;
+
+/* Recompute-on-demand accessors for the per-state d-band (brief 26_0430-157).
+ *
+ * These replace the formerly-materialized flat hdmin_mem/hdmax_mem arrays
+ * (Sum_v (jmax[v]-jmin[v]+1) ints each; 466 GB at genome-scale truncated).
+ * They reproduce ij2d_bands()'s formula EXACTLY and byte-for-byte:
+ *   E_st (hd_dn[v] == -1):  hdmin = hdmax = 0
+ *   else, for j = jp + jmin[v], hdx = j - imin[v] + 1, dn = hd_dn[v] (>=0):
+ *      if hdx <  dn :  hdmin = -1, hdmax = -2  (empty-band sentinel)
+ *      else         :  hdmin = max(j - imax[v] + 1, dn), hdmax = hdx
+ * jp is the offset index into v's j-band, i.e. j = jp + jmin[v], exactly as the
+ * old hdmin[v][jp]/hdmax[v][jp] indexing. Pure function of cp9b; O(1); correct
+ * for any CM topology including bifurcations (no neighbor/window reasoning). */
+static inline int
+hd_min(const CP9Bands_t *cp9b, int v, int jp)
+{
+  int dn = cp9b->hd_dn[v];
+  if (dn < 0) return 0;                       /* E_st sentinel */
+  int j   = jp + cp9b->jmin[v];
+  int hdx = j - cp9b->imin[v] + 1;
+  if (hdx < dn) return -1;
+  int hdn = j - cp9b->imax[v] + 1;
+  return (hdn > dn) ? hdn : dn;
+}
+static inline int
+hd_max(const CP9Bands_t *cp9b, int v, int jp)
+{
+  int dn = cp9b->hd_dn[v];
+  if (dn < 0) return 0;                       /* E_st sentinel */
+  int j   = jp + cp9b->jmin[v];
+  int hdx = j - cp9b->imin[v] + 1;
+  if (hdx < dn) return -2;
+  return hdx;
+}
 
 /*************************************************************************************
  * 13. CP9trace_t: traceback structure for CP9 HMMs. 
@@ -886,74 +982,7 @@ typedef struct cp9map_s {
 
 
 /*************************************************************************************
- * 15. CMSubMap_t: map of a template CM to a sub CM and vice versa.
- *************************************************************************************/
-
-/* Structure: CMSubMap_t
- * Incept:    EPN, 10.23.06
- *
- * Maps a template CM to a sub CM and vice versa. 
- *    Consensus positions are indexed 1..clen.
- *
- * The *node_cc_left and *node_cc_right arrays are redundant with CMEmitMap_t.
- * See emitmap.c for implementation and more documentation.
- */
-typedef struct submap_s {
-  int spos;            /* first consensus column this sub_cm models */
-  int epos;            /* final consensus column this sub_cm models */
-  int sstruct;         /* first consensus column this sub_cm models structure of */
-  int estruct;         /* final consensus column this sub_cm models structure of */
-
-  int **s2o_smap;      /* v = [0..sub_M-1] [0..1], orig_cm state(s) that maps to v */
-  int **o2s_smap;      /* v = [0..orig_M-1][0..1], sub_cm  state(s) that maps to v */
-  int  *s2o_id;        /* v = [0..sub_M-1] TRUE if sub_cm state v maps identically *
-                        * to a orig_cm state (this will be s2o_smap[v][0])         */
-
-  int  sub_clen;       /* consensus length orig_cm */
-  int  orig_clen;      /* consensus length sub_cm  */
-
-  int sub_M;           /* number of states in the sub CM */
-  int orig_M;          /* number of states in the original CM */
-} CMSubMap_t;
-
-
-/*************************************************************************************
- * 16. CMSubInfo_t: sub CM information, used for validating the sub CM construction procedure.
- *************************************************************************************/
-
-/* Structure: CMSubInfo_t
- * Incept:    EPN, 10.23.06
- *
- * Information on a sub CM, used for checking the sub CM 
- * construction procedure works.
- *    Consensus positions are indexed 1..clen.
- *
- */
-typedef struct subinfo_s {
-  int  *imp_cc;         /* [0..(epos-spos+1)] ret_imp_cc[k] != 0 if it is 
-			* impossible for CP9 node (consensus column) k to be
-			* calculated in the sub_cm to have distros to match the
-			* corresponding CP9 node in the original CM - due to
-			* topological differences in the architecture of the
-			* sub_cm and orig_cm.
-			*/
-  int  *apredict_ct;   /* For an analytical test, the number of times we 
-			* predict we'll fail the test for an HMM node for each 
-			* of 6 cases - 6 different reasons we predict we'll fail.
-			*/
-  int  *spredict_ct;   /* For as sampling test, the number of times we 
-			* predict we'll fail the test for an HMM node for each 
-			* of 6 cases - 6 different reasons we predict we'll fail.
-			*/
-  int  *awrong_ct;     /* Subset of cases in apredict_ct that were incorrectly 
-			* predicted. */
-  int  *swrong_ct;     /* Subset of cases in spredict_ct that were incorrectly 
-			* predicted. */
-} CMSubInfo_t;
-
-
-/*************************************************************************************
- * 17. RSEARCH constants.
+ * 15. RSEARCH constants.
  *************************************************************************************/
 
 /* RSEARCH defaults defined here */
@@ -1023,7 +1052,7 @@ typedef struct _fullmat_t {
 } fullmat_t;
 
 /***********************************************************************************
- * 18. CM_MX: CM dynamic programming matrix; non-banded, non-truncated.
+ * 16. CM_MX: CM dynamic programming matrix; non-banded, non-truncated.
  ***********************************************************************************/
 
 /* Declaration of CM dynamic programming matrices for alignment.
@@ -1059,7 +1088,7 @@ typedef struct cm_mx_s {
 } CM_MX;
 
 /***********************************************************************************
- * 19. CM_TR_MX: CM dynamic programming matrix; non-banded, truncated.
+ * 17. CM_TR_MX: CM dynamic programming matrix; non-banded, truncated.
  ***********************************************************************************/
 
 typedef struct cm_tr_mx_s {
@@ -1088,7 +1117,7 @@ typedef struct cm_tr_mx_s {
 } CM_TR_MX;
 
 /***********************************************************************************
- * 20. CM_HB_MX: CM dynamic programming matrix; HMM banded, non-truncated.
+ * 18. CM_HB_MX: CM dynamic programming matrix; HMM banded, non-truncated.
  ***********************************************************************************/
 
 typedef struct cm_hb_mx_s {
@@ -1104,6 +1133,11 @@ typedef struct cm_hb_mx_s {
   float ***dp;          /* [0..v..M][0..j..(cp9b->jmax[v]-cp9b->jmin[v])[0..d..cp9b->hdmax[v][j-jmin[v]]-cp9b->hdmin[v][j-jmin[v]]] */
   float   *dp_mem;      /* the actual mem, points to dp[0][0][0] */
 
+  int omit_el_deck;     /* if TRUE, do not allocate alpha[cm->M] EL deck (Inside use only) */
+  int el_full;          /* if TRUE, lay the EL deck out as the full [0..j..L][0..d..j] triangle; if FALSE
+			 * (default), EL row j holds only d=0..eldmax[j] (cm_hb_mx_ELDmax()), unless
+			 * cm->align_opts has CM_ALIGN_CHECKINOUT, whose checks read the whole triangle */
+  int el_banded;        /* set by cm_hb_mx_GrowTo(): TRUE if the current EL deck layout is banded */
   CP9Bands_t *cp9b;     /* the CP9Bands_t object associated with this
 			 * matrix, which defines j, d, bands for each
 			 * state, only a reference, so don't free
@@ -1111,7 +1145,7 @@ typedef struct cm_hb_mx_s {
 } CM_HB_MX;
 
 /***********************************************************************************
- * 21. CM_TR_HB_MX: CM dynamic programming matrix; HMM banded, truncated.
+ * 19. CM_TR_HB_MX: CM dynamic programming matrix; HMM banded, truncated.
  ***********************************************************************************/
 
 typedef struct cm_tr_hb_mx_s {
@@ -1143,6 +1177,11 @@ typedef struct cm_tr_hb_mx_s {
   float ***Tdp;         /* B states only: [0..v..M][0..j..(cp9b->jmax[v]-cp9b->jmin[v])[0..d..cp9b->hdmax[v][j-jmin[v]]-cp9b->hdmin[v][j-jmin[v]]] */
   float   *Tdp_mem;     /* the actual mem, points to Tdp[0][0][0] */
 
+  int el_full;          /* if TRUE, lay the J/L/R EL decks out as full [0..j..L][0..d..j] triangles; if FALSE
+			 * (default), EL row j of mode X holds only d=0..eldmax[j] (cm_tr_hb_mx_ELDmax()),
+			 * unless cm->align_opts has CM_ALIGN_CHECKINOUT, whose checks read the whole triangle */
+  int el_banded;        /* set by cm_tr_hb_mx_GrowTo(): TRUE if the current EL deck layout is banded */
+
   CP9Bands_t *cp9b;     /* the CP9Bands_t object associated with this
 			 * matrix, which defines j, d, bands for each
 			 * state, only a reference, so don't free
@@ -1151,7 +1190,7 @@ typedef struct cm_tr_hb_mx_s {
 
 
 /***********************************************************************************
- * 22. CM_SHADOW_MX: CM shadow matrix, for DP tracebacks; non-banded, non-truncated.
+ * 20. CM_SHADOW_MX: CM shadow matrix, for DP tracebacks; non-banded, non-truncated.
  ***********************************************************************************/
 
 typedef struct cm_shadow_mx_s {
@@ -1177,7 +1216,7 @@ typedef struct cm_shadow_mx_s {
 
 
 /***********************************************************************************
- * 23. CM_TR_SHADOW_MX: CM shadow matrix, for DP tracebacks; non-banded, truncated.
+ * 21. CM_TR_SHADOW_MX: CM shadow matrix, for DP tracebacks; non-banded, truncated.
  ***********************************************************************************/
 
 typedef struct cm_tr_shadow_mx_s {
@@ -1231,7 +1270,7 @@ typedef struct cm_tr_shadow_mx_s {
 } CM_TR_SHADOW_MX;
 
 /***********************************************************************************
- * 24. CM_HB_SHADOW_MX: CM shadow matrix, for DP tracebacks; HMM banded, non-truncated.
+ * 22. CM_HB_SHADOW_MX: CM shadow matrix, for DP tracebacks; HMM banded, non-truncated.
  ***********************************************************************************/
 
 typedef struct cm_hb_shadow_mx_s {
@@ -1263,7 +1302,7 @@ typedef struct cm_hb_shadow_mx_s {
 
 
 /***********************************************************************************
- * 25. CM_TR_HB_SHADOW_MX: CM shadow matrix, for DP tracebacks; HMM banded, truncated.
+ * 23. CM_TR_HB_SHADOW_MX: CM shadow matrix, for DP tracebacks; HMM banded, truncated.
  ***********************************************************************************/
 
 typedef struct cm_tr_hb_shadow_mx_s {
@@ -1327,7 +1366,7 @@ typedef struct cm_tr_hb_shadow_mx_s {
 } CM_TR_HB_SHADOW_MX;
 
 /***********************************************************************************
- * 26. CM_EMIT_MX: CM emit matrix, info on PP of emitted residues; non-banded, non-truncated.
+ * 24. CM_EMIT_MX: CM emit matrix, info on PP of emitted residues; non-banded, non-truncated.
  ***********************************************************************************/
 
 /* CM_EMIT_MX: Two 2-dimensional matrices <l_pp> and <r_pp>
@@ -1387,7 +1426,7 @@ typedef struct cm_emit_mx_s {
 
 
 /***********************************************************************************
- * 27. CM_TR_EMIT_MX: CM emit matrix, info on PP of emitted residues; non-banded, truncated.
+ * 25. CM_TR_EMIT_MX: CM emit matrix, info on PP of emitted residues; non-banded, truncated.
  ***********************************************************************************/
 
 /* CM_TR_EMIT_MX: Same as CM_EMIT_MX except extended for truncated 
@@ -1452,7 +1491,7 @@ typedef struct cm_tr_emit_mx_s {
 
 
 /***********************************************************************************
- * 28. CM_HB_EMIT_MX: CM emit matrix, info on PP of emitted residues; HMM banded, non-truncated.
+ * 26. CM_HB_EMIT_MX: CM emit matrix, info on PP of emitted residues; HMM banded, non-truncated.
  ***********************************************************************************/
 
 /* CM_HB_EMIT_MX: HMM-banded version of CM_EMIT_MX (see the
@@ -1500,7 +1539,7 @@ typedef struct cm_hb_emit_mx_s {
 
 
 /***********************************************************************************
- * 29. CM_TR_HB_EMIT_MX: CM emit matrix, info on PP of emitted residues; HMM banded, truncated.
+ * 27. CM_TR_HB_EMIT_MX: CM emit matrix, info on PP of emitted residues; HMM banded, truncated.
  ***********************************************************************************/
 
 /* CM_TR_HB_EMIT_MX: HMM-banded version of CM_TR_EMIT_MX (see the
@@ -1547,7 +1586,7 @@ typedef struct cm_tr_hb_emit_mx_s {
 
 
 /***********************************************************************************
- * 30. CM_QDBINFO: model specific QDB information, including 2 sets of bands.
+ * 28. CM_QDBINFO: model specific QDB information, including 2 sets of bands.
  ***********************************************************************************/
 
 enum cm_qdbinfo_setby_e    { CM_QDBINFO_SETBY_INIT = 0, CM_QDBINFO_SETBY_CMFILE = 1, CM_QDBINFO_SETBY_BANDCALC = 2, CM_QDBINFO_SETBY_SUBINIT };
@@ -1571,7 +1610,7 @@ typedef struct cm_qdbinfo_s {
 } CM_QDBINFO;
 
 /***********************************************************************************
- * 31. CM_SCAN_MX: matrices used for scanning CM DP algorithms; non-truncated.
+ * 29. CM_SCAN_MX: matrices used for scanning CM DP algorithms; non-truncated.
  ***********************************************************************************/
 
 /* Structure CM_SCAN_MX: 
@@ -1644,7 +1683,7 @@ typedef struct cm_scan_mx_s {
 
 
 /***********************************************************************************
- * 32. CM_TR_SCAN_MX: matrices used for scanning CM DP algorithms; truncated.
+ * 30. CM_TR_SCAN_MX: matrices used for scanning CM DP algorithms; truncated.
  ***********************************************************************************/
 
 /* Structure CM_TR_SCAN_MX: 
@@ -1717,7 +1756,7 @@ typedef struct cm_tr_scan_mx_s {
 
 
 /*************************************************************************************
- * 33. CM_TR_PENALTIES: pass, state and locality-specific truncated alignment penalties.
+ * 31. CM_TR_PENALTIES: pass, state and locality-specific truncated alignment penalties.
  *************************************************************************************/
 
 /* Truncation penalty parameters, we either allow 5' truncation, 3' truncation or both.
@@ -1745,7 +1784,7 @@ typedef struct cm_tr_penalties_s {
 
 
 /*****************************************************************
- * 34. CM_t: a covariance model
+ * 32. CM_t: a covariance model
  *****************************************************************/
 
 /* Structure: CM_t
@@ -1767,6 +1806,7 @@ typedef struct cm_s {
   char    *desc;        /* brief (1-line) description of model          (CMH_DESC))      */ /* String, \0-terminated   */
   char    *rf;          /* reference line from alignment    1..clen     (CMH_RF)         */ /* String; 0=' ', clen+1='\0' */
   char    *consensus;   /* consensus residue line           1..clen     (CMH_CONS)       */ /* String; 0=' ', clen+1='\0' */
+  char    *pknot;       /* canonical consensus pseudoknots  1..clen     (CMH_PKNOT)      */ /* String; 0=' ', clen+1='\0'; pknot letter at pknot cols, '.' elsewhere; NULL if no pknots */
   uint32_t checksum;    /* checksum of training sequences               (CMH_CHKSUM)     */
   int     *map;         /* map of alignment cols onto model 1..clen     (CMH_MAP)        */ /* Array; map[0]=0 */
 
@@ -1845,6 +1885,38 @@ typedef struct cm_s {
 
   double  tau;          /* tail loss probability for HMM target dependent banding             */
   double  maxtau;       /* maximum allowed tau value for HMM band tightening                  */
+  int     p7bpad;       /* p7 band pad for p7_Seq2BandsVit (CM_ALIGN_P7BANDED); default 10    */
+  int     p7_use_cykbands;  /* if TRUE, run CYK pre-pass then tighten bands before Inside/Outside (--cykbands) */
+  int     p7_cykbands_pad;  /* per-state pad for parsetree-derived band tightening; default 5 */
+  int     p7_cykbands_no_dnc; /* if TRUE, disable the size-conditional D&C-CYK fallback for the standalone
+                                * --cykbands pre-pass (brief 26_0430-273); legacy behavior: pre-pass always
+                                * uses the banded full-matrix CYK engine and silently skips tightening if it
+                                * doesn't fit --mxsize. Default FALSE (fallback ON). (--no-cykbands-dnc) */
+  char   *p7_dump_bands_file;  /* if non-NULL, dump per-(v,j) band TSV to this path before cm_AlignHB (--dump-bands) */
+  int     p7_use_kmerchain;    /* if TRUE, derive bands from a genome-wide k-mer seed-and-chain (--p7kmerchain, brief 26_0628-027) */
+  int     p7_kmerchain_ramp;   /* if TRUE, kmerchain's inter-anchor band is the interpolated ramp, else the flat band (default FALSE; --p7kmerchain-ramp, brief 26_0821-096) */
+  double  p7_kmerchain_ramp_alpha; /* distance-scaled slack coefficient for kmerchain's interpolated-ramp inter-pin band (brief 26_0628-042); default 0.75 (--p7kmerchain-alpha, brief 26_0628-043); read by the kmerchain call site only when p7_kmerchain_ramp is TRUE */
+  int     p7_kmerchain_mink;   /* brief 26_0628-046: if >0, gate kmerchain (independent of the M-gate) when the
+                                 * longest exact match between the query and the model consensus is shorter than mink --
+                                 * a per-query signal-scarcity diagnostic, as opposed to the static M<4,000 proxy
+                                 * (--p7kmerchain-mink); default 0 (disabled: not yet validated, see brief 26_0628-046) */
+  int     p7_kmerchain_mgate;  /* brief 26_0628-047: if >0, gate kmerchain when M < this threshold (was a
+                                 * hardcoded, default-on M<4,000 constant under brief 26_0628-045; now a real, OFF-BY-
+                                 * DEFAULT cmalign option -- --p7kmerchain-mgate <M>); default 0 (disabled) */
+  int     p7_kmerchain_fallback_vit; /* brief 26_0628-047: if TRUE, revert the kmerchain M-gate/N-gate/no-anchor
+                                 * fallback to the old p7_Seq2BandsVit (single Viterbi-MAP-trace band) mechanism
+                                 * instead of the new default (--p7ibv's D&C deriver) (--p7kmerchain-fbvit);
+                                 * default FALSE (use --p7ibv fallback) */
+  int     p7_kmerchain_fallback_ibv; /* brief 26_0430-260: if TRUE, revert the kmerchain chain=NONE fallback to
+                                 * the --p7ibv D&C deriver (the prior shipped default, brief 26_0628-047) instead
+                                 * of native CP9 HMM banding, which is now the default (brief 26_0430-256/26_0430-260)
+                                 * (--p7kmerchain-fbibv); default FALSE (use native CP9 fallback) */
+  int     p7_use_ibv;          /* if TRUE, use F+B direct-band band derivation (--p7ibv, brief 26_0430-120) */
+  int     p7_ibv_delta;        /* IBV Delta threshold in milli-bits; default 3000 (--p7ibv-delta)   */
+  int     p7_ibv_mem;          /* if TRUE, use D&C O(M*logL) band deriver (--p7ibv-mem, brief 26_0430-124)  */
+  int     p7_ibv_base_slab;    /* D&C base-case slab size; default 256 (--p7ibv-base-slab)          */
+  int     p7_ibv_mode;         /* IBV band-derivation mode: P7IBV_MODE_{DELTA,FIXED,HYBRID} (brief 26_0430-140, --p7ibv-mode) */
+  int     p7_ibv_width;        /* fixed-width pad W around argmax-k pin; used by fixed/hybrid (brief 26_0430-140, --p7ibv-width) */
 
   int         config_opts;/* model configuration options                                        */
   int         align_opts; /* alignment options                                                  */
@@ -1912,10 +1984,52 @@ typedef struct cm_s {
   /* statistics */
   ExpInfo_t       **expA;  /* Exponential tail stats, [0..EXP_NMODES-1]  */
 
+  /* null3-OFF exponential tail stats (CMH_EXPTAIL_NONULL3_STATS). Parallel
+   * to expA, holding the E-value params to use under cmsearch/cmscan
+   * --nonull3. Produced by cmcalibrate --nonull3. NULL if not present;
+   * the on-set expA above is UNTOUCHED. */
+  ExpInfo_t       **expA_nonull3; /* null3-off exp tail stats, [0..EXP_NMODES-1]; NULL if not set */
+
   /* p7 hmms, added 08.05.08 */
   P7_HMM       *mlp7;         /* the maximum likelihood p7 HMM, built from the CM  */
-  P7_HMM       *fp7;          /* the filter p7 HMM, read from CM file */
+  P7_HMM       *fp7;          /* the filter p7 HMM: derived from the CM (mlp7, CMH_FP7_DERIVED), or (cmconvert only) read from an older CM file */
   float         fp7_evparam[CM_p7_NEVPARAM]; /* E-value params (CMH_FP7_STATS) */
+  /* HMM-only search HMM (cmsearch/cmscan --hmmonly), derived from the CM
+   * by the transform <hp7_xform> (CM_HP7_*). NULL when HMM-only search
+   * uses fp7 itself: CM_HP7_ML (zero-basepair models), and, in
+   * cmconvert only, CM files that store their filter HMM (format 1/a
+   * and older; brief 26_0821-186). See
+   * cm_p7_DeriveFilterHMMs(). (brief 26_0821-162) */
+  P7_HMM       *hp7;
+  float         hp7_evparam[CM_p7_NEVPARAM]; /* E-value params for hp7 */
+  int           hp7_xform;    /* CM_HP7_ML or CM_HP7_H3PRI */
+  /* For CM_HP7_H3PRI: the CM transition prior's MATL->MATL Dirichlet
+   * alphas, mapped to the 7 HMM transitions (CM_HP7_NALPHA; order MM MI
+   * MD IM II DM DD), which the transform backs out of mlp7 (HP7A line;
+   * default prior if absent). See Prior_HMMOnlyAlpha(). (brief
+   * 26_0821-165) */
+  double        hp7_alpha[CM_HP7_NALPHA];
+  int           hp7_is_active; /* TRUE once cm_p7_UseHMMOnlyFilter() has swapped hp7 into fp7 */
+
+  /* p7 per-HMM-node band pads (CMH_P7NODEPAD). Computed by cm_ComputeP7CMNodePad()
+   * at cmbuild time from the CM and stored in the CM file. Indexed by HMM
+   * consensus position [0..fp7->M]; index 0 is a 1-based-indexing artifact
+   * (never read at search). Read by p7_pins2bands_nodepad (cm_p7_band.c) to
+   * widen the kmin/kmax envelope fed to CP9 F/B -- drives CM alignment
+   * accuracy. The CM_PIPELINE has a mirror field of the same name
+   * (pli->p7_cm_nodepad) that holds the per-pipeline-call working copy
+   * (loaded from this CM field, or from --p7nodepad-file). */
+  int          *p7_cm_nodepad;   /* [0..p7_cm_nodepad_M] per-node pad array; NULL if not set */
+  int           p7_cm_nodepad_M; /* length of p7_cm_nodepad (= fp7->M); 0 if not set */
+
+  /* per-CM F1/F2/F3 P-value cutoffs (CMH_FILTER_PVAL_CUTOFFS). Computed by
+   * cm_CalibrateFilterPvalCutoffs() at cmbuild time from N CM-emitted sequences.
+   * The pipeline (cm_pli_NewModel) substitutes these for pli->F1/F2/F3 when the
+   * flag is set, allowing a CM-specific tightening of the HMM filter stages.
+   * Floor = global default (loosest), ceiling = default/10 (tightest). */
+  float         F1_pcutoff;   /* per-CM F1 P-value cutoff, valid if CMH_FILTER_PVAL_CUTOFFS */
+  float         F2_pcutoff;   /* per-CM F2 P-value cutoff, valid if CMH_FILTER_PVAL_CUTOFFS */
+  float         F3_pcutoff;   /* per-CM F3 P-value cutoff, valid if CMH_FILTER_PVAL_CUTOFFS */
 
   const  ESL_ALPHABET *abc; /* ptr to alphabet info (cm->abc->K is alphabet size)*/
   off_t    offset;          /* CM record offset on disk                              */
@@ -1945,13 +2059,45 @@ typedef struct cm_s {
 #define CMH_CP9_TRUNC           (1<<14) /* cm->Lcp9, cm->Rcp9, cm->Tcp9 are valid   */
 #define CMH_MLP7                (1<<15) /* 'maximum likelihood' cm->mlp7 is valid   */
 #define CMH_FP7                 (1<<16) /* filter p7 is valid in cm->fp7            */
-#define CM_IS_SUB               (1<<17) /* the CM is a sub CM                       */
 #define CM_IS_RSEARCH           (1<<18) /* the CM was parameterized a la RSEARCH    */
 #define CM_RSEARCHTRANS         (1<<19) /* CM has/will have RSEARCH transitions     */
 #define CM_RSEARCHEMIT          (1<<20) /* CM has/will have RSEARCH emissions       */
 #define CM_EMIT_NO_LOCAL_BEGINS (1<<21) /* emitted parsetrees will never have local begins */
 #define CM_EMIT_NO_LOCAL_ENDS   (1<<22) /* emitted parsetrees will never have local ends   */
 #define CM_IS_CONFIGURED        (1<<23) /* TRUE if CM has been configured in some way */
+#define CMH_P7NODEPAD           (1<<24) /* p7 per-HMM-node band pads (cm->p7_cm_nodepad) are valid */
+#define CMH_FILTER_PVAL_CUTOFFS (1<<25) /* per-CM F1/F2/F3 P-value cutoffs (cm->F{1,2,3}_pcutoff) are valid */
+#define CMH_PKNOT               (1<<26) /* consensus pseudoknot annotation exists (cm->pknot) */
+#define CMH_EXPTAIL_NONULL3_STATS (1<<27) /* null3-off exp tail stats (cm->expA_nonull3) are valid */
+#define CMH_FP7_DERIVED         (1<<28) /* cm->fp7 (and cm->hp7) were derived from the CM, not read from a stored filter HMM block */
+/* the flags of the data INFERNAL1/e can store and INFERNAL1/a can't (brief 26_0821-185) */
+#define CM_FILE_1E_ONLY_FLAGS   (CMH_P7NODEPAD | CMH_FILTER_PVAL_CUTOFFS | CMH_PKNOT | CMH_EXPTAIL_NONULL3_STATS)
+
+/* cmbuild --eforce's effective sequence number ceiling; this high, the
+ * prior is effectively gone (brief 26_0824-088). A CM with this EFFN
+ * missed its --eforce target, and its filter HMM E-value parameters are
+ * simulated, not predicted (brief 26_0824-089; also cmconvert --upgrade,
+ * brief 26_0821-165). */
+#define EFORCE_MAX_NEFF 1e6
+
+/* Settings for calibrating a CM's derived filter and HMM-only HMMs
+ * with cm_p7_Calibrate(): see cm_p7_CalOptsSetDefaults() and
+ * cm_p7_CalibrateDerivedFilterHMMs(). (brief 26_0821-165) */
+typedef struct cm_p7_calopts_s {
+  int    lmsvL, lvitL, lfwdL, gfwdL; /* sequence lengths: local MSV, Viterbi, Forward; glocal Forward */
+  int    lmsvN, lvitN, lfwdN, gfwdN; /* numbers of sequences, same order */
+  float  lftailp;                    /* tail fraction fit for local Forward (float, as cmbuild's) */
+  double gftailp;                    /* tail fraction fit for glocal Forward */
+  int    seed;                       /* RNG seed (0: arbitrary) */
+  int    do_sim;                     /* TRUE to simulate glocal Forward parameters, not predict them */
+} CM_P7_CALOPTS;
+
+/* transforms of the CM's ML p7 HMM (mlp7) that give the HMM-only
+ * search HMM, cm->hp7_xform (see cm_p7_HMMOnlyTransform()) */
+#define CM_HP7_ML    0  /* none: HMM-only search uses the filter HMM (mlp7) itself */
+#define CM_HP7_H3PRI 2  /* mlp7 transitions, CM prior (cm->hp7_alpha) backed out, re-estimated under HMMER's DNA transition prior */
+/* (code 1 was brief 26_0821-143's arm a1, no prior back-out; no longer
+ * written or read. H3PRI was that brief's a2.) */
 
 /* model configuration options, cm->config_opts */
 #define CM_CONFIG_LOCAL         (1<<0)  /* configure the model for local alignment */
@@ -1962,7 +2108,6 @@ typedef struct cm_s {
 #define CM_CONFIG_TRUNC         (1<<5)  /* set up for truncated alignment (cm->{L,R,T}cp9 will be built */
 #define CM_CONFIG_SCANMX        (1<<6)  /* create a CM_SCAN_MX in cm->smx          */
 #define CM_CONFIG_TRSCANMX      (1<<7)  /* create a CM_TR_SCAN_MX in cm->trsmx     */
-#define CM_CONFIG_SUB           (1<<8)  /* set up for submodel alignment (cm->cp9 gets equiprobable begin/ends) */
 #define CM_CONFIG_NONBANDEDMX   (1<<9)  /* set up for non-banded alignment (cm->*nb*mx will be created) */
 #define CM_CONFIG_NOQDB         (1<<10) /* skip the query-dependent band calculation entirely; caller
                                         * guarantees nothing downstream reads cm->qdbinfo's bands or
@@ -1981,7 +2126,6 @@ typedef struct cm_s {
 #define CM_ALIGN_POST          (1<<6)  /* do inside/outside and append posteriors  */
 #define CM_ALIGN_SMALL         (1<<7)  /* use small CYK D&C                        */
 #define CM_ALIGN_SUMS          (1<<8)  /* if using HMM bands, use posterior sums   */
-#define CM_ALIGN_SUB           (1<<9)  /* build a sub CM for each seq to align     */
 #define CM_ALIGN_HMMVITERBI    (1<<10) /* use a CP9 HMM only to align, w/viterbi   */
 #define CM_ALIGN_CHECKINOUT    (1<<11) /* check inside/outside calculations        */
 #define CM_ALIGN_CHECKPARSESC  (1<<12) /* check parsetree score against aln alg sc */
@@ -1994,7 +2138,14 @@ typedef struct cm_s {
 #define CM_ALIGN_QDB           (1<<19) /* align with QDBs                          */
 #define CM_ALIGN_INSIDE        (1<<20) /* use Inside algorithm                     */
 #define CM_ALIGN_TRUNC         (1<<21) /* use truncated alignment algorithms       */
-#define CM_ALIGN_XTAU          (1<<22) /* multiply tau until banded mx size < limit*/ 
+#define CM_ALIGN_XTAU          (1<<22) /* multiply tau until banded mx size < limit*/
+#define CM_ALIGN_P7HMM         (1<<23) /* use p7 HMM only to align (no CM)         */
+#define CM_ALIGN_P7HMMVIT      (1<<24) /* w/P7HMM: Viterbi traces (no OA)          */
+#define CM_ALIGN_P7HMMNOBAND   (1<<25) /* w/P7HMM: unbanded OA (no Vit banding)    */
+#define CM_ALIGN_CHECKPT       (1<<26) /* use checkpointed sqrt(M)-mem HB OptAcc engines (truncated or non-trunc, local or global, bps=0 or bps>0) */
+#define CM_ALIGN_MXESC         (1<<27) /* brief 26_0430-269: --mxsize auto-escalation: pick engine (free-OA/ckpt-OA/CYK-floor) by est. memory vs --mxsize */
+#define CM_ALIGN_MXESC_FIXEDTAU (1<<28) /* brief 26_0430-271 item 1: skip the p7-banded CP9 F/B tau/thresh ratchet (cp9_IterateSeq2BandsP7BF_chk_multi); let mxesc tier escalation, not band-tightening, carry memory. DEFAULT ON inside the mxesc path as of 2026-08-07; --no-mxesc-fixedtau restores the ratchet. NOT set under --ckpt/--small/--nonbanded/--sample/--cyk (never measured there) */
+#define CM_ALIGN_CKPT_CYKBANDS (1<<29) /* brief 26_0430-271 item 2: CLI-controlled equivalent of the CKPT_CYKBANDS env var (opt-in pass-1-CYK-parsetree band tightening in the --ckpt engine tier); env var still honored as an override */
 
 /* search options, cm->search_opts */
 #define CM_SEARCH_HBANDED      (1<<0)  /* use HMM bands to search (default)        */
@@ -2011,14 +2162,23 @@ typedef struct cm_s {
 #define CM_SEARCH_NULL3        (1<<11) /* use NULL3 score correction               */
 
 /*****************************************************************
- * 35. CM_FILE:  a CM save file or database, open for reading.
+ * 33. CM_FILE:  a CM save file or database, open for reading.
  *****************************************************************/
 /* These tags need to be in temporal order, so we can do tests
  * like "if (format >= CM_FILE_1a) ..."
+ * Codes 2, 3 and 4 were INFERNAL1/b, /c and /d: development formats
+ * never in a release, no longer read or written (brief 26_0821-185).
+ * Their values are not reused, so CM_FILE_1e keeps its value.
  */
 enum cm_file_formats_e {
   CM_FILE_1  = 0, /* Infernal v1.0->v1.0.2 */
-  CM_FILE_1a = 1,
+  CM_FILE_1a = 1, /* Infernal v1.1: stores its filter HMM */
+  CM_FILE_1e = 5, /* Infernal v1.2: no stored filter HMM block; the filter
+                   * and HMM-only HMMs are derived from the CM when read, and
+                   * only their E-value parameters are stored (HP7, EFP7L,
+                   * EHP7L, EHP7GF lines) (brief 26_0821-162). Adds optional
+                   * P7NODEPAD band pads, F1F2F3CUT filter cutoffs, consensus
+                   * pknot annotation and a null3-OFF E-value set.          */
 };
 
 typedef struct cm_file_s {
@@ -2041,6 +2201,9 @@ typedef struct cm_file_s {
   /* If <is_pressed>, we can read HMM filters directly, via: */
   FILE         *ffp;		/* MSV part of the optimized profile HMM */
   FILE         *pfp;		/* rest of the optimized profile HMM     */
+  /* cmscan: open on the .i1hf/.i1hp files when models with 0 basepairs
+   * read their HMM-only HMMs (CM_HMMONLY_FILTERS_ZEROBP), else NULL */
+  struct cm_file_s *zcmfp;
 
 #ifdef HMMER_THREADS
   int              syncRead;
@@ -2050,6 +2213,11 @@ typedef struct cm_file_s {
   char          errbuf[eslERRBUFSIZE];
   char          msv_errbuf[eslERRBUFSIZE]; /* cm_p7_oprofile_ReadMSV uses this instead of errbuf, avoiding a thread race */
 } CM_FILE;
+
+/* which models cm_file_UseHMMOnlyFilters() switches to their HMM-only HMMs */
+#define CM_HMMONLY_FILTERS_NONE   0 /* none: every model uses its filter HMM */
+#define CM_HMMONLY_FILTERS_ALL    1 /* every model (cmscan --hmmonly) */
+#define CM_HMMONLY_FILTERS_ZEROBP 2 /* models with 0 basepairs (default cmscan) */
 
 /* note on <fname>, above:
  * this is the actual name of the CM file being read.
@@ -2064,7 +2232,7 @@ typedef struct cm_file_s {
 
 
 /***********************************************************************************
- * 36. CM_PLI_ACCT: pass specific statistics for a search/scan pipeline.
+ * 34. CM_PLI_ACCT: pass specific statistics for a search/scan pipeline.
  ***********************************************************************************/
 
 /* Pipeline pass indices. The pipeline potentially does multiple
@@ -2163,7 +2331,7 @@ typedef struct cm_pipeline_accounting_s {
 
 
 /***********************************************************************************
- * 37. CM_PIPELINE: the accelerated seq/profile comparison pipeline 
+ * 35. CM_PIPELINE: the accelerated seq/profile comparison pipeline 
  ***********************************************************************************/
 
 enum cm_pipemodes_e     { CM_SEARCH_SEQS = 0, CM_SCAN_MODELS = 1 };
@@ -2180,6 +2348,33 @@ typedef struct cm_pipeline_s {
   P7_GMX       *gxb;		/* generic Backward matrix                  */
   P7_GMX       *gfwd;		/* generic full Fwd matrix for envelopes    */
   P7_GMX       *gbck;		/* generic full Bck matrix for envelopes    */
+  P7_GMXB      *gxfb;		/* banded Forward matrix  (--msvband) */
+  P7_GMXB      *gxbb;		/* banded Backward matrix (--msvband) */
+  P7_TRACE     *p7tr;		/* P7 trace, for MSV band derivation        */
+  double      **phi;		/* HMM occupancy probs, for p7_Seq2Bands()  */
+  int           phi_M;		/* model length for which phi is allocated  */
+  int          *band_kmin;      /* [0..band_L] band lower bounds from MSV, or NULL */
+  int          *band_kmax;      /* [0..band_L] band upper bounds from MSV, or NULL */
+  int           band_L;         /* sequence length for which band_kmin/kmax are set */
+  /* Per-stage timing accumulators (seconds) */
+  double        stg_time_F1F3;    /* F1+F2+F3 filter stages                        */
+  double        stg_time_gmsv;    /* GMSV calculation within p7_Seq2Bands           */
+  double        stg_time_seq2bands; /* p7_Seq2Bands (includes GMSV)                */
+  double        stg_time_F4;      /* F4 glocal Forward                             */
+  double        stg_time_F5;      /* F5 envelope definition (Backward + domaindef) */
+  double        stg_time_F6;      /* F6+ CM stages total                           */
+  double        stg_time_F6_cp9bands; /* cp9_IterateSeq2Bands in F6 CYK filter    */
+  double        stg_time_F6_cykdp;    /* CYK DP in F6                             */
+  double        stg_time_F7_cp9bands; /* cp9_IterateSeq2Bands in F7 final stage   */
+  double        stg_time_F7_dp;       /* Inside/CYK DP in F7 final stage          */
+  double        stg_time_F7_aln;      /* alignment (pli_align_hit) in F7          */
+  double        last_dispatch_cp9bands; /* temp: cp9 band time from last dispatch */
+  double        last_dispatch_dp;       /* temp: DP time from last dispatch       */
+  ESL_STOPWATCH *stg_w;                 /* times F1-F3 and F6+ for stg_time_*; NULL unless cm_StageVerbose() (--devdiag) */
+
+  /* P7 objects for msvband CP9 acceleration (set in cm_Pipeline, used in pli_dispatch_cm_search) */
+  P7_PROFILE   *p7gm;          /* generic profile for p7_Seq2Bands (not owned, don't free) */
+  P7_BG        *p7bg;          /* background model for p7_Seq2Bands (not owned, don't free) */
 
   enum cm_pipemodes_e mode;    	/* CM_SCAN_MODELS | CM_SEARCH_SEQS           */
   ESL_ALPHABET *abc;            /* ptr to alphabet info */
@@ -2202,7 +2397,11 @@ typedef struct cm_pipeline_s {
   uint64_t      nnodes;	           /* # of model nodes searched, CM mode    */
   uint64_t      nmodels_hmmonly;   /* # of models searched, HMM only mode   */
   uint64_t      nnodes_hmmonly;	   /* # of model nodes, HMM only mode       */
-  CM_PLI_ACCT   acct[NPLI_PASSES]; 
+  uint64_t      nmodels_hmmonly_glocal; /* # of models searched, glocal HMM only mode */
+  uint64_t      nnodes_hmmonly_glocal;  /* # of model nodes, glocal HMM only mode     */
+  CM_PLI_ACCT   acct_cm[NPLI_PASSES];   /* accounting for CM mode (and local HMM only mode, pass PLI_PASS_HMM_ONLY_ANY) */
+  CM_PLI_ACCT   acct_hg[NPLI_PASSES];   /* accounting for glocal HMM only mode, which uses the CM mode passes           */
+  CM_PLI_ACCT  *acct;                   /* points to acct_cm or acct_hg, for the current model; set in cm_pli_NewModel() */
 
   /* Domain/envelope postprocessing                                         */
   ESL_RANDOMNESS *r;		/* random number generator                  */
@@ -2235,10 +2434,93 @@ typedef struct cm_pipeline_s {
   int           do_time_F4;      /* TRUE to abort after Stage 4 glocal Fwd, for timing expts */
   int           do_time_F5;      /* TRUE to abort after Stage 5 env def, for timing expts */
   int           do_time_F6;      /* TRUE to abort after Stage 6 CYK, for timing expts */
-  /* flag for terminating after a stage and outputting surviving windows (currently only F3 is possible) */
+  /* flag for terminating after F3 in HMM-only mode and outputting surviving windows (--hmmwindows) */
   int           do_trm_F3;       /* TRUE to abort after Stage 3 Fwd and output surviving windows */
-  int           do_trm_F5;       /* TRUE to terminate after Stage 5 env def and output surviving envelopes */
-  int           do_fullseq_F5;   /* TRUE to skip F1-F3 filters and force full sequence into F5 stage */
+  int           do_msvband;      /* TRUE to use MSV-derived banded F4/F5 (--msvband)                     */
+  int           do_vitband;      /* TRUE to use Viterbi-derived banded F4/F5 (--vitband)                 */
+  int           vitband_local;   /* TRUE to use local Viterbi for --vitband (default: glocal)            */
+  int           do_p7post_cp9b;  /* TRUE to derive CP9 bands from p7 glocal F/B posteriors (--p7post_cp9b)    */
+  int           do_pnmono;       /* TRUE to apply monotone reachability sweep on pn_min/max_m bands (--pnmono) */
+  int           do_pnmono_print; /* TRUE to print before/after band widths for each pn-monosweep call        */
+  float         p7_fwdsc;          /* banded glocal Forward score (nats) from F4/F5 banded run, for --p7post_cp9b */
+  float         p7_fwdsc_unbanded; /* unbanded glocal Forward score (nats), computed alongside banded when --debug-f6-envs is on */
+  int           p7_window_start; /* absolute start (1-indexed) of current window, for --p7post_cp9b coord map  */
+  P7_GBANDS    *p7bnd;           /* band structure kept alive across dispatch when --p7post_cp9b (gxfb->bnd ref) */
+  /* Per-envelope precomputed pn_min/max bands for --p7post_cp9b.
+   * Filled at F5 time (while gxfb/gxbb are valid) and used at CYK dispatch.
+   * Flat arrays: index e*(p7pn_M+1)+k for envelope e, node k. */
+  int      p7pn_nenv;           /* number of stored pn-band entries */
+  int      p7pn_nenv_alloc;     /* allocated capacity */
+  int      p7pn_M;              /* HMM length for stored entries (0 = not yet set) */
+  int64_t *p7pn_es;             /* [0..p7pn_nenv-1] absolute envelope start */
+  int64_t *p7pn_ee;             /* [0..p7pn_nenv-1] absolute envelope stop */
+  int     *p7pn_pass;           /* [0..p7pn_nenv-1] cur_pass_idx active when this entry was stored
+                                 * (brief 26_0316-033): (start,stop) alone is not a unique key --
+                                 * short queries reprocess the same envelope across up to 4 truncation
+                                 * passes, so dispatch-time lookup must also match the pass. */
+  int     *p7pn_min_m;          /* flat [e*(M+1)+k] match min, 1..L relative */
+  int     *p7pn_max_m;          /* flat [e*(M+1)+k] match max */
+  int     *p7pn_min_i;          /* flat [e*(M+1)+k] insert min */
+  int     *p7pn_max_i;          /* flat [e*(M+1)+k] insert max */
+  int     *p7pn_min_d;          /* flat [e*(M+1)+k] delete min */
+  int     *p7pn_max_d;          /* flat [e*(M+1)+k] delete max */
+  float   *p7pn_pocc;           /* flat [e*(M+1)+k] per-node match-posterior occupancy sum.
+                                 * Used by p7pn_bands_to_cp9cm_bands to compute sp1/sp2/ep1/ep2
+                                 * via cp9b->thresh1/thresh2 comparisons (mimicking cp9 path).  */
+  int           p7band_pad;     /* band half-width (padding) for F4/F5 p7_Seq2Bands() calls (--p7bpad)  */
+  int          *p7_cm_nodepad;  /* [0..M] per-node pad array (mirror of cm->p7_cm_nodepad or loaded from --p7nodepad-file); NULL if uniform pad */
+  int           p7_cm_nodepad_M;/* M used when p7_cm_nodepad was loaded; 0 if not loaded. Reload if om->M differs.  */
+  char         *p7nodepad_file; /* if not NULL, file to read per-node pad vector from (--p7nodepad-file)         */
+  int           p7nodepad_plus; /* added to every pad read from p7nodepad_file (--p7padplus, default 0)        */
+  int           p7vit_hopback;  /* hop-back radius (in pinned-position trace order) for D1 dilation (--p7vit-hopback, default 0 = off) */
+  int           p7vitend;       /* drop first/last <n> Vit pins from i2k before pins->bands (--p7vitend, default 0) */
+  int           do_cykbands;    /* TRUE to derive bands for F7 alignment from CYK parsetree (--cykbands)   */
+  int           do_cykbands_strict; /* TRUE: set Jvalid[v]=FALSE for unvisited states (--cykbands-strict)  */
+  int           cyk_bpad;       /* band half-width (pad) for CYK-derived bands (--cykbpad)                 */
+  Parsetree_t  *cyk_envtree;    /* CYK parsetree from most recent F6 CYK scan (for --cykbands), or NULL    */
+  int64_t       cyk_envtree_es; /* envelope start position the parsetree corresponds to                    */
+  int64_t       cyk_envtree_ee; /* envelope end position the parsetree corresponds to                      */
+  Parsetree_t  *last_dispatch_tr; /* parsetree returned by most recent FastCYKScanHB_shmx call, or NULL    */
+  Parsetree_t **cyk_envtreeA;   /* [0..nenv-1] per-survivor F6 CYK parsetrees (for --cykbands), or NULL    */
+  int64_t      *cyk_envtreeA_es;/* [0..nenv-1] F6 dispatch start positions for cyk_envtreeA[i]             */
+  int64_t      *cyk_envtreeA_ee;/* [0..nenv-1] F6 dispatch stop  positions for cyk_envtreeA[i]             */
+  int           cyk_envtreeA_n; /* number of entries in cyk_envtreeA                                       */
+  int           do_p7deltrigger;/* TRUE: compute gfwd_unbanded; trigger F7 re-run without CP9 bands (--p7deltrigger) */
+  float        *f6_pvalA;       /* [0..nenv-1] F6 CYK p-value per surviving envelope, for delta trigger    */
+  int           f6_pvalA_n;     /* number of entries in f6_pvalA                                           */
+  float        *f6_deltaA;      /* [0..nenv-1] gFwd delta (unbanded-banded nats) per surviving envelope    */
+  int           f6_deltaA_n;    /* number of entries in f6_deltaA                                          */
+  float        *p7env_delta_pre; /* temp [0..np7env-1] per-pre-F6-envelope delta, set in pli_p7_env_def   */
+  float        *p7env_bias;      /* temp [0..np7env-1] per-envelope null2 correction (bits), set in pli_p7_env_def
+                                  * in glocal HMM only mode, read by pli_trm_F5_create_hits() */
+  int64_t      *p7env_winoff;    /* temp [0..np7env-1] per-envelope window offset (ws[i]-1) to add to the
+                                  * envelope's P7_ALIDISPLAY sqfrom/sqto (window-relative, 1..wlen) so they
+                                  * become sq2search-relative, set in pli_p7_env_def in glocal HMM only mode,
+                                  * read by pli_trm_F5_create_hits() -- applied AFTER cm_alidisplay_CreateFromP7()
+                                  * returns, never to the P7_ALIDISPLAY itself (its sqfrom/sqto must stay
+                                  * window-relative for CreateFromP7()'s own GC-content loop, which indexes into
+                                  * the window sequence) (brief 26_0824-076) */
+  /* issue #50 (brief 26_0316-034): per-envelope "came from a merged (multi-hit)
+   * window" flags. Such envelopes were defined by the unbanded multihit glocal
+   * domaindef and can abut/overlap a sibling envelope; re-deriving p7
+   * vitband/msvband CM bands per-envelope then pins the CM parse to the
+   * envelope's first residue, producing a hit that overlaps its stronger
+   * sibling and is deleted by overlap removal. Those envelopes use the
+   * standard cp9_IterateSeq2Bands bands instead. */
+  int          *f7env_merged;   /* [0..nenv-1] post-F6 (compacted) per-envelope merged-window flag         */
+  int           f7env_merged_n; /* number of entries in f7env_merged                                       */
+  int           cur_env_merged; /* TRUE if the envelope currently being dispatched came from merged window */
+  int           use_stored_cp9b;/* TRUE: pli_dispatch_cm_search should skip cp9_Seq2Bands; cp9b preloaded  */
+  int           cykbands_high_conf; /* TRUE: F6 dispatch should use FastCYKScanHB_shmx (saves second pass) */
+  float         p7post_thresh;  /* posterior probability threshold for --p7post_cp9b (--p7pthr)         */
+  float         p7post_tau;    /* cumulative tau for --p7post_cp9b (--p7tau), -1.0 if not set         */
+  float         p7sc;           /* min pin match score for prune_i2k() (--p7sc)    */
+  int           p7len;          /* min nmer length for prune_i2k() (--p7len)        */
+  int           p7end;          /* min dist from nmer end for prune_i2k() (--p7end) */
+  float         p7mprob;        /* min match phi prob for prune_i2k() (--p7mprob)   */
+  float         p7mcprob;       /* min cumul match phi prob for prune_i2k() (--p7mcprob) */
+  float         p7iprob;        /* max insert phi prob for prune_i2k() (--p7iprob)  */
+  float         p7ilprob;       /* max left-insert phi prob for prune_i2k() (--p7ilprob) */
 
   /* Reporting threshold settings                                           */
   int     by_E;		        /* TRUE to cut per-target report off by E   */
@@ -2278,6 +2560,27 @@ typedef struct cm_pipeline_s {
   double  F3b;		        /* bias-corrected Forward filter threshold  */
   double  F4b;		        /* bias-corrected gloc Forward filter threshold */
   double  F5b;		        /* bias-corrected env def filter threshold  */
+  /* original (pipeline-default) F1/F2/F3 thresholds, saved before any
+   * per-CM override (CMH_FILTER_PVAL_CUTOFFS). Used in cm_pli_NewModel()
+   * to restore defaults between CMs when per-CM override applies, and as
+   * a floor (loosest allowed) so per-CM cutoffs never loosen the pipeline.
+   */
+  double  F1_orig;
+  double  F2_orig;
+  double  F3_orig;
+  double  F3b_orig;
+  /* Per-stage cap on the per-CM tightening factor (CMH_FILTER_PVAL_CUTOFFS).
+   * effective_factor(stage) = min(cm_filter_ceiling_factor_clen(cm->clen), F*_cap)
+   * where logistic factor() asymptotes at 30. Each cap can be lowered to
+   * preserve recall at the cost of speed.
+   *
+   * The whole pcut path is opt-in via use_fil_pcut. Defaults when enabled:
+   * 10/10/10 (recommended cap from rmark4 sweep; strict improvement over 30×).
+   */
+  int     use_fil_pcut;
+  double  pcut_F1_cap;
+  double  pcut_F2_cap;
+  double  pcut_F3_cap;
   /* on/off parameters for each stage */
   int     do_msv;		/* TRUE to filter with MSV, FALSE not to    */
   int     do_vit;		/* TRUE to filter with Vit, FALSE not to    */
@@ -2323,7 +2626,9 @@ typedef struct cm_pipeline_s {
   double  final_tau;              /* HMM bands tau for final stage            */
 
   /* Threshold settings for HMM-only pipeline                               */
-  int     do_hmmonly_cur;	/* TRUE to only use filter HMM for current model */
+  int     do_hmmonly_cur;	/* TRUE to only use filter HMM for current model, local (single pass) */
+  int     do_hmmonly_glocal_cur;/* TRUE to only use filter HMM for current model, glocal (--hmmonly -g):
+                                 * standard + truncated passes, F5 envelopes become hits */
   int     do_hmmonly_always;	/* TRUE to only use filter HMM for all models */
   int     do_hmmonly_never;	/* TRUE to never only use filter HMM for any model */
   int     do_max_hmmonly;       /* TRUE to skip all filters in HMM only mode  */
@@ -2331,6 +2636,9 @@ typedef struct cm_pipeline_s {
   double  F1_hmmonly;	        /* MSV filter threshold, HMM only mode      */
   double  F2_hmmonly;	        /* Viterbi filter threshold, HMM only mode  */
   double  F3_hmmonly;	        /* Forward filter threshold, HMM only mode  */
+  double  F4_hmmonly;	        /* glocal Forward filter threshold, glocal HMM only mode           */
+  double  F4b_hmmonly;	        /* glocal Forward bias filter threshold, glocal HMM only mode      */
+  double  F5_hmmonly;	        /* envelope definition filter threshold, glocal HMM only mode      */
   /* on/off parameters, HMM only mode */
   int     do_bias_hmmonly;      /* TRUE to use bias filter, HMM only mode   */
   int     do_null2_hmmonly;     /* TRUE to use null2, HMM only mode         */
@@ -2352,7 +2660,7 @@ typedef struct cm_pipeline_s {
 
 
 /***********************************************************************************
- * 38. CM_ALIDISPLAY: an alignment formatted for printing (replaces FancyAli_t)
+ * 36. CM_ALIDISPLAY: an alignment formatted for printing (replaces FancyAli_t)
  ***********************************************************************************/
 
 /* Structure: CM_ALIDISPLAY
@@ -2405,6 +2713,14 @@ typedef struct cm_alidisplay_s {
 				 * converted from a P7_ALIDISPLAY
 				 * during an HMM only pipeline run.
 				 */
+  int    glocal;                /* TRUE if <hmmonly> and the HMM only pipeline run was glocal
+				 * (--hmmonly -g): then cfrom_span/cto_span/cfrom_emit/cto_emit
+				 * are real (cm_alidisplay_CreateFromP7() rebuilds the wing-
+				 * retracted glocal trace's terminal delete columns so they
+				 * follow ParsetreeToCMBounds()'s convention), and
+				 * cm_alidisplay_TruncString() labels the hit instead of
+				 * returning "-" (brief 26_0824-076).
+				 */
 
   int   memsize;                /* size of allocated block of char memory */
   char *mem;		        /* memory used for the char data above  */
@@ -2412,7 +2728,7 @@ typedef struct cm_alidisplay_s {
 
 
 /***********************************************************************************
- * 39. CM_HIT: a hit between a CM and a sequence
+ * 37. CM_HIT: a hit between a CM and a sequence
  ***********************************************************************************/
 
 #define CM_HIT_FLAGS_DEFAULT 0
@@ -2468,7 +2784,7 @@ typedef struct cm_hit_s {
 
 
 /***********************************************************************************
- * 40. CM_TOPHITS: ranked list of top-scoring hits
+ * 38. CM_TOPHITS: ranked list of top-scoring hits
  ***********************************************************************************/
 
 /* Structure: CM_TOPHITS: Collection of hits that can be sorted by
@@ -2493,7 +2809,7 @@ typedef struct cm_tophits_s {
 
 
 /***********************************************************************************
- * 41. CM_P7_OM_BLOCK: block of P7_OPROFILEs and related info, for cmscan.
+ * 39. CM_P7_OM_BLOCK: block of P7_OPROFILEs and related info, for cmscan.
  ***********************************************************************************/
 
 typedef struct {
@@ -2513,7 +2829,7 @@ typedef struct {
 
 
 /***********************************************************************************
- * 42. CM_ALNDATA: information for alignment of a sequence to a CM.
+ * 40. CM_ALNDATA: information for alignment of a sequence to a CM.
  ***********************************************************************************/
 
 /* Structure CM_ALNDATA: Per-sequence information relevant to the
@@ -2541,13 +2857,14 @@ typedef struct {
 } CM_ALNDATA;
 
 /*****************************************************************
- * 43. Routines in Infernal's exposed API.
+ * 41. Routines in Infernal's exposed API.
  *****************************************************************/
 
 /* from cm.c */
 extern CM_t *CreateCM(int nnodes, int nstates, int clen, const ESL_ALPHABET *abc);
 extern CM_t *CreateCMShell(void);
 extern void  CreateCMBody(CM_t *cm, int nnodes, int nstates, int clen, const ESL_ALPHABET *abc);
+extern int   cm_CheckConsensusLength(const char *name, int clen, char *errbuf);
 extern void  CMZero(CM_t *cm);
 extern void  CMRenormalize(CM_t *cm);
 extern void  FreeCM(CM_t *cm);
@@ -2616,6 +2933,7 @@ extern int   IntDigits(int i);
 extern int        cm_GetAvgHitLen(CM_t *cm, char *errbuf, float *ret_avgL_loc, float *ret_avgL_glb);
 extern int        CompareCMGuideTrees(CM_t *cm1, CM_t *cm2);
 extern void       DumpCMFlags(FILE *fp, CM_t *cm);
+extern void       debug_print_cm_params(FILE *fp, CM_t *cm);
 extern ESL_GETOPTS *cm_CreateDefaultApp(char *progname, ESL_OPTIONS *options, int nargs, int argc, char **argv, char *banner, char *usage);
 extern CM_P7_OM_BLOCK *cm_p7_oprofile_CreateBlock(int size);
 extern void            cm_p7_oprofile_DestroyBlock(CM_P7_OM_BLOCK *block);
@@ -2630,6 +2948,8 @@ extern int   **ICalcInitDPScores             (CM_t *cm);
 extern int     cm_nonconfigured_Verify(CM_t *cm, char *errbuf);
 extern int     cm_Clone(CM_t *cm, char *errbuf, CM_t **ret_cm);
 extern float   cm_Sizeof(CM_t *cm);
+extern int     cm_pknot_FixBrokenString(char *ss, int n);
+extern int     cm_pknot_MarkOrphansTrunc(char *ss, char *nc, int n);
 extern int     Prob2Score(float p, float null);
 extern float   Score2Prob(int sc, float null);
 extern float   Scorify(int sc);
@@ -2643,7 +2963,7 @@ extern int     cm_Guidetree(CM_t *cm, char *errbuf, ESL_MSA *msa, Parsetree_t **
 /* cm_alidisplay.c */
 extern int            cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq, int64_t seqoffset, 
 					   double tau, double elapsed_secs, CM_ALIDISPLAY **ret_ad);
-extern int            cm_alidisplay_CreateFromP7(CM_t *cm, char *errbuf, const ESL_SQ *sq, int64_t seqoffset, float p7sc, float p7pp, P7_ALIDISPLAY *p7ad, CM_ALIDISPLAY **ret_ad);
+extern int            cm_alidisplay_CreateFromP7(CM_t *cm, char *errbuf, const ESL_SQ *sq, int64_t seqoffset, float p7sc, float p7pp, P7_ALIDISPLAY *p7ad, P7_OPROFILE *om, int is_glocal, int pass_idx, CM_ALIDISPLAY **ret_ad);
 extern CM_ALIDISPLAY *cm_alidisplay_Clone(const CM_ALIDISPLAY *ad);
 extern size_t         cm_alidisplay_Sizeof(const CM_ALIDISPLAY *ad);
 extern void           cm_alidisplay_Destroy(CM_ALIDISPLAY *ad);
@@ -2669,6 +2989,8 @@ extern int            bp_is_canonical(char lseq, char rseq);
 extern void           cm_bp_match_marks(char lseq, char rseq, char lcons, char rcons, float pairsc, char *ret_lmid, char *ret_rmid);
 extern char           cm_bp_nc_mark(char lseq, char rseq, float pairsc);
 extern char           cm_singlet_mark(char seq, char cons, float avgsc);
+extern void           annotate_pknot_pairs_str(const char *ss, const char *aseq, const char *model, char *out, int N);
+extern void           cm_pknot_MarkShiftRecoverable(const char *ss, const char *aseq, char *out, int N);
 
 /* from cm_parsetree.c : post-hoc cmalign structure-status annotation */
 extern int            cm_alignment_annotate_status(CM_t *cm, char *errbuf, ESL_MSA *msa, int do_perseq, int do_famcons, int do_famcov);
@@ -2682,7 +3004,7 @@ extern int            cm_alignment_annotate_status(CM_t *cm, char *errbuf, ESL_M
  * position space (1..clen), which is stable across blocks (only insert columns
  * vary). See cm_parsetree.c. */
 typedef struct cm_bpcons_acc_s {
-  int   npair;     /* number of consensus base pairs                               */
+  int   npair;     /* number of consensus base pairs (nested + pknot)              */
   int   clen;      /* consensus length, for cpos<->apos mapping sanity checks      */
   int  *lcpos;     /* [0..npair-1] left  consensus position (1..clen), lcpos<rcpos */
   int  *rcpos;     /* [0..npair-1] right consensus position (1..clen)              */
@@ -2701,20 +3023,71 @@ extern int   cm_alignment_bpcons_acc_Finalize(CM_t *cm, char *errbuf, CM_BPCONS_
 extern int   cm_alignment_bpcov_acc_Finalize (CM_t *cm, char *errbuf, CM_BPCONS_ACC *acc, const char *rf2print, char **ret_bpc);
 extern void  cm_alignment_bpcons_acc_Destroy (CM_BPCONS_ACC *acc);
 
+/* CM_P7_DECSTATS (brief 26_0821-141): per-sequence counts from cmalign's
+ * HMM-only banded posterior decode (cm_p7_band.c), for conditions that
+ * the decode zeroes silently. On a correct band and correct F/B all are 0
+ * (fb_incons ~1e-8). Reported under --devdiag. */
+typedef struct cm_p7_decstats_s {
+  int64_t nrow;        /* band rows decoded                                     */
+  int64_t ndead;       /* rows with no finite F+B cell: written as all-zero pp  */
+  int64_t nnonfinite;  /* cells whose posterior came out NaN/inf: zeroed        */
+  double  fb_incons;   /* max over live rows of how far (row max of F+B) - fwdsc
+                        * falls outside [-log(nstates), 0], in nats: F/B
+                        * inconsistency (the float drift was 100s of nats)    */
+  double  drift_max;   /* max over live rows of (row max of F+B) - fwdsc: ~0 when
+                        * some row is near-certain, so |drift_max| bounds the
+                        * F/B disagreement on such rows                       */
+} CM_P7_DECSTATS;
+
+/* CM_P7_GMXBD (brief 26_0821-151): a banded p7 DP matrix in double
+ * precision, laid out exactly like HMMER's float P7_GMXB (dp: ncell *
+ * p7G_NSCELLS, xmx: nrow * p7G_NXCELLS). Holds the non-checkpointed
+ * engine's optimal accuracy matrix, whose values grow to ~L. */
+typedef struct cm_p7_gmxbd_s {
+  double    *dp;
+  double    *xmx;
+  P7_GBANDS *bnd;   /* reference copy; caller frees the band */
+} CM_P7_GMXBD;
+
 /* from cm_alndata.c */
 CM_ALNDATA * cm_alndata_Create(void);
 void         cm_alndata_Destroy(CM_ALNDATA *data, int free_sq);
 int          DispatchSqBlockAlignment(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float mxsize, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r, CM_ALNDATA ***ret_dataA);
 int          DispatchSqAlignment     (CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsize, char mode, int pass_idx,
-				      int cp9b_valid, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r, CM_ALNDATA **ret_data);
+				      int cp9b_valid, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r,
+				      CM_ALNDATA **ret_data);
 
 /* from cm_dpalign.c */
 extern int   cm_AlignSizeNeeded   (CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post, float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_totmb);
 extern int   cm_AlignSizeNeededHB (CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post, float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_cp9mxmb, float *ret_cmtotb, float *ret_totmb);
+extern int   cm_AlignSizeNeededHBELBanded(CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post, float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_cp9mxmb, float *ret_cmtotb, float *ret_totmb);
 extern int   cm_Align             (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do_optacc, int do_sample, CM_MX *mx,    CM_SHADOW_MX    *shmx, CM_MX    *post_mx, CM_EMIT_MX *emit_mx, ESL_RANDOMNESS *r, char **ret_ppstr, Parsetree_t **ret_tr, float *ret_avgpp, float *ret_sc);
 extern int   cm_AlignHB           (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do_optacc, int do_sample, CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx, CM_HB_MX *post_mx, CM_HB_EMIT_MX *emit_mx, ESL_RANDOMNESS *r, char **ret_ppstr, Parsetree_t **ret_tr, float *ret_avgpp, float *ret_sc);
+extern int   cm_CheckptAlignHB_Qualifies(CM_t *cm);
+extern int   cm_CheckptAlignHB    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM_HB_EMIT_MX *emit_mx, char **ret_ppstr, Parsetree_t **ret_tr, float *ret_avgpp, float *ret_sc);
+/* rung-3 (bps>0) checkpointed structured aligner (briefs 26_0610-037/26_0610-038/26_0610-039) */
+extern int   cm_CheckptOptAccAlignHB_Qualifies(CM_t *cm);
+extern int   cm_PinPostAlignHB    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM_HB_EMIT_MX *emit_mx, int *kpin, float *ret_sc);
+extern int   cm_CheckptPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM_HB_EMIT_MX *emit_mx, int *kpin, float *ret_sc);
+extern int   cm_PinOptAccAlignHB    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM_HB_EMIT_MX *emit_mx, int *kpin, char **ret_ppstr, Parsetree_t **ret_tr, float *ret_avgpp, float *ret_pp);
+extern int   cm_CheckptOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, CM_HB_EMIT_MX *emit_mx, int *kpin, char **ret_ppstr, Parsetree_t **ret_tr, float *ret_avgpp, float *ret_pp);
+/* brief 26_0610-078 R1: checkpointed, k*-DISCOVERING CYK max-DP (no external kpin); GLOBAL/non-truncated/no-EL/no-local-begin only */
+extern int   cm_CheckptCYKAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, Parsetree_t **ret_tr, float *ret_sc);
+/* brief 26_0430-225: pre-alignment (no dsq, no DP) peak-memory estimator for the --ckpt engine family */
+extern int   cm_CheckptAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, int *cp9_kmin, int *cp9_kmax, float *ret_ckptdpmb, float *ret_emxmb, float *ret_cp9mxmb, float *ret_totmb);
+extern int   cm_CheckptTrAlignHB_Qualifies(CM_t *cm);
+extern int   cm_CheckptTrOptAccAlignHB_Qualifies(CM_t *cm);
+extern int   cm_CheckptTrAlignHB  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char preset_mode, int pass_idx, CM_TR_HB_EMIT_MX *emit_mx, char **ret_ppstr, Parsetree_t **ret_tr, char *ret_mode, float *ret_avgpp, float *ret_sc);
+/* brief 26_0610-078 R2: checkpointed, COMBINED-MODE (J/L/R/T) k*-DISCOVERING truncated CYK (no external kpin/preset mode); structured (bps>0), GLOBAL/non-truncated-local/no-EL only */
+extern int   cm_CheckptTrCYKAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int pass_idx, Parsetree_t **ret_tr, char *ret_mode, float *ret_sc);
+/* rung-4 (R4.2a, brief 26_0610-053): pinned truncated structured (bps>0) posterior */
+extern int   cm_PinTrPostAlignHB  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char preset_mode, int pass_idx, CM_TR_HB_EMIT_MX *emit_mx, int *bkind, int *kpin, char *bbmode, char *blmode, char *brmode, float *ret_sc, char *ret_mode);
+extern int   cm_CheckptTrPostAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char preset_mode, int pass_idx, CM_TR_HB_EMIT_MX *emit_mx, int *bkind, int *kpin, char *bbmode, char *blmode, char *brmode, float *ret_sc, char *ret_mode);
+extern int   cm_PinTrOptAccAlignHB    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char preset_mode, int pass_idx, CM_TR_HB_EMIT_MX *emit_mx, int *bkind, int *kpin, char *bbmode, char *blmode, char *brmode, char **ret_ppstr, Parsetree_t **ret_tr, char *ret_mode, float *ret_avgpp, float *ret_pp);
+extern int   cm_CheckptTrOptAccAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char preset_mode, int pass_idx, CM_TR_HB_EMIT_MX *emit_mx, int *bkind, int *kpin, char *bbmode, char *blmode, char *brmode, char **ret_ppstr, Parsetree_t **ret_tr, char *ret_mode, float *ret_avgpp, float *ret_pp);
 extern int   cm_CYKInsideAlign    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,               CM_MX    *mx, CM_SHADOW_MX    *shmx, int *ret_b, float *ret_sc);
 extern int   cm_CYKInsideAlignHB  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,               CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx, int *ret_b, float *ret_sc);
+extern int   cm_alignT_hb         (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, int do_optacc, CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx, CM_HB_EMIT_MX *emit_mx, Parsetree_t **ret_tr, float *ret_sc_or_pp);
 extern int   cm_InsideAlign       (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,               CM_MX    *mx, float *ret_sc);
 extern int   cm_InsideAlignHB     (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,               CM_HB_MX *mx, float *ret_sc);
 extern int   cm_OptAccAlign       (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit,               CM_MX    *mx, CM_SHADOW_MX    *shmx, CM_EMIT_MX *emit_mx,    int *ret_b, float *ret_pp);
@@ -2737,6 +3110,9 @@ extern char  Fscore2postcode(float sc);
 /* from cm_dpalign_trunc.c */
 extern int  cm_TrAlignSizeNeeded    (CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post, float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_totmb);
 extern int  cm_TrAlignSizeNeededHB  (CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post, float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_cp9mxmb, float *ret_cmtotmb, float *ret_totmb);
+extern int  cm_TrAlignSizeNeededHBELBanded(CM_t *cm, char *errbuf, int L, float size_limit, int do_sample, int do_post, float *ret_mxmb, float *ret_emxmb, float *ret_shmxmb, float *ret_cp9mxmb, float *ret_cmtotmb, float *ret_totmb);
+/* brief 26_0430-225: pre-alignment (no dsq, no DP) peak-memory estimator for the --ckpt engine family, truncated */
+extern int  cm_CheckptTrAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, char preset_mode, int *cp9_kmin, int *cp9_kmax, float *ret_ckptdpmb, float *ret_emxmb, float *ret_cp9mxmb, float *ret_totmb);
 
 extern int  cm_TrAlign              (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char preset_mode, int pass_idx, int do_optacc, int do_sample, CM_TR_MX    *mx, CM_TR_SHADOW_MX    *shmx, CM_TR_MX    *post_mx, CM_TR_EMIT_MX    *emit_mx, ESL_RANDOMNESS *r, char **ret_ppstr, Parsetree_t **ret_tr, char *ret_mode, float *ret_avgpp, float *ret_sc);
 extern int  cm_TrAlignHB            (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_limit, char preset_mode, int pass_idx, int do_optacc, int do_sample, CM_TR_HB_MX *mx, CM_TR_HB_SHADOW_MX *shmx, CM_TR_HB_MX *post_mx, CM_TR_HB_EMIT_MX *emit_mx, ESL_RANDOMNESS *r, char **ret_ppstr, Parsetree_t **ret_tr, char *ret_mode, float *ret_avgpp, float *ret_sc);
@@ -2767,6 +3143,7 @@ extern int  RefIInsideScan   (CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbid
 extern int  FastFInsideScan  (CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, float *ret_sc);
 extern int  RefFInsideScan   (CM_t *cm, char *errbuf, CM_SCAN_MX *smx, int qdbidx, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float **ret_vsc, float *ret_sc);
 extern int  FastCYKScanHB    (CM_t *cm, char *errbuf, CM_HB_MX   *mx,  float size_limit, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float *ret_sc);
+extern int  FastCYKScanHB_shmx(CM_t *cm, char *errbuf, CM_HB_MX   *mx, CM_HB_SHADOW_MX *shmx, float size_limit, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, Parsetree_t **ret_tr, float *ret_sc);
 extern int  FastFInsideScanHB(CM_t *cm, char *errbuf, CM_HB_MX   *mx,  float size_limit, ESL_DSQ *dsq, int64_t i0, int64_t j0, float cutoff, CM_TOPHITS *hitlist, int do_null3, float env_cutoff, int64_t *ret_envi, int64_t *ret_envj, float *ret_sc);
 extern int  cm_CountSearchDPCalcs(CM_t *cm, char *errbuf, int L, int *dmin, int *dmax, int W, int correct_for_first_W, float **ret_vcalcs, float *ret_calcs);
 extern int  DetermineSeqChunksize(int nproc, int L, int W);
@@ -2784,6 +3161,17 @@ extern int  cm_TrFillFromPassIdx(int pass_idx, int *ret_fill_L, int *ret_fill_R,
 
 /* from cm_dpsmall.c */
 extern float CYKDivideAndConquer(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr, int *dmin, int *dmax);
+extern float CYKDivideAndConquerHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr, CP9Bands_t *cp9b);
+extern float TrCYKDivideAndConquerHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, int pass_idx, char preset_mode, char *ret_mode, Parsetree_t **ret_tr, CP9Bands_t *cp9b);
+extern void  CYKDeckTrackReset(void);   /* brief 26_0610-007: D&C live-deck high-water instrumentation */
+extern double CYKDeckTrackMaxMb(void);
+extern double CYKDeckTrackVjdAtPeakMb(void); /* brief 26_0610-008: class-1 banded-vjd bytes at peak */
+extern double CYKDeckTrackVjiAtPeakMb(void); /* brief 26_0610-008: class-2 (V-problem) vji bytes at peak */
+extern void   CYKShadowTrackReset(void);   /* brief 26_0610-050: shadow-deck high-water (largest single leaf) */
+extern double CYKShadowTrackMaxMb(void);
+/* brief 26_0430-225: pre-alignment (no dsq, no DP) UPPER-BOUND peak-memory estimators for the D&C engine */
+extern int    cm_DnCAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, float *ret_vjdmb, float *ret_shmb, float *ret_totmb);
+extern int    cm_TrDnCAlignSizeNeededHB(CM_t *cm, char *errbuf, int L, char preset_mode, float *ret_vjdmb, float *ret_shmb, float *ret_totmb);
 extern float CYKInside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr, int *dmin, int *dmax);
 extern float CYKInsideScore(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, int *dmin, int *dmax);
 extern float CYKDemands(CM_t *cm, int L, int *dmin, int *dmax, int be_quiet);
@@ -2829,34 +3217,35 @@ extern void debug_print_shadow_banded(void ***shadow, CM_t *cm, int L, int *dmin
 extern void debug_print_shadow_banded_deck(int v, void ***shadow, CM_t *cm, int L, int *dmin, int *dmax);
 
 /* from cm_file.c */
-extern int     cm_file_Open(char *filename, char *env, int allow_1p0, CM_FILE **ret_cmfp, char *errbuf);
-extern int     cm_file_OpenNoDB(char *filename, char *env, int allow_1p0, CM_FILE **ret_cmfp, char *errbuf);
-extern int     cm_file_OpenBuffer(char *buffer, int size, int allow_1p0, CM_FILE **ret_cmfp);
+extern int     cm_file_Open(char *filename, char *env, int allow_old, CM_FILE **ret_cmfp, char *errbuf);
+extern int     cm_file_OpenNoDB(char *filename, char *env, int allow_old, CM_FILE **ret_cmfp, char *errbuf);
+extern int     cm_file_OpenBuffer(char *buffer, int size, int allow_old, CM_FILE **ret_cmfp);
 extern void    cm_file_Close(CM_FILE *cmfp);
 extern int     cm_file_CreateLock(CM_FILE *cmfp);
 extern int     cm_file_WriteASCII(FILE *fp, int format, CM_t *cm);
-extern int     cm_file_WriteBinary(FILE *fp, int format, CM_t *cm, off_t *opt_fp7_offset);
+extern int     cm_file_WriteBinary(FILE *fp, int format, CM_t *cm, off_t *opt_fp7_offset, off_t *opt_hp7_offset);
+extern int     cm_file_Check1aStorable(const CM_t *cm, int add_flags, char *errbuf);
+extern int     cm_file_UseHMMOnlyFilters(CM_FILE *cmfp, int which, char *errbuf);
 extern int     cm_file_Read(CM_FILE *cmfp, int read_fp7, ESL_ALPHABET **ret_abc, CM_t **opt_cm);
 extern int     cm_file_PositionByKey(CM_FILE *cmfp, const char *key);
 extern int     cm_file_Position(CM_FILE *cmfp, const off_t offset);
-extern int     cm_p7_hmmfile_Read(CM_FILE *cmfp, ESL_ALPHABET *abc, off_t offset, P7_HMM **ret_hmm);
+extern int     cm_p7_hmmfile_Read(CM_FILE *cmfp, ESL_ALPHABET *abc, off_t offset, P7_HMM **ret_hmm, off_t *opt_end_offset);
 extern int     cm_p7_oprofile_Write(FILE *ffp, FILE *pfp, off_t cm_offset, int cm_len, int cm_W, int cm_nbp, float gfmu, float gflambda, P7_OPROFILE *om);
 extern int     cm_p7_oprofile_ReadMSV(CM_FILE *cmfp, int read_scores, ESL_ALPHABET **byp_abc, off_t *ret_cm_offset, int *ret_cm_clen, int *ret_cm_W, int *ret_cm_nbp, float *ret_gfmu, float *ret_gflambda, P7_OPROFILE **ret_om);
 extern int     cm_p7_oprofile_ReadBlockMSV(CM_FILE *cmfp, int64_t cm_idx, ESL_ALPHABET **byp_abc, CM_P7_OM_BLOCK *hmmBlock);
 extern int     cm_p7_oprofile_Position(CM_FILE *cmfp, off_t offset);
+extern int     cm_p7_oprofile_PositionZeroBP(CM_FILE *cmfp, off_t offset);
 extern int     cm_file_Write1p0ASCII(FILE *fp, CM_t *cm);
 
 /* from cm_modelconfig.c */
 extern int   cm_Configure   (CM_t *cm, char *errbuf, int W_from_cmdline);
-extern int   cm_ConfigureSub(CM_t *cm, char *errbuf, int W_from_cmdline, CM_t *mother_cm, CMSubMap_t *mother_map);
 extern int   cm_CalculateLocalBeginProbs(CM_t *cm, float p_internal_start, float **t, float *begin);
 
 /* from cm_modelmaker.c */
 extern int  HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, int use_el, int use_wts, float symfrac, CM_t **ret_cm, Parsetree_t **ret_mtr);
 extern int  AssignMatchColumnsForMsa(ESL_MSA *msa, char *errbuf, int use_rf, int use_wts, float symfrac, int **ret_matassign);
-extern int  ConsensusModelmaker(const ESL_ALPHABET *abc, char *errbuf, char *ss_cons, int clen, int building_sub_model, CM_t **ret_cm, Parsetree_t **ret_gtr);
 extern int  Transmogrify(CM_t *cm, char *errbuf, Parsetree_t *gtr, ESL_DSQ *ax, int *used_el, int alen, Parsetree_t **ret_tr);
-extern int  cm_from_guide(CM_t *cm, char *errbuf, Parsetree_t *gtr, int will_never_localize);
+extern int  cm_from_guide(CM_t *cm, char *errbuf, Parsetree_t *gtr);
 extern int  cm_find_and_detach_dual_inserts(CM_t *cm, int do_check, int do_detach);
 extern int  cm_check_before_detaching(CM_t *cm, int insert1, int insert2);
 extern int  cm_detach_state(CM_t *cm, int insert1, int insert2);
@@ -2881,11 +3270,15 @@ extern int              cm_hb_mx_GrowTo               (CM_t *cm, CM_HB_MX *mx, c
 extern int              cm_hb_mx_Dump                 (FILE *ofp, CM_HB_MX *mx, int print_mx);
 extern void             cm_hb_mx_Destroy              (CM_HB_MX *mx);
 extern int              cm_hb_mx_SizeNeeded           (CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_ncells, float *ret_Mb);
+extern void             cm_hb_mx_ELDmax               (CM_t *cm, CP9Bands_t *cp9b, int L, int *eldmax);
+extern int              cm_hb_mx_SizeNeededELBanded   (CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_ncells, float *ret_Mb);
 
 extern CM_TR_HB_MX     *cm_tr_hb_mx_Create            (CM_t *cm);
 extern int              cm_tr_hb_mx_GrowTo            (CM_t *cm, CM_TR_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, float size_limit);
 extern int              cm_tr_hb_mx_Dump              (FILE *ofp, CM_TR_HB_MX *mx, char mode, int print_mx);
 extern void             cm_tr_hb_mx_Destroy           (CM_TR_HB_MX *mx);
+extern void             cm_tr_hb_mx_ELDmax            (CM_t *cm, CP9Bands_t *cp9b, int L, char mode, int *eldmax);
+extern int              cm_tr_hb_mx_SizeNeededELBanded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_Jncells, int64_t *ret_Lncells, int64_t *ret_Rncells, int64_t *ret_Tncells, float *ret_Mb);
 extern int              cm_tr_hb_mx_SizeNeeded        (CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_Jncells, int64_t *ret_Lncells, 
 						       int64_t *ret_Rncells, int64_t *ret_Tncells, float *ret_Mb);
 
@@ -2995,7 +3388,6 @@ extern int          cm_StochasticParsetree    (CM_t *cm, char *errbuf, ESL_DSQ *
 extern int          cm_StochasticParsetreeHB  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *mx, ESL_RANDOMNESS *r, Parsetree_t **ret_tr, float *ret_sc);
 extern int          cm_TrStochasticParsetree  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char preset_mode, int pass_idx, CM_TR_MX    *mx, ESL_RANDOMNESS *r, Parsetree_t **ret_tr, char *ret_mode, float *ret_sc);
 extern int          cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char preset_mode, int pass_idx, CM_TR_HB_MX *mx, ESL_RANDOMNESS *r, Parsetree_t **ret_tr, char *ret_mode, float *ret_sc);
-extern int          cm_parsetree_Doctor(CM_t *cm, char *errbuf, Parsetree_t *tr, int *opt_ndi, int *opt_nid);
 
 
 /* from cm_pipeline.c */
@@ -3006,8 +3398,14 @@ extern int          cm_pipeline_Merge  (CM_PIPELINE *p1, CM_PIPELINE *p2);
 
 extern int   cm_pli_TargetReportable  (CM_PIPELINE *pli, float score,     double Eval);
 extern int   cm_pli_TargetIncludable  (CM_PIPELINE *pli, float score,     double Eval);
+extern ExpInfo_t **cm_pli_ExpInfoA    (const CM_PIPELINE *pli, const CM_t *cm);
 extern int   cm_pli_NewModel          (CM_PIPELINE *pli, int modmode, CM_t *cm, int cm_clen, int cm_W, int cm_nbp, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, int p7_max_length, int64_t cur_cm_idx, int cur_clan_idx, ESL_KEYHASH *glocal_kh);
 extern int   cm_pli_NewModelThresholds(CM_PIPELINE *pli, CM_t *cm);
+/* max length (incl. NUL) of the CM name kept for the --nonull3 fallback warning */
+#define CM_NONULL3_FB_NAMELEN 256
+extern int   cm_pli_ReportNoNull3Fallback(FILE *ofp);
+extern int   cm_pli_GetNoNull3Fallback(char **opt_cmname);
+extern int   cm_pli_SetNoNull3Fallback(const char *cmname);
 extern int   cm_pli_NewSeq            (CM_PIPELINE *pli, const ESL_SQ *sq, int64_t cur_seq_idx);
 extern int   cm_Pipeline              (CM_PIPELINE *pli, off_t cm_offset, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, P7_SCOREDATA *msvdata, ESL_SQ *sq, CM_TOPHITS *hitlist, int in_rc, P7_HMM **opt_hmm, P7_PROFILE **opt_gm, P7_PROFILE **opt_Rgm, P7_PROFILE **opt_Lgm, P7_PROFILE **opt_Tgm, CM_t **opt_cm);
 extern int   cm_pli_Statistics    (FILE *ofp, CM_PIPELINE *pli, ESL_STOPWATCH *w);
@@ -3037,24 +3435,6 @@ extern int          CopyCMQDBInfo(const CM_QDBINFO *src, CM_QDBINFO *dst, char *
 extern void         DumpCMQDBInfo(FILE *fp, CM_t *cm, CM_QDBINFO *qdbinfo);
 extern int          CheckCMQDBInfo(CM_QDBINFO *qdbinfo, double beta1, int do_check1, double beta2, int do_check2);
 
-/* from cm_submodel.c */
-extern int  build_sub_cm(CM_t *orig_cm, char *errbuf, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t **ret_submap, int print_flag);
-extern void CP9NodeForPosn(CP9_t *hmm, int i0, int j0, int x, CP9_MX *post, int *ret_node, int *ret_type, float pmass, int is_start, int print_flag);
-extern void StripWUSSGivenCC(ESL_MSA *msa, float gapthresh, int first_match, int last_match);
-extern int  check_orig_psi_vs_sub_psi(CM_t *orig_cm, CM_t *sub_cm, char *errbuf, CMSubMap_t *submap, double threshold, int print_flag);
-extern int  check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, char *errbuf, CMSubMap_t *submap, CMSubInfo_t *subinfo, float pthresh, int print_flag);
-extern int  check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, char *errbuf, ESL_RANDOMNESS *r, CMSubMap_t *submap, CMSubInfo_t *subinfo,
-				     float chi_thresh, int nsamples, int print_flag);
-extern int  sub_cm2cm_parsetree(CM_t *orig_cm, CM_t *sub_cm, Parsetree_t **ret_orig_tr, Parsetree_t *sub_tr, 
-				CMSubMap_t *submap, int print_flag);
-extern CMSubMap_t  *AllocSubMap(CM_t *sub_cm, CM_t *orig_cm, int sstruct, int estruct);
-extern void         FreeSubMap(CMSubMap_t *submap);
-extern CMSubInfo_t *AllocSubInfo(int clen);
-extern void         FreeSubInfo(CMSubInfo_t *subinfo);
-extern void  debug_print_cm_params(FILE *fp, CM_t *cm);
-extern int   SubCMLogoddsify(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_t *mother_map);
-extern float ** SubFCalcAndCopyOptimizedEmitScoresFromMother(CM_t *cm, CM_t *mother_cm, CMSubMap_t *mother_map);
-extern void  CP9_reconfig2sub(CP9_t *hmm, int spos, int epos, int spos_nd, int epos_nd, double **orig_phi);
 
 
 /* from cm_tophits.c */
@@ -3107,39 +3487,212 @@ extern float            cm_tr_penalties_Sizeof(CM_TR_PENALTIES *trp);
 extern void             cm_tr_penalties_Destroy(CM_TR_PENALTIES *trp);
 extern int              cm_tr_penalties_IdxForPass(int pass_idx);
 
+/* Compatibility #defines -- TEMPORARY, remove before the 1.2 release.
+ * Added by brief 26_0316-038; this comment rewritten by brief 26_0821-193.
+ *
+ * Infernal functions that used names in HMMER's namespace (38 at the
+ * time: 35 "p7_" and 3 "my_p7_"/"my_dmx_") were renamed into Infernal's
+ * "cm_" namespace, but only their definitions and declarations were: the
+ * ~190 call sites, spread over many branches under development at the
+ * time, still use the old names, and these #defines map each old name
+ * still in use to the new one so that they compile. That kept the
+ * rename's merge conflicts to the definitions and this block.
+ *
+ * To remove them: rename the old names at every call site to the cm_
+ * names (one sed over src/, using the pairs below; this also renames the
+ * few local declarations of old names, e.g. in p7band-test.c), then
+ * delete this block and check that the tree builds.
+ *
+ * !! HAZARD while these exist: they undo the point of the rename. Without
+ * them, a function that a newer vendored HMMER defines under one of the
+ * old names would collide with Infernal's at link time, loudly. With
+ * them, a call meant for HMMER's new function is silently rewritten to
+ * Infernal's cm_ function, and compiles, links and runs wrong.
+ * (p7_GForwardBanded collided once already; my_p7_GForwardBanded was the
+ * dodge.) So on ANY update of the vendored HMMER, remove these first;
+ * don't take a clean link as evidence that the namespaces are disjoint.
+ */
+#define my_dmx_Visualize                                         cm_dmx_Visualize
+#define my_p7_GForwardBanded                                     cm_p7_GForwardBanded
+#define my_p7_GTraceMSV                                          cm_p7_GTraceMSV
+#define p7_CheckptBandedOAMemNeeded                              cm_p7_CheckptBandedOAMemNeeded
+#define p7_domaindef_GlocalByPosteriorHeuristics                 cm_p7_domaindef_GlocalByPosteriorHeuristics
+#define p7_domaindef_GlocalByPosteriorHeuristics_Banded          cm_p7_domaindef_GlocalByPosteriorHeuristics_Banded
+#define p7_domaindef_GlocalByPosteriorHeuristics_Banded_Multihit cm_p7_domaindef_GlocalByPosteriorHeuristics_Banded_Multihit
+#define p7_GBackwardBanded                                       cm_p7_GBackwardBanded
+#define p7_GBands_FromKminKmax                                   cm_p7_GBands_FromKminKmax
+#define p7_GCheckptFBDecode_Banded                               cm_p7_GCheckptFBDecode_Banded
+#define p7_GCheckptFBDecodeOA_Banded                             cm_p7_GCheckptFBDecodeOA_Banded
+#define p7_GCheckptOA_Banded                                     cm_p7_GCheckptOA_Banded
+#define p7_GDecodingBanded                                       cm_p7_GDecodingBanded
+#define p7_gmx_Match2DMatrix                                     cm_p7_gmx_Match2DMatrix
+#define p7_GOATraceBanded                                        cm_p7_GOATraceBanded
+#define p7_GOptimalAccuracyBanded                                cm_p7_GOptimalAccuracyBanded
+#define p7_IBVPins2Trace                                         cm_p7_IBVPins2Trace
+#define p7_kbands2gbands                                         cm_p7_kbands2gbands
+#define p7_pins2bands                                            cm_p7_pins2bands
+#define p7_pins2bands_nodepad                                    cm_p7_pins2bands_nodepad
+#define p7_prior_Read                                            cm_p7_prior_Read
+#define p7_ProfileConfig3PrimeTrunc                              cm_p7_ProfileConfig3PrimeTrunc
+#define p7_ProfileConfig5PrimeAnd3PrimeTrunc                     cm_p7_ProfileConfig5PrimeAnd3PrimeTrunc
+#define p7_ProfileConfig5PrimeTrunc                              cm_p7_ProfileConfig5PrimeTrunc
+#define p7_ReconfigLength3PrimeTrunc                             cm_p7_ReconfigLength3PrimeTrunc
+#define p7_ReconfigLength5PrimeTrunc                             cm_p7_ReconfigLength5PrimeTrunc
+#define p7_Seq2Bands                                             cm_p7_Seq2Bands
+#define p7_Seq2BandsIBV                                          cm_p7_Seq2BandsIBV
+#define p7_Seq2BandsIBV_dnc                                      cm_p7_Seq2BandsIBV_dnc
+#define p7_Seq2BandsKmerChain                                    cm_p7_Seq2BandsKmerChain
+#define p7_Seq2BandsVit                                          cm_p7_Seq2BandsVit
+
 /* from cm_p7_band.c */
-extern int          p7_gmx_Match2DMatrix(P7_GMX *gx, int do_diff, ESL_DMATRIX **ret_D, double *ret_min, double *ret_max);
-extern int          my_dmx_Visualize(FILE *fp, ESL_DMATRIX *D, double min, double max, double min2fill);
-extern int          my_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, const P7_GMX *gx, P7_TRACE *tr, int **ret_i2k, int **ret_k2i, float **ret_sc, int **ret_iconflict);
+extern int          cm_p7_gmx_Match2DMatrix(P7_GMX *gx, int do_diff, ESL_DMATRIX **ret_D, double *ret_min, double *ret_max);
+extern int          cm_dmx_Visualize(FILE *fp, ESL_DMATRIX *D, double min, double max, double min2fill);
+extern int          cm_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, const P7_GMX *gx, P7_TRACE *tr, int **ret_i2k, int **ret_k2i, float **ret_sc, int **ret_iconflict);
 extern int          Parsetree2i_to_k(CM_t *cm, CMEmitMap_t *emap, int L, char *errbuf, Parsetree_t *tr, int **ret_i2k);
 extern int          prune_i2k(int *i2k, int *iconflict, float *isc, int L, double **phi, float min_sc, int min_len, int min_end, float min_mprob, float min_mcprob, float max_iprob, float max_ilprob);
-extern int          p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_imin, int **ret_imax, int *ret_ncells);
+extern int          cm_p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_imin, int **ret_imax, int *ret_ncells);
+/* brief 26_0316-037: hoisted from block-local externs in cmalign.c/cm_pipeline.c/cm_p7_domaindef.c
+ * (D17); infernal.h has included p7_gmxb.h/p7_gbands.h unconditionally since 7f360469 (2026-03-18). */
+extern int          cm_p7_kbands2gbands(int *i2k, int *kmin, int *kmax, int L, int M, P7_GBANDS **ret_bnd);
+extern int          cm_p7_GForwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, float *opt_sc);
+extern int          cm_p7_GBackwardBanded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *gxb, float *opt_sc);
+extern int          cm_p7_GDecodingBanded(const P7_PROFILE *gm, const P7_GMXB *fwd, P7_GMXB *bck, P7_GMXB *pp, float overall_sc);
+extern int          cm_p7_GOptimalAccuracyBanded(const P7_PROFILE *gm, const P7_GMXB *pp, CM_P7_GMXBD *gx, float *ret_e);
+extern int          cm_p7_GOATraceBanded(const P7_PROFILE *gm, const P7_GMXB *pp, const CM_P7_GMXBD *gx, P7_TRACE *tr);
+/* unbanded generic F/B with a double recursion, float matrices; null2 in double (brief 26_0821-161) */
+extern int          cm_p7_GForwardDbl (const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMX *gx, float *opt_sc);
+extern int          cm_p7_GBackwardDbl(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMX *gx, float *opt_sc);
+extern int          cm_p7_GForwardDblScore(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, double *opt_sc);
+extern int          cm_p7_GNull2_ByExpectationDbl(const P7_PROFILE *gm, const P7_GMX *pp, float *null2);
+/* double OA matrix for unbanded optimal accuracy (brief 26_0821-161); rows may live in a spare P7_GMX's memory */
+typedef struct {
+  int      M, L;
+  double **dp;    /* [0..L][0..M][0..p7G_NSCELLS-1], indexed [i][k*p7G_NSCELLS+s] like P7_GMX */
+  double  *xmx;   /* [0..L][0..p7G_NXCELLS-1] */
+  double  *own;   /* rows that did not fit in the spare matrix */
+} CM_P7_GMXD;
+extern CM_P7_GMXD  *cm_p7_gmxd_CreateOver(P7_GMX *spare, int M, int L);
+extern void         cm_p7_gmxd_Destroy(CM_P7_GMXD *gx);
+extern int          cm_p7_GOptimalAccuracyDbl(const P7_PROFILE *gm, const P7_GMX *pp, CM_P7_GMXD *gx, float *ret_e);
+extern int          cm_p7_GOATraceDbl(const P7_PROFILE *gm, const P7_GMX *pp, const CM_P7_GMXD *gx, P7_TRACE *tr);
+extern CM_P7_GMXBD *cm_p7_gmxbd_Create(P7_GBANDS *bnd);                                                                       /* brief 26_0821-151 */
+extern void         cm_p7_gmxbd_Destroy(CM_P7_GMXBD *gxd);                                                                     /* brief 26_0821-151 */
+extern int          cm_p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *pp, float *ret_fwdsc, CM_P7_DECSTATS *opt_st); /* brief 26_0526-016 */
+extern int          cm_p7_GCheckptOA_Banded(const P7_PROFILE *gm, P7_GMXB *pp, P7_TRACE *tr, float *ret_oasc);                    /* brief 26_0526-016 */
+extern int          cm_p7_GFBDecodeBandedDouble(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GMXB *pp, float *ret_fwdsc, float *opt_bwdsc, CM_P7_DECSTATS *opt_st); /* brief 26_0821-141 */
+extern void         cm_p7_decstats_Init(CM_P7_DECSTATS *st);                                                                     /* brief 26_0821-141 */
+extern P7_GMXB     *p7b_pp_Create(P7_GBANDS *bnd);                                                                             /* brief 26_0526-017: compact 2-cell resident pp */
+extern int          cm_p7_CheckptBandedOAMemNeeded(const P7_GBANDS *bnd, int ckpt_mode, double *ret_bytes);                      /* brief 26_0430-266: post-band do_bandedoa mem preflight; ckpt_mode = P7B_OAMEM_* */
+extern double       cm_p7_ViterbiMxMb(int M, int64_t L);                                                                        /* brief 26_0821-193 */
+extern int          cm_MxsizeRecommend(double needed_Mb);                                                                       /* brief 26_0821-193 */
+extern int          cm_p7_GCheckptFBDecodeOA_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, P7_GBANDS *bnd,
+                                                 P7_TRACE *tr, float *ret_fwdsc, float *ret_oasc, CM_P7_DECSTATS *opt_st);     /* brief 26_0628-081: double-checkpointed, no resident posterior */
+extern int          cm_p7_domaindef_GlocalByPosteriorHeuristics_Banded(const ESL_SQ *sq, P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_DOMAINDEF *ddef, int do_aln);
+extern int          cm_p7_domaindef_GlocalByPosteriorHeuristics_Banded_Multihit(const ESL_SQ *sq, P7_PROFILE *gm, P7_OPROFILE *om, P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_GMX *fwd, P7_GMX *bck, P7_DOMAINDEF *ddef, int *kmin, int *kmax, int do_null2, int do_aln);
 extern int          DumpP7Bands(FILE *fp, int *i2k, int *kmin, int *kmax, int L);
+extern int          cp9_ForwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc);
+extern int          cp9_BackwardP7BF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc);
+extern int          cp9_PosteriorP7BF(ESL_DSQ *dsq, char *errbuf, int L, CP9_t *hmm, CP9_FMX *fmx, CP9_FMX *bmx, CP9_FMX *pmx, int *kmin, int *kmax);
+extern int          cp9_FB2HMMBandsP7BF(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_FMX *fmx, CP9_FMX *bmx, CP9_FMX *pmx, CP9Bands_t *cp9b, int L, int M, double p_thresh, int do_old_hmm2ij, int *kmin, int *kmax, int debug_level, int do_pnmono, int do_pnmono_print);
+extern void         cp9_PredictStartAndEndPositionsP7BF(CP9_FMX *pmx, CP9Bands_t *cp9b, int *kmin, int *kmax, int i0, int j0);
+extern int          cp9_FBMatrices2BandsF(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_FMX *fmx, CP9_FMX *bmx, CP9_FMX *pmx, ESL_DSQ *dsq, CP9Bands_t *cp9b, int *kmin, int *kmax, int L, int i0, int j0, int pass_idx, int debug_level, int do_pnmono, int do_pnmono_print);
+extern int          cp9_Seq2BandsP7BF(CM_t *cm, char *errbuf, CP9_FMX *fmx, CP9_FMX *bmx, CP9_FMX *pmx, ESL_DSQ *dsq, int L, CP9Bands_t *cp9b, int *kmin, int *kmax, int i0, int j0, int pass_idx, int debug_level, int do_pnmono, int do_pnmono_print);
 extern int          cp9_ForwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc);
 extern int          cp9_ForwardP7B_OLD_WITH_EL(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc);
 extern int          cp9_BackwardP7B(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc);
 extern int          cp9_CheckFBP7B(CP9_MX *fmx, CP9_MX *bmx, CP9_t *hmm, char *errbuf, float sc, int i0, int j0, ESL_DSQ *dsq, int *kmin, int *kmax);
-extern int          cp9_Seq2BandsP7B     (CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int L, CP9Bands_t *cp9b, int *kmin, int *kmax, int debug_level);
+extern int          cp9_Seq2BandsP7B     (CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int L, CP9Bands_t *cp9b, int *kmin, int *kmax, int i0, int j0, int pass_idx, int debug_level, int do_pnmono, int do_pnmono_print);
+extern int          cp9_FBMatrices2BandsP7B(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, CP9Bands_t *cp9b, int *kmin, int *kmax, int L, int i0, int j0, int pass_idx, int doing_search, int debug_level, int do_pnmono, int do_pnmono_print);
+extern int          cp9_IterateSeq2BandsP7B(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *kmin, int *kmax, int i0, int j0, int pass_idx, float size_limit, int doing_search, int do_sample, int do_post, double maxtau, int do_pnmono, int do_pnmono_print, float *ret_Mb);
+extern void         pn_match_bands_enforce_monotone(int *pn_min_m, int *pn_max_m, int M, int L, int do_print, const char *ctx);
+extern int          p7banded_post_to_cp9bands(CM_t *cm, char *errbuf, P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_GBANDS *bnd, int ws, int L, CP9Bands_t *cp9b, int i0, int j0, int pass_idx, float thresh, int debug_level);
+extern int          p7banded_post_to_pn_bands(P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_GBANDS *bnd, int ws, int M, int i0, int j0, float thresh, int L, int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d, float *pocc, int do_pnmono, int do_pnmono_print);
+extern int          p7banded_post_to_pn_bands_tau(P7_GMXB *gxfb, P7_GMXB *gxbb, float fwdsc, P7_GBANDS *bnd, int ws, int M, int i0, int j0, float tau, int L, int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d, int do_pnmono, int do_pnmono_print);
+extern int          p7pn_bands_to_cp9cm_bands(CM_t *cm, char *errbuf, int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d, const float *pocc, CP9Bands_t *cp9b, int i0, int j0, int L, int pass_idx, int debug_level);
+extern int          cm_BandsFromParsetree(CM_t *cm, Parsetree_t *tr, int L, int pad, int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, int *pn_max_d);
+extern int          cm_BandsFromCYKParsetree(CM_t *cm, char *errbuf, Parsetree_t *tr, int i0, int j0, int pad, int strict_unvisited, CP9Bands_t *cp9b, int pass_idx, int debug);
+extern int         *cm_CYKPerstatePadCompute(CM_t *cm, CP9Bands_t *cp9b, int additive_pad, int maxpad);
 extern int          cp9_Seq2PosteriorsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, int debug_level);
 extern int          cp9_PosteriorP7B(ESL_DSQ *dsq, char *errbuf, int L, CP9_t *hmm, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, int *kmin, int *kmax);
-extern int          cp9_FB2HMMBandsP7B(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b, int L, int M, double p_thresh, int do_old_hmm2ij, int *kmin, int *kmax, int debug_level);
-extern int          p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL_DSQ *dsq, int L, 
+extern int          cp9_FB2HMMBandsP7B(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b, int L, int M, double p_thresh, int do_old_hmm2ij, int *kmin, int *kmax, int debug_level, int do_pnmono, int do_pnmono_print);
+/* checkpointed banded CP9 P7B float/truncated F/B (brief 26_0430-150, Phase 2, cm_p7_band_chk.c) */
+extern int          cp9_FB2HMMBandsP7BF_chk(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t *cp9b, int L, int M, double p_thresh, int *kmin, int *kmax, int debug_level, int do_pnmono, int do_pnmono_print, double *pocc_arr);
+extern int          cp9_FBMatrices2BandsP7BF_chk(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *dsq, CP9Bands_t *cp9b, int *kmin, int *kmax, int L, int i0, int j0, int pass_idx, int debug_level, int do_pnmono, int do_pnmono_print);
+/* brief 26_0430-167: tau-ratchet single-pass multi-threshold sibling + ckpt-trunc driver (cm_p7_band_chk.c) */
+extern int          cp9_FB2HMMBandsP7BF_chk_multi(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t *cp9b, int L, int M, double *p_thresh, int NS, int *kmin, int *kmax, int debug_level, int do_pnmono, int do_pnmono_print, int **pn_min_m_out, int **pn_max_m_out, int **pn_min_i_out, int **pn_max_i_out, int **pn_min_d_out, int **pn_max_d_out, double **pocc_out);
+extern int          cp9_IterateSeq2BandsP7BF_chk_multi(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *dsq, int L, int *kmin, int *kmax, int i0, int j0, int pass_idx, float size_limit, int doing_search, int do_sample, int do_post, double maxtau, int do_pnmono, int do_pnmono_print, int *ret_nbump, float *ret_Mb);
+extern int          cm_p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL_DSQ *dsq, int L,
 				 double **phi, float sc7, int len7, int end7, float mprob7, float mcprob7, float iprob7, float ilprob7, int pad7,
 				 int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
+extern int          cm_p7_Seq2BandsVit(char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL_DSQ *dsq, int L,
+				 int pad, int *nodepad, int hopback, int vitend, int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
+extern int          cm_p7_pins2bands_nodepad(int *i2k, char *errbuf, int L, int M, int *nodepad, int hopback, double alpha, int **ret_kmin, int **ret_kmax, int *ret_ncells);
+extern void         cm_p7_bands_ReachModelEnd(int *kmax, int L, int M);
+/* Brief 26_0628-027: genome-scale k-mer seed-and-chain guide-deriver (--p7kmerchain, opt-in).
+ * ret_a_s/ret_b_s (brief 26_0628-059): optional (NULL-able) out-params for internal
+ * stage timing (seconds) -- a = seed finding (raw hits + merge), b = colinear chaining
+ * DP + backtrack + pin emission + p7_pins2bands_nodepad. Only measured when non-NULL.
+ * ret_rawpins (briefs 26_0821-128/26_0821-132): optional (NULL-able) out-param, the
+ * chain's pins before junction slack. */
+extern int          cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodepad, int do_trunc, int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells, double *ret_a_s, double *ret_b_s, double *ret_bd_s, int **ret_rawpins);
+/* Brief 26_0430-140: IBV band-derivation modes (enrich the per-row band using the
+ * argmax-k pin i2k[]).  DELTA = posterior-mass cloud (original); FIXED =
+ * [i2k-W, i2k+W] path spine only; HYBRID = union of DELTA cloud and FIXED spine. */
+#define P7IBV_MODE_DELTA  0
+#define P7IBV_MODE_FIXED  1
+#define P7IBV_MODE_HYBRID 2
+extern int          cm_p7_Seq2BandsIBV(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L, int delta_milli,
+                                    int do_trunc,
+                                    int ibv_mode, int ibv_width,
+                                    int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
+extern int          cm_p7_Seq2BandsIBV_dnc(CM_t *cm, char *errbuf, const ESL_DSQ *dsq, int L,
+                                    int delta_milli, int base_slab,
+                                    int do_boundary_widen,
+                                    int do_trunc,
+                                    int ibv_mode, int ibv_width,
+                                    int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
+extern int          cm_p7_IBVPins2Trace(const P7_PROFILE *gm, const ESL_DSQ *dsq, int L,
+                                    const int *i2k, const int *kmin, const int *kmax, int ncells,
+                                    P7_TRACE **ret_tr);
+extern int          cm_ComputeP7CMNodePad(CM_t *cm, ESL_RANDOMNESS *r, int nsamples, double quantile, int ncpu, char *errbuf);
 
-extern int          CP9NodeForPosnP7B(CP9_t *hmm, char *errbuf, int x, CP9_MX *post, int kn, int kx, int *ret_node, int *ret_type, int print_flag);
-extern int          P7BandsAdjustForSubCM(int *kmin, int *kmax, int L, int spos, int epos);
+/* from cm_filtercutoff.c */
+extern int          cm_CalibrateFilterPvalCutoffs(CM_t *cm, ESL_RANDOMNESS *r, int N, char *errbuf);
+extern double       cm_filter_ceiling_factor_clen(int clen);
+
+
+/* <ckpt_mode> selector for p7_CheckptBandedOAMemNeeded() (cm_p7_band.c):
+ * which --hmm do_bandedoa engine the byte estimate should model. THREE
+ * values, not a boolean -- 0/1 correspond to the historical FALSE/TRUE
+ * do_ckpt flag, and 2 was added by brief 26_0628-081. Mode 2
+ * double-checkpoints the Backward pass, reducing the resident posterior
+ * term from O(ncell) to O(sqrt(nrow)*maxnc), at the cost of extra
+ * recompute passes -- 1.65-2.31x in the OA stage, which is why it is NOT
+ * used unconditionally: under --p7kmerchain the OA stage is the dominant
+ * cost, so unconditional use regressed total wall ~1.6x (brief 26_0628-081
+ * gate 4).
+ *
+ * Selection (cmalign.c, serial and threaded): the preflight estimates what
+ * P7B_OAMEM_CKPT would need; if that fits under --mxsize it is used, and
+ * P7B_OAMEM_CKPTPP is the fallback when it does not. CKPTPP is therefore
+ * --mxsize-conditional, NOT the default engine -- the initializer
+ * `int ckpt_mode = P7B_OAMEM_CKPTPP` at cmalign.c:1265/:2098 is overwritten
+ * by that preflight and is not a default. */
+#define P7B_OAMEM_NOCKPT  0   /* non-checkpointed: double F+B + float pp; O(ncell)      */
+#define P7B_OAMEM_CKPT    1   /* ckpt F/B/OA + RESIDENT posterior;        O(ncell)      */
+#define P7B_OAMEM_CKPTPP  2   /* + double-checkpointed posterior (brief 26_0628-081):
+                               * O(sqrt(nrow)*maxnc) -- --mxsize-conditional fallback */
 
 /* from cm_p7_domaindef.c */
-extern int p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm, P7_OPROFILE *om, P7_GMX *gxf, P7_GMX *gxb,
+extern int cm_p7_domaindef_GlocalByPosteriorHeuristics(const ESL_SQ *sq, P7_PROFILE *gm, P7_OPROFILE *om, P7_GMX *gxf, P7_GMX *gxb,
               P7_GMX *fwd, P7_GMX *bck, P7_DOMAINDEF *ddef, int do_null2, int do_aln);
 
 /* from cm_p7_modelconfig_trunc.c */
-extern int p7_ProfileConfig5PrimeTrunc(P7_PROFILE *gm, int L);
-extern int p7_ProfileConfig3PrimeTrunc(const P7_HMM *hmm, P7_PROFILE *gm, int L);
-extern int p7_ProfileConfig5PrimeAnd3PrimeTrunc(P7_PROFILE *gm, int L);
-extern int p7_ReconfigLength5PrimeTrunc(P7_PROFILE *gm, int L);
-extern int p7_ReconfigLength3PrimeTrunc(P7_PROFILE *gm, int L);
+extern int cm_p7_ProfileConfig5PrimeTrunc(P7_PROFILE *gm, int L);
+extern int cm_p7_ProfileConfig3PrimeTrunc(const P7_HMM *hmm, P7_PROFILE *gm, int L);
+extern int cm_p7_ProfileConfig5PrimeAnd3PrimeTrunc(P7_PROFILE *gm, int L);
+extern int cm_p7_ReconfigLength5PrimeTrunc(P7_PROFILE *gm, int L);
+extern int cm_p7_ReconfigLength3PrimeTrunc(P7_PROFILE *gm, int L);
 
 /* from cm_p7_modelmaker.c */
 extern int          BuildP7HMM_MatchEmitsOnly(CM_t *cm, CP9_t *cp9, P7_HMM **ret_p7);
@@ -3151,6 +3704,17 @@ extern int          cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, 
 extern int          cm_p7_GlocalFwdSimFit(ESL_RANDOMNESS *r, char *errbuf, P7_PROFILE *gm, P7_BG *bg, int L, int N, double tailp, int ncpus, double *ret_mu, double *ret_lambda);
 extern int          cm_p7_FitExpTail(const double *xv, int N, double tailp, double *ret_mu, double *ret_lambda);
 extern int          cm_SetFilterHMM(CM_t *cm, P7_HMM *hmm, double gfmu, double gflambda);
+extern int          cm_SetHMMOnlyHMM(CM_t *cm, P7_HMM *hmm, double gfmu, double gflambda);
+extern int          cm_p7_HMMOnlyTransform(const P7_HMM *mlp7, int xform, const double *alpha, P7_HMM **ret_hmm, char *errbuf);
+extern void         cm_p7_DefaultHMMOnlyAlpha(double *alpha);
+extern int          cm_p7_DeriveFilterHMMs(CM_t *cm, int xform, P7_HMM **ret_fp7, P7_HMM **ret_hp7, char *errbuf);
+extern int          cm_p7_AttachDerivedFilterHMMs(CM_t *cm, char *errbuf);
+extern void         cm_p7_CalOptsSetDefaults(CM_P7_CALOPTS *co, int clen, int do_sim);
+extern int          cm_p7_DeriveFilterHMMsAsWritten(CM_t *cm, P7_HMM **ret_fp7, P7_HMM **ret_hp7, char *errbuf);
+extern int          cm_p7_CalibrateDerivedFilterHMMs(CM_t *cm, const CM_P7_CALOPTS *co, int ncpus, char *errbuf);
+extern int          cm_p7_UseHMMOnlyFilter(CM_t *cm);
+extern const char  *cm_p7_HMMOnlyXformString(int xform);
+extern int          cm_p7_HMMOnlyXformCode(const char *s);
 extern int          dump_p7(P7_HMM *hmm, FILE *fp);
 extern float        cm_p7_hmm_Sizeof(P7_HMM *hmm);
 extern int          cm_p7_hmm_SetConsensus(P7_HMM *hmm);
@@ -3174,11 +3738,23 @@ extern int cp9_Viterbi(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i
 		       int be_efficient, int **ret_psc, int *ret_maxres, CP9trace_t **ret_tr, float *ret_sc);
 extern int cp9_ViterbiBackward(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int do_scan, int doing_align, 
 			       int be_efficient, int **ret_psc, int *ret_maxres, CP9trace_t **ret_tr, float *ret_sc);
-extern int cp9_Forward(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int do_scan, int doing_align, 
+extern int cp9_ForwardF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int i0, int j0, int do_scan, int doing_align,
+		    int be_efficient, float **ret_psc, int *ret_maxres, float *ret_sc);
+extern int cp9_BackwardF(CP9_t *cp9, char *errbuf, CP9_FMX *mx, ESL_DSQ *dsq, int i0, int j0, int do_scan, int doing_align,
+		     int be_efficient, float **ret_psc, int *ret_maxres, float *ret_sc);
+extern void cp9_PosteriorF(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, CP9_FMX *fmx, CP9_FMX *bmx, CP9_FMX *mx, int did_fwd_scan);
+extern int cp9_Forward(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int do_scan, int doing_align,
 		       int be_efficient, int **ret_psc, int *ret_maxres, float *ret_sc);
 extern int cp9_Backward(CP9_t *cp9, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int do_scan, int doing_align, 
 			int be_efficient, int **ret_psc, int *ret_maxres, float *ret_sc);
 extern int cp9_CheckFB(CP9_MX *fmx, CP9_MX *bmx, CP9_t *hmm, char *errbuf, float sc, int i0, int j0, ESL_DSQ *dsq);
+
+/* from cp9_dp_ckpt.c */
+extern CP9_CKPTBANDS *cp9_CheckptBandsCreate(int M, const int *thr, int nthr);
+extern void           cp9_CheckptBandsDestroy(CP9_CKPTBANDS *cb);
+extern int            cp9_CheckptBandsThreshIdx(CP9_CKPTBANDS *cb, int thresh);
+extern float          cp9_CheckptBandsMbNeeded(int L, int M, int nthr);
+extern int            cp9_CheckptFB2HMMBands(CP9_t *cp9, char *errbuf, ESL_DSQ *dsq, int i0, int j0, CP9_CKPTBANDS *cb);
 
 /* from cp9_modelmaker.c */
 extern CP9Map_t *AllocCP9Map(CM_t *cm);
@@ -3188,12 +3764,10 @@ extern int   build_cp9_hmm(CM_t *cm, char *errbuf, int do_psi_test, float thresh
 extern void  CP9_map_cm2hmm(CM_t *cm, CP9Map_t *cp9map, int debug_level);
 extern void  fill_phi_cp9(CP9_t *hmm, double ***ret_phi, int spos, int entered_only);
 extern void  map_helper(CM_t *cm, CP9Map_t *cp9map, int k, int ks, int v);
-extern int   CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, char *errbuf, ESL_RANDOMNESS *r, CMSubInfo_t *subinfo, int spos, int epos, float chi_thresh, int nsamples, int print_flag);
+extern int   CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, char *errbuf, ESL_RANDOMNESS *r, int spos, int epos, float chi_thresh, int nsamples, int print_flag);
 extern void  debug_print_cp9_params(FILE *fp, CP9_t *hmm, int print_scores);
 extern void  debug_print_phi_cp9(CP9_t *hmm, double **phi);
 extern int   MakeDealignedString(const ESL_ALPHABET *abc, char *aseq, int alen, char *ss, char **ret_s);
-extern int   sub_build_cp9_hmm_from_mother(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_t *mother_map, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
-					  float psi_vs_phi_threshold, int debug_level);
 extern void  CPlan9InitEL(CP9_t *cp9, CM_t *cm);
 extern int   CP9_2_CM(CM_t *cm, char *errbuf, CM_t **ret_cm);
 
@@ -3203,6 +3777,13 @@ extern void    FreeCP9Matrix  (CP9_MX *mx);
 extern int     GrowCP9Matrix  (CP9_MX *mx, char *errbuf, int N, int M, int *kmin, int *kmax, int ***mmx, int ***imx, int ***dmx, int ***elmx, int **erow);
 extern void    InitializeCP9Matrix(CP9_MX *mx);
 extern int     SizeNeededCP9Matrix(int N, int M, int *kmin, int *kmax);
+
+/* CP9_FMX (float-precision) matrix functions, from cp9_mx.c */
+extern CP9_FMX *CreateCP9FMatrix(int N, int M);
+extern void     FreeCP9FMatrix  (CP9_FMX *mx);
+extern int      GrowCP9FMatrix  (CP9_FMX *mx, char *errbuf, int N, int M, int *kmin, int *kmax, float ***mmx, float ***imx, float ***dmx, float ***elmx, float **erow);
+extern void     InitializeCP9FMatrix(CP9_FMX *mx);
+extern int      SizeNeededCP9FMatrix(int N, int M, int *kmin, int *kmax);
 
 /* from cp9_trace.c */
 extern void  CP9AllocTrace(int tlen, CP9trace_t **ret_tr);
@@ -3260,6 +3841,8 @@ extern int            GetDate(char *errbuf, char **ret_date);
 /* from errors.c */
 extern void cm_Die (char *format, ...);
 extern void cm_Fail(char *format, ...);
+extern int  cm_StageVerbose(void);
+extern void cm_SetStageVerbose(int on);
 
 /* from eweight.c */
 extern int    cm_EntropyWeight(CM_t *cm, const Prior_t *pri, double etarget, double min_Neff, double max_Neff, int pretend_cm_is_hmm, double *ret_hmm_re, double *ret_Neff);
@@ -3267,10 +3850,13 @@ extern void   cm_Rescale(CM_t *hmm, float scale);
 extern void   cp9_Rescale(CP9_t *hmm, float scale);
 extern double cm_MeanMatchInfo(const CM_t *cm);
 extern double cm_MeanMatchEntropy(const CM_t *cm);
+extern double cm_MatchStateRelEntropy(const CM_t *cm, int v, const float *pair_null);
+extern double cm_MatchStateRelEntropyHMM(const CM_t *cm, int v, double *opt_ret_left_KL, double *opt_ret_right_KL);
 extern double cm_MeanMatchRelativeEntropy(const CM_t *cm);
 extern double cm_MeanMatchInfoHMM(const CM_t *cm);
 extern double cm_MeanMatchEntropyHMM(const CM_t *cm);
 extern double cm_MeanMatchRelativeEntropyHMM(const CM_t *cm);
+extern int    cm_MutualInformationPerNode(const CM_t *cm, float **ret_mi);
 extern double cp9_MeanMatchInfo(const CP9_t *cp9);
 extern double cp9_MeanMatchEntropy(const CP9_t *cp9);
 extern double cp9_MeanMatchRelativeEntropy(const CP9_t *cp9);
@@ -3279,10 +3865,18 @@ extern double cp9_MeanMatchRelativeEntropy(const CP9_t *cp9);
 extern CP9Bands_t  *AllocCP9Bands(int cm_M, int hmm_M);
 extern float        SizeofCP9Bands(CP9Bands_t *cp9b);
 extern void         FreeCP9Bands(CP9Bands_t *cp9bands);
+extern int          cp9_EndHullRetryBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int pass_idx, int *ret_changed);
 extern int          cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int doing_search, int do_trunc, int debug_level);
 extern int          cp9_HMM2ijBands_OLD(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int doing_search, int debug_level);
 extern int          cp9_Seq2Bands     (CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int doing_search, int pass_idx, int debug_level);
-extern int          cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, int pass_idx, float size_limit, int doing_search, int do_sample, int do_post, int do_iterate, double maxtau, float *ret_Mb);
+extern int          cp9_Seq2FBMatrices(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, ESL_DSQ *dsq, int i0, int j0, int doing_search, int pass_idx, CP9_t **ret_cp9, int *ret_do_fwd_scan, int *ret_do_bck_scan);
+extern int          cp9_FBMatrices2Bands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, CP9Bands_t *cp9b, int i0, int j0, int doing_search, int pass_idx, int do_fwd_scan, int do_bck_scan, int debug_level);
+extern int          cp9_IterateSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, int pass_idx, float size_limit, int doing_search, int do_sample, int do_post, int do_iterate, int do_checkpt, char ckpt_mode, double maxtau, float *ret_Mb);
+extern int          cp9_IterateSeq2BandsELBanded(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, int pass_idx, float size_limit, int doing_search, int do_sample, int do_post, int do_iterate, int do_checkpt, char ckpt_mode, double maxtau, float *ret_Mb);
+extern int          cp9_CheckptIterateSeq2BandsELBanded(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int64_t i0, int64_t j0, int pass_idx, float size_limit, int doing_search, int do_sample, int do_post, int do_iterate, int do_checkpt, char ckpt_mode, double maxtau, float *ret_Mb);
+extern int          cp9_CheckptSeq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int doing_search, int pass_idx, int debug_level);
+extern int          cp9_CheckptBandsUsable(CM_t *cm, int doing_search);
+extern float        cp9_CheckptSeq2BandsMbNeeded(CM_t *cm, int L, int do_iterate, double maxtau);
 extern int          cp9_Seq2Posteriors(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, int debug_level);
 extern void         cp9_DebugPrintHMMBands(FILE *ofp, int L, CP9Bands_t *cp9b, double hmm_bandp, int debug_level);
 extern int          cp9_GrowHDBands(CP9Bands_t *cp9b, char *errbuf);
@@ -3290,10 +3884,10 @@ extern int          cp9_ValidateBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, 
 extern void         cp9_ShiftCMBands(CM_t *cm, int i, int j, int do_trunc);
 extern CP9Bands_t  *cp9_CloneBands(CP9Bands_t *src_cp9b, char *errbuf);
 extern void         cp9_PredictStartAndEndPositions(CP9_MX *pmx, CP9Bands_t *cp9b, int i0, int j0);
+extern void         cp9_PredictStartAndEndPositionsP7B(CP9_MX *pmx, CP9Bands_t *cp9b, int *kmin, int *kmax, int i0, int j0);
 extern int          cp9_MarginalCandidatesFromStartEndPositions(CM_t *cm, CP9Bands_t *cp9b, int pass_idx, char *errbuf);
-extern void         ij2d_bands(CM_t *cm, int L, int *imin, int *imax, int *jmin, int *jmax,
-			       int **hdmin, int **hdmax, int do_trunc, int debug_level);
-extern void         PrintDPCellsSaved_jd(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax, int W);
+extern void         ij2d_bands(CM_t *cm, CP9Bands_t *cp9b, int do_trunc, int debug_level);
+extern void         PrintDPCellsSaved_jd(CM_t *cm, CP9Bands_t *cp9b, int W);
 extern void         debug_print_ij_bands(CM_t *cm);
 
 /* from logsum.c */
@@ -3303,7 +3897,14 @@ extern int   ILogsumNI(int s1, int s2);
 extern int   ILogsumNI_diff(int s1a, int s1b, int s2a, int s2b, int db);
 extern void  FLogsumInit(void);
 extern float LogSum2(float p1, float p2);
-extern float FLogsum(float p1, float p2);
+extern float flogsum_lookup[LOGSUM_TBL];
+static inline float
+FLogsum(float s1, float s2)
+{
+  const float max = ESL_MAX(s1, s2);
+  const float min = ESL_MIN(s1, s2);
+  return  (min == -eslINFINITY || (max-min) >= 23.f) ? max : max + flogsum_lookup[(int)((max-min)*INTSCALE)];
+}
 
 /* ICP9PostSc()
  *
@@ -3336,8 +3937,8 @@ extern int cm_worker_MPIBcast(char *errbuf, int tag, MPI_Comm comm, char **buf, 
 extern int cm_nonconfigured_MPIUnpack(ESL_ALPHABET **abc, char *errbuf, char *buf, int n, int *pos, MPI_Comm comm, CM_t **ret_cm);
 extern int cm_nonconfigured_MPIPack(CM_t *cm, char *errbuf, char *buf, int n, int *pos, MPI_Comm comm);
 extern int cm_nonconfigured_MPIPackSize(CM_t *cm, MPI_Comm comm, int *ret_n);
-extern int cm_dsq_MPISend(ESL_DSQ *dsq, int64_t L, int64_t idx, int dest, int tag, MPI_Comm comm, char **buf, int *nalloc);
-extern int cm_dsq_MPIRecv(int source, int tag, MPI_Comm comm, char **buf, int *nalloc, ESL_DSQ **ret_dsq, int64_t *ret_L, int64_t *ret_idx);
+extern int cm_dsq_MPISend(const char *name, ESL_DSQ *dsq, int64_t L, int64_t idx, int dest, int tag, MPI_Comm comm, char **buf, int *nalloc);
+extern int cm_dsq_MPIRecv(int source, int tag, MPI_Comm comm, char **buf, int *nalloc, ESL_DSQ **ret_dsq, int64_t *ret_L, int64_t *ret_idx, char **opt_ret_name);
 extern int cm_parsetree_MPIPackSize(Parsetree_t *tr, MPI_Comm comm, int *ret_n);
 extern int cm_parsetree_MPIPack(Parsetree_t *tr, char *buf, int n, int *position, MPI_Comm comm);
 extern int cm_parsetree_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, Parsetree_t **ret_tr);
@@ -3354,7 +3955,8 @@ extern Prior_t *Prior_Create(void);
 extern void     Prior_Destroy(Prior_t *pri);
 extern Prior_t *Prior_Read(FILE *fp);
 extern void     PriorifyCM(CM_t *cm, const Prior_t *pri);
-extern Prior_t *Prior_Default(int mimic_h3);
+extern Prior_t *Prior_Default(void);
+extern int      Prior_HMMOnlyAlpha(const Prior_t *pri, double *alpha);
 extern Prior_t *Prior_Default_v0p56_through_v1p02(void);
 
 /* from rnamat.c */
