@@ -123,10 +123,20 @@ CYK.
 .PP
 For profiles with zero basepairs (those with "hmm" in the "model"
 field), any E-value and bit score statistics will pertain to the
-profile HMM filter, instead of to the CM. This is also true for all
-profiles if the 
+profile HMM that HMM-only searches use, instead of to the CM. This is
+also true for all profiles if the 
 .B --hmmonly
 option is used.
+
+.PP
+.I <cmfile>
+must be in the model file format of Infernal 1.2 (INFERNAL1/e).
+.B cmstat
+refuses a model file written by Infernal 1.1 (INFERNAL1/a):
+convert it once with
+.B cmconvert --upgrade
+(see
+.BR cmconvert (1)).
 
 .SH OPTIONS
 
@@ -223,8 +233,11 @@ skip all other models in
 
 .TP
 .B --hmmonly
-Print statistics on the profile HMM filters for all profiles, instead
-of the CMs. This can be useful if you plan to use the 
+Print statistics on the profile HMMs that HMM-only searches use (each
+model's HMM-only search HMM; see
+.BR cmbuild (1))
+for all profiles, instead of the CMs. This can be useful if you plan
+to use the 
 .B --hmmonly 
 option to 
 .B cmsearch

@@ -117,6 +117,21 @@ or
 options are used because it relies on the use of an accelerated HMM
 banded alignment strategy that is turned off by any of those options.
 
+.PP
+The CM file
+.I <cmdb>
+must be in the model file format of Infernal 1.2 (INFERNAL1/e), and
+pressed by Infernal 1.2's
+.BR cmpress .
+.B cmscan
+refuses a model file written by Infernal 1.1 (INFERNAL1/a), and a
+database pressed by Infernal 1.1: convert the model file once with
+.B cmconvert --upgrade
+(see
+.BR cmconvert (1)),
+then press it again with
+.BR "cmpress -F" .
+
 .SH OPTIONS
 
 .TP
@@ -144,6 +159,20 @@ empirical benchmarks and is significantly more sensitive for remote
 homology detection. Empirically, glocal searches return many fewer
 hits than local searches, so glocal may be desired for some
 applications.
+With
+.B -g,
+models with zero basepairs are searched with a glocal profile HMM
+instead of a CM, as if
+.B --hmmonly
+were also used (see
+.B --hmmonly
+below), unless
+.B --nohmmonly
+is also used, in which case they are searched with a glocal CM and must be
+calibrated. Combined with
+.B --hmmonly,
+.B -g
+selects a glocal HMM-only search for all models.
 
 .TP
 .BI -Z " <x>"
@@ -521,11 +550,15 @@ sensitivity.
 
 .TP
 .B --hmmonly
-Only use the filter profile HMM for searches, do not use the CM.
+Only use a profile HMM for searches, do not use the CM.
+The profile HMM is derived from the CM: it is the CM's maximum
+likelihood profile HMM with its transition probabilities re-estimated
+under HMMER's prior (for a model with no basepairs, it is the filter
+HMM itself).
 Only filter stages F1 through F3 will be executed, using strict
-P-value thresholds (0.02 for F1, 0.001 for F2 and 0.00001 for F3).
+P-value thresholds (0.05 for F1, 0.003 for F2 and 0.0001 for F3).
 Additionally a bias composition filter is used after the F1 stage
-(with P=0.02 survival threshold).
+(with the same P-value threshold as F1).
 Any hit that survives all stages and has an HMM E-value or
 bit score above the reporting threshold will be output. 
 The user can change the HMM-only filter thresholds and options with
@@ -541,6 +574,33 @@ HMM-only mode. This can be turned off, forcing CM searches for these
 models with the 
 .B --nohmmonly 
 option.
+With
+.B -g,
+the search is a glocal HMM-only search: the whole model must match
+part of a target sequence (or, at a sequence end, a truncated part of
+the model may match, unless
+.B --notrunc
+is used). Filter stages F1 through F3 are run as above, then the glocal HMM
+filter stages F4 and F5 (P-value thresholds 0.0002, and a bias filter
+after F4), and each envelope that survives F5 is reported as a hit if its
+E-value or bit score satisfies the reporting threshold.
+The E-values come from the model's glocal HMM Forward E-value
+parameters (the EFP7GF line of the model file), for full-length and
+truncated hits alike. These parameters are predicted rather than
+determined by simulation; see the user guide for their accuracy.
+
+.TP
+.B --hmmwindows
+With
+.B --hmmonly,
+stop after filter stage F3 and output the target sequence windows that
+survive it, instead of hits. Requires
+.B --noali,
+and is incompatible with
+.B -g.
+Windows are reported with bit scores but no E-values. (Before
+Infernal 1.2 this option was called
+.B --trmF3.)
 
 .TP
 .BI --FZ " <x>"

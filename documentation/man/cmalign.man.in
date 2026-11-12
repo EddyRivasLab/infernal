@@ -49,6 +49,61 @@ described below for the
 option. HMM banding can be turned off with the 
 .B --nonbanded
 option.
+.PP
+For models with a consensus length (CLEN) greater than 4000, such as
+those of whole viral genomes, the default bands are derived
+differently: exact k-mer matches between the sequence and the model's
+consensus sequence are chained into one colinear set of anchors, and
+the bands are drawn around them. At that scale this is much faster and uses much
+less memory than the
+.B --hbanded
+calculation. Use
+.B --hbanded
+to get the plan 9 HMM bands for such a model. Models with zero
+basepairs are aligned with the profile HMM alone (no CM), as with
+.B --hmm,
+unless
+.B --nohmm
+or one of the CM alignment methods
+.B --sample,
+.B --small,
+.B --ckpt,
+.B --p7band
+or
+.B --hbanded
+is given (the output header then says which).
+.B --cyk
+and
+.B --nonbanded
+are taken as their HMM counterparts (see
+.BR --hmm ).
+Options for CM output or CM band tuning are errors for such a model
+unless
+.B --nohmm
+is also given (see
+.B --hmm
+for the list).
+Their bands are derived from the HMM's Forward and Backward
+posterior probabilities (as with
+.B --p7ibv)
+for models of CLEN 4000 or less, and from k-mer chains above
+that;
+.B --hmm --p7ibv
+selects the Forward/Backward bands for the longer models too. The
+alignment method and the bands chosen are reported in the output
+header.
+
+.PP
+The memory used to align each sequence is limited by the
+.B --mxsize
+option (1024 Mb by default). When the default algorithm would need
+more,
+.B cmalign
+switches automatically to versions of its algorithms that need less
+memory (see
+.B --mxsize
+for details), so that, for example, whole viral genomes can be
+aligned to models of whole viral genomes with default settings.
 
 .PP
 By default, 
@@ -70,15 +125,12 @@ length biological sequence are not present in the input sequence
 (see DL Kolbe and SR Eddy, Bioinformatics, 25:1236-1243, 2009). This
 behavior is on by default, but can be turned off with 
 .B --notrunc.
-In previous versions of 
-.B cmalign 
-the 
+The older 
 .B --sub
-option was required to appropriately handle truncated sequences. The
-.B --sub 
-option is still available in this version, but the new default method
-for handling truncated sequences should be as good or superior to the
-sub method in nearly all cases.
+option for truncated sequences was removed in Infernal 1.2; the default
+truncated alignment replaces it (add
+.B -g
+for glocal alignment).
 
 .PP
 The 
@@ -188,6 +240,16 @@ with the
 .BI --sfile " <f>"
 option.
 
+.PP
+.I <cmfile>
+must be in the model file format of Infernal 1.2 (INFERNAL1/e).
+.B cmalign
+refuses a model file written by Infernal 1.1 (INFERNAL1/a):
+convert it once with
+.B cmconvert --upgrade
+(see
+.BR cmconvert (1)).
+
 .SH OPTIONS
 
 .TP
@@ -215,11 +277,19 @@ normal indels. These are annotated as "~"
 columns in the RF line of the output alignment. The
 .B -g 
 option can be used to disallow these local ends.
-The
-.B -g
-option is required if the 
-.B --sub 
-option is also used.
+
+.TP
+.B --devhelp
+Print help, as with  
+.B "-h",
+but also include expert options that are not displayed with 
+.B "-h". 
+These expert options are not expected to be relevant for the vast
+majority of users and so are not described in the manual page.  The
+only resources for understanding what they actually do are the brief
+one-line descriptions output when
+.B "--devhelp"
+is enabled, and the source code.
 
 .SH OPTIONS FOR CONTROLLING THE ALIGNMENT ALGORITHM
 
@@ -244,6 +314,13 @@ optimally scoring (maximum likelihood) alignment of the sequence to
 the model, given the HMM bands (unless 
 .B --nonbanded
 is also enabled). 
+With HMM-only alignment
+.RB ( --hmm ,
+or the default for a model with zero basepairs),
+.B --cyk
+selects the HMM's Viterbi alignment, as
+.B --hmmvit
+does.
 
 .TP
 .B --sample
@@ -272,33 +349,117 @@ The default seed is 181.
 .TP
 .B --notrunc
 Turn off truncated alignment algorithms. 
-All sequences in the input file will be assumed to be full length, 
-unless 
-.B --sub
-is also used, in which case the program can still handle truncated
-sequences but will use an alternative strategy for their alignment.
+All sequences in the input file will be assumed to be full length.
 
 .TP
-.B --sub
-Turn on the sub model construction and alignment procedure. For each
-sequence, an HMM is first used to predict the model start and end
-consensus columns, and a new sub CM is constructed that only models
-consensus columns from start to end. The sequence is then aligned to
-this sub CM.  Sub alignment is an older method than the default one for aligning sequences
-that are possibly truncated. By default,
-.B cmalign 
-uses special DP algorithms to handle truncated sequences which should
-be more accurate than the sub method in most cases.
-.B --sub 
-is still included as an option mainly for testing against this default
-truncated sequence handling.  This "sub CM" procedure is not the same
-as the "sub CMs" described by Weinberg and Ruzzo.
+.B --hmm
+Align with the model's profile HMM (its maximum likelihood p7 HMM)
+instead of the CM. Base pairing is not modeled, so the alignment
+uses only the primary sequence information in the model, but it is
+faster than CM alignment and needs less memory. This is the
+default for models with zero basepairs (see
+.B --nohmm).
+As with CM alignment, the default algorithm is optimal accuracy,
+constrained by bands: for models of CLEN 4000 or less, the bands are
+drawn around the HMM's Viterbi alignment of the sequence, and for
+longer models they are k-mer chain bands (see
+.B --p7kmerchain).
+.B --p7ibv
+selects Forward/Backward-derived bands instead.
+The scores reported are HMM bit scores, which are not comparable to
+CM bit scores. The output alignment includes the model's consensus
+secondary structure annotation, but the alignment does not take it
+into account.
+Truncated alignment is on by default, as for CM alignment, and in that
+mode
+.B -g
+has no effect; with
+.B --notrunc,
+.B -g
+configures the HMM for global alignment.
+The output options
+.B --noprob,
+.B --matchonly,
+.B --miss,
+.B --mapali,
+.B --mapstr,
+.B --ifile,
+.B --sfile
+and
+.B --regress
+work as they do with CM alignment.
+.B --cyk
+selects the HMM's Viterbi alignment (as
+.BR --hmmvit ),
+and
+.B --nonbanded
+optimal accuracy alignment without bands (as
+.BR --hmmnoband ).
+The CM alignment methods
+.B --sample,
+.B --small,
+.B --ckpt,
+.B --p7band
+and
+.B --hbanded
+cannot be combined with
+.B --hmm;
+for a model with zero basepairs, which is aligned with its HMM by
+default, each of them selects CM alignment instead.
+Options that only CM alignment uses cannot be combined with
+.B --hmm:
+CM output
+.RB ( --tfile,
+.B --elfile,
+.B --bpstatus,
+.B --bpcons,
+.BR --bpcov )
+and CM band and engine tuning
+.RB ( --tau,
+.B --fixedtau,
+.B --maxtau,
+.B --no-mxesc,
+.B --no-mxesc-fixedtau,
+.BR --ckpt-cykbands ).
+For a model with zero basepairs each of them is an error unless
+.B --nohmm
+is given.
+
+.TP
+.B --hmmvit
+With
+.B --hmm,
+report the HMM's Viterbi (maximum likelihood) alignment instead of
+the optimal accuracy alignment. This is faster, but less accurate, and
+the alignment has no posterior probability annotation.
+
+.TP
+.B --hmmnoband
+With
+.B --hmm,
+compute the optimal accuracy alignment without bands. This guarantees
+the optimally accurate HMM alignment, at the cost of time and memory
+proportional to the product of the model length and the sequence
+length.
+
+.TP
+.B --nohmm
+Align models with zero basepairs with the CM, instead of switching
+automatically to HMM alignment
+.RB ( --hmm )
+for them. This is needed to use an option that requires CM alignment
+(see
+.B --hmm)
+with such a model.
 
 .SH OPTIONS FOR CONTROLLING SPEED AND MEMORY REQUIREMENTS
 
 .TP
 .B --hbanded
-This option is turned on by default. Accelerate alignment by pruning
+This option is turned on by default for models with a consensus length
+of 4000 or less. For longer models the default bands are k-mer chain
+bands (see DESCRIPTION), and this option must be given to use the bands
+described here. Accelerate alignment by pruning
 away regions of the CM DP matrix that are deemed negligible by an HMM.
 First, each sequence is scored with a CM plan 9 HMM derived from the
 CM using the Forward and Backward HMM algorithms to calculate
@@ -342,42 +503,83 @@ bands.
 
 .TP
 .BI --mxsize " <x>"
-Set the maximum allowable total DP matrix size to 
+Set the maximum allowable total DP matrix size for aligning one
+sequence to
 .I <x>
 megabytes. By default this size is 1024 Mb. 
-This should be large enough for the vast majority of alignments,
-however if it is not 
-.B cmalign 
-will attempt to iteratively tighten the HMM bands it uses to constrain the
-alignment by raising the tau parameter and recalculating the bands
-until the total matrix size needed falls below 
+The limit applies to the alignment matrices, to the matrices of HMM
+alignment
+.RB ( --hmm ),
+and to the calculation of the plan 9 HMM bands of
+.B --hbanded.
+It does not limit the calculation of bands from the profile HMM with
+.B --p7band
+(see
+.B --p7ibv-mem).
+If the matrices for calculating the plan 9 HMM bands
+would exceed 
+.I <x>
+megabytes,
+.B cmalign
+calculates the same bands with a checkpointed version of the
+calculation, which needs less memory.
+
+If the banded CM alignment matrices would exceed
+.I <x>
+megabytes,
+.B cmalign
+first tightens the plan 9 HMM bands, by raising the tau parameter and
+recalculating the bands until the total matrix size needed falls below 
 .I <x>
 megabytes or the maximum allowable tau value (0.05 by default, but
 changeable with 
 .B --maxtau)
 is reached. At each iteration of band tightening, tau is multiplied by
-a 2.0. The band tightening strategy can be turned off with the 
+2.0. The band tightening strategy can be turned off with the 
 .B --fixedtau
-option.
-If the maximum tau is reached and the required matrix size still exceeds 
+option. Bands derived from the profile HMM
+.RB ( --p7band ,
+and the default k-mer chain bands for models with CLEN greater than
+4000) are not tightened, except with
+.B --cyk
+or
+.B --sample.
+If the matrices still exceed
 .I <x>
-or if HMM banding is not being used and the required matrix size exceeds
+megabytes,
+.B cmalign
+switches to an alignment algorithm that needs less memory: first a
+checkpointed version of the optimal accuracy algorithm (whose
+alignment can differ slightly from the standard one), and if that
+does not fit either, the divide and conquer CYK algorithm (see
+.B --small)
+within the bands, which reports the maximum likelihood alignment and no
+posterior probabilities for that sequence. These switches are made for
+each sequence separately, only for sequences that need them, and only
+with the default optimal accuracy algorithm with bands (not with
+.B --cyk,
+.B --sample,
+.B --nonbanded
+or
+.B --small).
+
+If no alignment algorithm fits within
 .I <x>
-then 
+megabytes, 
 .B cmalign 
-will exit prematurely and report an error message that 
-the matrix exceeded its maximum allowable size. In this case, the
+exits with an error message reporting the sizes needed, and
 .B --mxsize 
-can be used to raise the size limit or the maximum tau
-can be raised with
-.B --maxtau.
+can be used to raise the limit. If the band calculation itself does
+not fit, or if an HMM alignment (with
+.B --hmm)
+does not fit, the error message suggests a value of
+.B --mxsize
+that is large enough.
 The limit will commonly be exceeded when the 
 .B --nonbanded
 option is used without the
 .B --small 
-option, but can still occur when
-.B --nonbanded 
-is not used. Note that if 
+option. Note that if 
 .B cmalign
 is being run in 
 .I <n>
@@ -392,7 +594,10 @@ Mb at any given time.
 Turn off the HMM band tightening strategy described in the explanation
 of the 
 .B --mxsize
-option above.
+option above. Sequences that need more memory than the
+.B --mxsize
+limit are then aligned with the lower-memory algorithms described
+there instead.
 
 .TP
 .BI --maxtau " <x>"
@@ -416,6 +621,89 @@ option is recommended in combination with this option, because
 standard alignment without HMM banding requires a lot of memory (see
 .B --small
 ).
+With HMM-only alignment
+.RB ( --hmm ,
+or the default for a model with zero basepairs),
+.B --nonbanded
+selects optimal accuracy alignment without bands, as
+.B --hmmnoband
+does.
+
+.TP
+.B --p7band
+Derive the bands that constrain CM alignment from the model's profile
+HMM (its maximum likelihood p7 HMM) instead of from the CM plan 9 HMM
+used by
+.B --hbanded.
+By default the bands are drawn around the profile HMM's Viterbi
+alignment of the sequence, widened by a fixed number of positions;
+.B --p7ibv
+and
+.B --p7kmerchain
+select other ways of deriving them. For models with CLEN greater than
+4000,
+.B --p7band --p7kmerchain
+is the default (see DESCRIPTION). These bands are not tightened to fit
+the
+.B --mxsize
+limit (see
+.B --mxsize).
+
+.TP
+.B --p7ibv
+With
+.B --p7band
+or
+.B --hmm,
+derive the bands from the profile HMM's Forward and Backward
+calculations: each sequence position is allowed to align to the model
+positions through which an alignment scores within a fixed margin of
+the best one. Unlike the default bands of
+.B --p7band,
+which are drawn around a single alignment, these bands take all
+alignments of the sequence into account, but they take longer to
+calculate: for a 30 kb viral genome, about three times longer than
+the default
+.B --p7band
+bands, and about a hundred times longer than the k-mer chain bands of
+.B --p7kmerchain.
+With
+.B --hmm,
+the band calculation uses the low-memory method of
+.B --p7ibv-mem.
+
+.TP
+.B --p7ibv-mem
+With
+.B --p7ibv,
+calculate the same bands with a divide and conquer method that needs
+memory proportional to the model length times the logarithm of the
+sequence length, instead of to the model length times the sequence
+length. For a 30 kb viral genome it took about 1.5 times as long and a
+thirtieth of the memory (0.7 Gb instead of 21 Gb). It is always used with
+.B --hmm.
+
+.TP
+.B --p7kmerchain
+With
+.B --p7band
+or
+.B --hmm,
+derive the bands from exact k-mer matches between the sequence and the
+model's consensus sequence, chained into one colinear set of anchors.
+This band calculation is very fast and needs little memory, and is
+the default for models with CLEN greater than 4000. A sequence with no
+k-mer match long enough to anchor a chain is banded another way
+instead: with
+.B --p7band,
+with the plan 9 HMM bands of
+.B --hbanded;
+with
+.B --hmm,
+with the bands of
+.B --p7ibv.
+It cannot be combined with
+.B --p7ibv.
 
 .TP
 .B --small
@@ -564,21 +852,28 @@ with the
 .B --fraggiven
 option. This option has no effect if 
 .B --notrunc
-is also used. 
+is also used.
 
 .TP
 .B --bpstatus
 Add per-sequence base-pair status annotation to the output alignment, as one
+combined
 .B #=GR <seqname> PS
-line per sequence (marks on consensus columns only). Base pairs are marked
+line per sequence (marks on consensus columns only). The line marks pair status
 with the same scheme as the
 .B cmsearch
-NC line:
+PS line:
 .B v
-(negative-scoring non-canonical, or half-present) or
+(negative-scoring non-canonical or half-present, nested pairs only) or
 .B ?
-(truncated half: the pair's partner lies in a truncated-away region). The line
-also marks substitutions:
+(truncated half: the pair's partner lies in a truncated-away region; applies to
+both nested and pseudoknot pairs), and
+.B =
+(maintained),
+.B $
+(covarying), or
+.B x
+(broken) for pseudoknot pairs. It additionally marks substitutions:
 .B :
 for a consistent (non-negative scoring) base-pair substitution and
 .B +
@@ -587,8 +882,14 @@ marked
 .B v
 at its present half, not
 .BR + .
-Columns that carry no mark hold a non-blank placeholder so the line is dense
-and re-readable by Stockholm parsers:
+Two marks also compete at a pseudoknot column (a single-residue state that can be both a
+.B +
+substitution and a
+.B = $
+or
+.B x
+pseudoknot pair); there the pseudoknot pair status wins. Columns that carry no
+mark hold a non-blank placeholder so the line is dense and machine-re-readable:
 .B .
 at insert columns,
 .B ~
@@ -596,8 +897,8 @@ at missing/local-end columns,
 .B \-
 at deletions, and
 .B _
-at an unmarked consensus residue. This adds one line per sequence and is
-emitted on both the default (in-memory) and the
+at an unmarked consensus residue. This adds one line per sequence and is emitted
+on both the default (in-memory) and the
 .B --small
 / multi-block (merge) output paths.
 .IP
@@ -610,19 +911,20 @@ is also used; without
 .B --miss
 a truncated flank is written with deletions and a pair straddling it is marked
 .B v
-instead. Under
-.B --sub
-the marks remain relative to the full CM consensus; consensus columns outside a
-fragment's span carry the
+(nested) or
+.B x
+(pseudoknot) instead. For a fragment that covers only part of the model, the
+marks remain relative to the full CM consensus; consensus
+columns outside a fragment's span carry the
 .B \-
-placeholder, not a mark.
+no-residue placeholder, not a spurious mark.
 
 .TP
 .B --bpcons
 Add a single
 .B #=GC bp_cons
-line giving, for each consensus base pair, the fraction of sequences whose two
-aligned residues form a canonical WC/GU pair, as a single
+line giving, for each base pair (nested and pseudoknot), the fraction of
+sequences whose two aligned residues form a canonical WC/GU pair, as a single
 .B 0
 \-
 .B 9
@@ -634,23 +936,24 @@ at all other columns (including pairs with fewer than two sequences having both
 residues present). This is a descriptive conservation measure, not a statistical
 covariation test. It is emitted on both the default (in-memory) and the
 .B --small
-/ multi-block (merge) output paths; on the merge path the per-pair counts are
-accumulated block by block and the line is written once after the final merge,
-so the digit is identical to the single-block result.
+/ multi-block (merge) output paths; on the merge path the per-pair canonical
+counts are accumulated block by block and the line is written once after the
+final merge, so the digit is identical to the single-block result.
 
 .TP
 .B --bpcov
 Add a single
 .B #=GC bp_cov
-line giving, for each consensus base pair, a per-pair
+line giving, for each base pair (nested and pseudoknot), a per-pair
 .I covariation
 digit, complementing the
 .B --bpcons
-conservation digit. The value is the mutual information (MI) of the two
-columns' standard-nucleotide composition, in bits, computed over a 4x4 joint
-count table (a sequence contributes only if both of its aligned residues are
-standard nucleotides A/C/G/U). MI is divided by 1.5 bits, capped at 1, and
-written as a
+conservation digit. The value is the absolute mutual information (MI) of the two
+columns' standard-nucleotide composition, computed in bits over a 4x4 joint count
+table (a sequence contributes only if both of its aligned residues are standard
+nucleotides A/C/G/U), then encoded as
+.B EncodePostProb(MI / 1.5 bits)
+\(em a
 .B 0
 \-
 .B 9
@@ -663,25 +966,28 @@ lines) at both paired columns, with
 for the strongest covariation (MI at or above ~1.4 bits) and
 .B .
 at all other columns. Because MI is bounded by the columns' entropy,
-near-invariant pairs read a low digit. This is a descriptive hint and is
+near-invariant pairs intrinsically read a low digit; no special no-power glyph is
+used. This is a transparent, descriptive hint and is
 .I not
-a substitute for the covariation statistics of a tool such as R-scape. Read
-together with
-.BR bp_cons ,
-a high
+a substitute for the rigorous covariation statistics of a tool such as R-scape.
+Reading it together with
+.B bp_cons
+distinguishes conservation from covariation: a high
 .B bp_cons
 with a low
 .B bp_cov
-is a pair that is well conserved but shows no covariation.
+is a pair that is well conserved but shows no covariation power.
 .B --bpcov
 is independent of
 .B --bpcons
-(either, both, or neither may be given) and is emitted on both output paths; on
-the merge path the joint counts are accumulated block by block and MI is
-computed once after the final merge, so the digit is identical to the
-single-block result.
+(either, both, or neither may be given) and is emitted on both the default
+(in-memory) and the
+.B --small
+/ multi-block (merge) output paths; on the merge path the per-pair joint counts
+are accumulated block by block and the MI computed once after the final merge, so
+the digit is identical to the single-block result.
 
-.TP 
+.TP
 .B --ileaved
 Output the alignment in interleaved Stockholm format of a fixed width
 that may be more convenient for examination. This was the default output

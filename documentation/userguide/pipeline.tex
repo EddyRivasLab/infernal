@@ -1188,11 +1188,25 @@ composition would receive a $3.44$ bit penalty.
 
 By default, the null3 score correction is used by \prog{cmcalibrate,
 cmsearch} and \prog{cmscan}. It can be turned off in any of these
-programs by using the \prog{--nonull3} option. However, be careful,
-the E-values for models that are calibrated with \prog{--nonull3} are
-only valid when \prog{--nonull3} is also used with \prog{cmsearch} or
-\prog{cmscan}. Likewise, if \prog{--nonull3} is \emph{not} used during
-calibration, it should not be used during searches or scans.
+programs by using the \prog{--nonull3} option. E-value parameters are
+sensitive to whether or not the null3 correction was applied during
+calibration, so a CM must carry a null3-off calibration of its own in
+order for \prog{--nonull3} E-values to be meaningful.
+
+\subsubsection{Null3-on and null3-off E-value parameters (store-both).}
+\label{section:calibration-limitations}
+
+In the \otext{INFERNAL1/e} format, a single CM can store two E-value
+parameter sets: the default set, for searches with the null3 biased
+composition correction on, and a null3-off set, used automatically
+when a search is run with \prog{--nonull3}. \prog{cmcalibrate}
+computes the null3-on set; \prog{cmcalibrate --nonull3} computes the
+null3-off set and keeps a null3-on set already in the file, so a CM
+calibrated both ways is ready for searches with and without
+\prog{--nonull3}. If a CM lacks the null3-off set, a \prog{--nonull3}
+search falls back to the null3-on parameters and prints a one-time
+warning; this fallback is approximate, since null3-on and null3-off
+score distributions are not the same.
 
 \subsection{Truncated hit detection using variants of the pipeline}
 
@@ -1429,10 +1443,12 @@ see the HMMER3 guide for details on null2.
 
 Unlike in the standard pipeline, the filter thresholds used in the
 HMM-only pipeline are always the same, i.e. they are not dependent on
-the size of the search space. The default thresholds are the same
-values used in the HMMER3 pipeline: the SSV filter threshold is
-$0.02$, the local Viterbi threshold is $0.001$ and the local Forward
-threshold is $1e-5$. These can be changed with the \ccode{--hmmF1}
+the size of the search space. The default thresholds are the SSV
+filter threshold of $0.05$, the local Viterbi threshold of $0.003$ and
+the local Forward threshold of $1e-4$. (Before version 1.2 they were
+HMMER3's values, $0.02$, $0.001$ and $1e-5$; the looser 1.2 values
+find more remote homologs at about 1.4 times the running time of the
+HMM-only pipeline.) These can be changed with the \ccode{--hmmF1}
 (SSV), \ccode{--hmmF2} (Viterbi) and \ccode{--hmmF3} (Forward). The
 \ccode{--hmmmax} option runs the HMM-only pipeline in maximum
 sensitivity mode with the SSV P-value threshold set at 0.3 and the
