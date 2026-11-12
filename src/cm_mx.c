@@ -70,6 +70,7 @@ static int cm_tr_scan_mx_integerize  (CM_t *cm, CM_TR_SCAN_MX *trsmx, char *errb
 static int cm_tr_scan_mx_floatize    (CM_t *cm, CM_TR_SCAN_MX *trsmx, char *errbuf);
 static int cm_tr_scan_mx_freefloats  (CM_t *cm, CM_TR_SCAN_MX *trsmx);
 static int cm_tr_scan_mx_freeintegers(CM_t *cm, CM_TR_SCAN_MX *trsmx);
+static int cm_hb_mx_SizeNeeded_ex    (CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int include_el, int *eldmax, int64_t *ret_ncells, float *ret_Mb);
 
 /*****************************************************************
  *   1. CM_MX data structure functions,
@@ -884,6 +885,9 @@ cm_hb_mx_Create(int M)
   mx->dp     = NULL;
   mx->dp_mem = NULL;
   mx->cp9b   = NULL;
+  mx->omit_el_deck = 0;
+  mx->el_full      = FALSE;
+  mx->el_banded    = FALSE;
 
   /* level 2: deck (state) pointers, 0.1..M, go all the way to M
    *          remember deck M is special, as it has no bands, we allocate
@@ -919,6 +923,94 @@ cm_hb_mx_Create(int M)
  ERROR:
   if (mx != NULL) cm_hb_mx_Destroy(mx);
   return NULL;
+}
+
+/* Function:  cm_hb_mx_ELDmax()
+ * Incept:    EPN, Wed Oct  7 2026 (w/Claude)
+ *
+ * Purpose:   Sparse EL: fill <eldmax>[0..L] with the band-derived upper d
+ *            bound of each row of the EL (local end) deck of a CM_HB_MX,
+ *            given the HMM bands in <cp9b>. For each local-end state v,
+ *            EL-row r = (v's j) - sdr is referenced at d-indices up to
+ *            hdmax[v][jp] - sd, by BOTH the Outside v->EL writes and the
+ *            OptAcc alpha[cm->M] reads. EL cells with d > eldmax[r] are
+ *            never written (the EL->EL self-transition sweep only moves
+ *            downward in d), so they stay exactly IMPOSSIBLE, and they are
+ *            never read. eldmax[r] == -1 marks an EL-row no local end
+ *            reaches. Same bound as the checkpointed engines'
+ *            ckpt_el_compute_dmax(). Cost is O(sum over v of v's j band).
+ *
+ * Returns:   void
+ */
+void
+cm_hb_mx_ELDmax(CM_t *cm, CP9Bands_t *cp9b, int L, int *eldmax)
+{
+  int v, jp, r;
+  for (r = 0; r <= L; r++) eldmax[r] = -1;
+  for (v = 0; v < cm->M; v++) {
+    if (! NOT_IMPOSSIBLE(cm->endsc[v])) continue;
+    int sd  = StateDelta(cm->sttype[v]);
+    int sdr = StateRightDelta(cm->sttype[v]);
+    int njr = cp9b->jmax[v] - cp9b->jmin[v] + 1;
+    for (jp = 0; jp < njr; jp++) {
+      r = cp9b->jmin[v] + jp - sdr;    /* EL-row */
+      if (r < 0 || r > L) continue;
+      int dmax_here = hd_max(cp9b, v, jp) - sd;
+      if (dmax_here > r)         dmax_here = r;   /* d <= j on the EL diagonal */
+      if (dmax_here > eldmax[r]) eldmax[r] = dmax_here;
+    }
+  }
+}
+
+/* Function:  cm_tr_hb_mx_ELDmax()
+ * Incept:    EPN, Wed Oct  7 2026 (w/Claude)
+ *
+ * Purpose:   Truncated version of cm_hb_mx_ELDmax(), for the EL deck of
+ *            marginal mode <mode> (TRMODE_J, TRMODE_L or TRMODE_R) of a
+ *            CM_TR_HB_MX, over local-end states v valid in <mode>. The
+ *            geometry per mode is (row shift, d shift) = J: (sdr, sd),
+ *            L: (0, sdl), R: (sdr, sdr), matching the v->EL writes in
+ *            cm_TrOutsideAlignHB() and the EL reads in
+ *            cm_TrOptAccAlignHB(). Same bound as the checkpointed engines'
+ *            trckpt_el_compute_dmax().
+ *
+ * Returns:   void
+ */
+void
+cm_tr_hb_mx_ELDmax(CM_t *cm, CP9Bands_t *cp9b, int L, char mode, int *eldmax)
+{
+  int   v, jp, r;
+  int  *Xvalid = (mode == TRMODE_J) ? cp9b->Jvalid : (mode == TRMODE_L) ? cp9b->Lvalid : cp9b->Rvalid;
+  for (r = 0; r <= L; r++) eldmax[r] = -1;
+  for (v = 0; v < cm->M; v++) {
+    if (! Xvalid[v]) continue;
+    if (! NOT_IMPOSSIBLE(cm->endsc[v])) continue;
+    int sd  = StateDelta(cm->sttype[v]);
+    int sdl = StateLeftDelta(cm->sttype[v]);
+    int sdr = StateRightDelta(cm->sttype[v]);
+    int dsh = (mode == TRMODE_J) ? sd : (mode == TRMODE_L) ? sdl : sdr;
+    int rsh = (mode == TRMODE_L) ? 0  : sdr;
+    int njr = cp9b->jmax[v] - cp9b->jmin[v] + 1;
+    for (jp = 0; jp < njr; jp++) {
+      r = cp9b->jmin[v] + jp - rsh;    /* EL-row */
+      if (r < 0 || r > L) continue;
+      int dmax_here = hd_max(cp9b, v, jp) - dsh;
+      if (dmax_here > r)         dmax_here = r;   /* d <= j on the EL diagonal */
+      if (dmax_here > eldmax[r]) eldmax[r] = dmax_here;
+    }
+  }
+}
+
+/* el_ncells(): number of EL deck cells for rows 0..L: the full triangle,
+ * or, if <eldmax> is non-NULL, sum over rows of (eldmax[j]+1). */
+static int64_t
+el_ncells(int L, int *eldmax)
+{
+  int64_t n = 0;
+  int     j;
+  if (eldmax == NULL) return (int64_t) ((int64_t) (L+2) * (int64_t) (L+1) * 0.5);
+  for (j = 0; j <= L; j++) n += eldmax[j] + 1;  /* eldmax[j] == -1 adds 0 */
+  return n;
 }
 
 /* Function:  cm_hb_mx_GrowTo()
@@ -963,7 +1055,11 @@ cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, f
   float   Mb_needed;   /* required size of matrix, given the bands */
   float   Mb_alloc;  /* allocated size of matrix, >= Mb_needed */
   int     have_el;
-  have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
+  int     include_el = (! mx->omit_el_deck);
+  int     el_banded;      /* TRUE to lay the EL deck out banded, see cm_hb_mx_ELDmax() */
+  int    *eldmax = NULL;  /* [0..L] EL row upper d bounds, if el_banded */
+  have_el = ((cm->flags & CMH_LOCAL_END) && include_el) ? TRUE : FALSE;
+  el_banded = (have_el && (! mx->el_full) && (! (cm->align_opts & CM_ALIGN_CHECKINOUT))) ? TRUE : FALSE;
 
   /* contract check, number of states (M) is something we don't change
    * so check this matrix has same number of 1st dim state ptrs that
@@ -971,10 +1067,17 @@ cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, f
   if(cp9b == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_mx_GrowTo() entered with cp9b == NULL.\n");
   if(cp9b->cm_M != mx->M) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_mx_GrowTo() entered with mx->M: (%d) != cp9b->M (%d)\n", mx->M, cp9b->cm_M);
 
-  if((status = cm_hb_mx_SizeNeeded(cm, errbuf, cp9b, L, &ncells, &Mb_needed)) != eslOK) return status;
+  if(el_banded) {
+    ESL_ALLOC(eldmax, sizeof(int) * (L+1));
+    cm_hb_mx_ELDmax(cm, cp9b, L, eldmax);
+  }
+  if((status = cm_hb_mx_SizeNeeded_ex(cm, errbuf, cp9b, L, include_el, eldmax, &ncells, &Mb_needed)) != eslOK) goto ERROR;
   /* printf("HMM banded matrix requested size: %.2f Mb\n", Mb_needed); */
   ESL_DPRINTF2(("#DEBUG: HMM banded matrix requested size: %.2f Mb\n", Mb_needed));
-  if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded DP mx of %.2f Mb > %.2f Mb limit.\nUse --mxsize, --maxtau or --tau.", Mb_needed, (float) size_limit);
+  if(Mb_needed > size_limit) {
+    if(eldmax != NULL) free(eldmax);
+    ESL_FAIL(eslERANGE, errbuf, "requested HMM banded DP mx of %.2f Mb > %.2f Mb limit.\nUse --mxsize, --maxtau or --tau.", Mb_needed, (float) size_limit);
+  }
 
   /* check if we should free and reallocate the matrix */
   if((mx->size_Mb > (0.5  * size_limit)) && /* matrix is >= 0.5 * size of our limit (based on bands from previous sequence) */
@@ -1029,15 +1132,18 @@ cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, f
   for(v = 0; v < mx->M; v++) { 
     for(jp = 0; jp <= (cp9b->jmax[v] - cp9b->jmin[v]); jp++) { 
       mx->dp[v][jp] = mx->dp_mem + cur_size;
-      cur_size     += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+      cur_size     += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
     }
   }
   if(have_el) {
-    for(jp = 0; jp <= L; jp++) { 
+    /* sparse EL: if el_banded, row jp holds only d=0..eldmax[jp] (none if eldmax[jp] == -1) */
+    for(jp = 0; jp <= L; jp++) {
       mx->dp[mx->M][jp] = mx->dp_mem + cur_size;
-      cur_size += jp + 1;
-    }      
+      cur_size += el_banded ? (eldmax[jp] + 1) : (jp + 1);
+    }
   }
+  mx->el_banded = el_banded;
+  if(eldmax != NULL) { free(eldmax); eldmax = NULL; }
   ESL_DASSERT1((cur_size == mx->ncells_valid));
   /*printf("ncells %10" PRId64 " %10" PRId64 "\n", cur_size, mx->ncells_valid);*/
 
@@ -1046,10 +1152,11 @@ cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, f
   /* now update L and size_Mb */
   mx->L       = L;    /* length of current seq we're valid for */
   mx->size_Mb = Mb_alloc;
-  
+
   return eslOK;
 
  ERROR:
+  if(eldmax != NULL) free(eldmax);
   return status;
 }
 
@@ -1097,17 +1204,17 @@ cm_hb_mx_Dump(FILE *ofp, CM_HB_MX *mx, int print_mx)
     for (v = 0; v < mx->M; v++) {
       for(jp = 0; jp <= mx->cp9b->jmax[v] - mx->cp9b->jmin[v]; jp++) {
 	j = jp + mx->cp9b->jmin[v];
-	for(dp = 0; dp <= mx->cp9b->hdmax[v][jp] - mx->cp9b->hdmin[v][jp]; dp++) {
-	  d = dp + mx->cp9b->hdmin[v][jp];
+	for(dp = 0; dp <= hd_max(mx->cp9b, v, jp) - hd_min(mx->cp9b, v, jp); dp++) {
+	  d = dp + hd_min(mx->cp9b, v, jp);
 	  fprintf(ofp, "dp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->dp[v][jp][dp]);
 	}
 	fprintf(ofp, "\n");
       }
       fprintf(ofp, "\n\n");
     }
-    /* print EL deck, if it's valid */
+    /* print EL deck, if it's valid (only a full-triangle layout is printed) */
     v = mx->M;
-    if(mx->nrowsA[mx->M] == (mx->L+1)) {
+    if(mx->nrowsA[mx->M] == (mx->L+1) && (! mx->el_banded)) {
       for(j = 0; j <= mx->L; j++) {
 	for(d = 0; d <= j; d++) {
 	  fprintf(ofp, "dp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->dp[v][j][d]);
@@ -1142,32 +1249,33 @@ cm_hb_mx_Dump(FILE *ofp, CM_HB_MX *mx, int print_mx)
  * Returns:   <eslOK> on success
  *
  */
-int
-cm_hb_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_ncells, float *ret_Mb)
+static int
+cm_hb_mx_SizeNeeded_ex(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int include_el, int *eldmax,
+                       int64_t *ret_ncells, float *ret_Mb)
 {
   int     v, jp;
   int64_t ncells;
   int     jbw;
   int     have_el;
   float   Mb_needed;
-  have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
+  have_el = ((cm->flags & CMH_LOCAL_END) && include_el) ? TRUE : FALSE;
 
   /* contract check */
   if(cp9b == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_mx_SizeNeeded() entered with cp9b == NULL.\n");
 
   ncells = 0;
-  Mb_needed = (float) 
-    (sizeof(CM_HB_MX) + 
+  Mb_needed = (float)
+    (sizeof(CM_HB_MX) +
      ((cp9b->cm_M+1) * sizeof(float **)) + /* mx->dp[] ptrs */
      ((cp9b->cm_M+1) * sizeof(int)));      /* mx->nrowsA */
 
-  for(v = 0; v < cp9b->cm_M; v++) { 
-    jbw = cp9b->jmax[v] - cp9b->jmin[v]; 
+  for(v = 0; v < cp9b->cm_M; v++) {
+    jbw = cp9b->jmax[v] - cp9b->jmin[v];
     Mb_needed += (float) (sizeof(float *) * (jbw+1)); /* mx->dp[v][] ptrs */
-    for(jp = 0; jp <= jbw; jp++) 
-      ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+    for(jp = 0; jp <= jbw; jp++)
+      ncells += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
   }
-  if(have_el) ncells += (int64_t) ( (int64_t) (L+2) * (int64_t) (L+1) * 0.5); /* space for EL deck */
+  if(have_el) ncells += el_ncells(L, eldmax); /* space for EL deck: full triangle if eldmax is NULL, else banded */
 
   Mb_needed += sizeof(float) * ncells; /* mx->dp_mem */
   Mb_needed *= 0.000001; /* convert to megabytes */
@@ -1176,6 +1284,42 @@ cm_hb_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *re
   if(ret_Mb     != NULL) *ret_Mb     = Mb_needed;
 
   return eslOK;
+}
+
+int
+cm_hb_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_ncells, float *ret_Mb)
+{
+  return cm_hb_mx_SizeNeeded_ex(cm, errbuf, cp9b, L, TRUE, NULL, ret_ncells, ret_Mb);
+}
+
+/* Function:  cm_hb_mx_SizeNeededELBanded()
+ * Incept:    EPN, Wed Oct  7 2026 (w/Claude)
+ *
+ * Purpose:   Same as cm_hb_mx_SizeNeeded(), but sizes the EL deck the way
+ *            cm_hb_mx_GrowTo() lays it out for a default (el_full FALSE)
+ *            matrix: banded (cm_hb_mx_ELDmax()) unless cm->align_opts has
+ *            CM_ALIGN_CHECKINOUT. cm_hb_mx_SizeNeeded() still counts the
+ *            full EL triangle, a safe over-estimate, so that the band
+ *            derivation tau ratchets and search band-width checks that use
+ *            it are unchanged.
+ *
+ * Returns:   <eslOK> on success; <eslEMEM> on allocation failure.
+ */
+int
+cm_hb_mx_SizeNeededELBanded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_ncells, float *ret_Mb)
+{
+  int  status;
+  int *eldmax = NULL;
+  if((cm->flags & CMH_LOCAL_END) && (! (cm->align_opts & CM_ALIGN_CHECKINOUT))) {
+    ESL_ALLOC(eldmax, sizeof(int) * (L+1));
+    cm_hb_mx_ELDmax(cm, cp9b, L, eldmax);
+  }
+  status = cm_hb_mx_SizeNeeded_ex(cm, errbuf, cp9b, L, TRUE, eldmax, ret_ncells, ret_Mb);
+  if(eldmax != NULL) free(eldmax);
+  return status;
+
+ ERROR:
+  ESL_FAIL(status, errbuf, "out of memory");
 }
 
 /*****************************************************************
@@ -1219,6 +1363,8 @@ cm_tr_hb_mx_Create(CM_t *cm)
   mx->Tdp     = NULL;
   mx->Tdp_mem = NULL;
   mx->cp9b    = NULL;
+  mx->el_full   = FALSE;
+  mx->el_banded = FALSE;
 
   /* level 2: deck (state) pointers, 0.1..M, go all the way to M
    *          remember deck M is special, as it has no bands, we allocate
@@ -1312,6 +1458,9 @@ cm_tr_hb_mx_Create(CM_t *cm)
   return NULL;
 }
 
+static int cm_tr_hb_mx_SizeNeeded_ex(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int *Jeldmax, int *Leldmax, int *Reldmax,
+                                     int64_t *ret_Jncells, int64_t *ret_Lncells, int64_t *ret_Rncells, int64_t *ret_Tncells, float *ret_Mb);
+
 /* Function:  cm_tr_hb_mx_GrowTo()
  * Incept:    EPN, Thu Aug 25 14:39:00 2011
  *
@@ -1364,8 +1513,13 @@ cm_tr_hb_mx_GrowTo(CM_t *cm, CM_TR_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, in
   int     realloced_L; /* did we reallocate mx->Ldp_mem? */
   int     realloced_R; /* did we reallocate mx->Rdp_mem? */
   int     realloced_T; /* did we reallocate mx->Tdp_mem? */
+  int     el_banded;               /* TRUE to lay the EL decks out banded, see cm_tr_hb_mx_ELDmax() */
+  int    *Jeldmax = NULL;          /* [0..L] J mode EL row upper d bounds, if el_banded */
+  int    *Leldmax = NULL;          /* [0..L] L mode EL row upper d bounds, if el_banded */
+  int    *Reldmax = NULL;          /* [0..L] R mode EL row upper d bounds, if el_banded */
 
   have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
+  el_banded = (have_el && (! mx->el_full) && (! (cm->align_opts & CM_ALIGN_CHECKINOUT))) ? TRUE : FALSE;
 
   /* contract check, number of states (M) is something we don't change
    * so check this matrix has same number of 1st dim state ptrs that
@@ -1373,10 +1527,23 @@ cm_tr_hb_mx_GrowTo(CM_t *cm, CM_TR_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, in
   if(cp9b == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_mx_GrowTo() entered with cp9b == NULL.\n");
   if(cp9b->cm_M != mx->M) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_mx_GrowTo() entered with mx->M: (%d) != cp9b->M (%d)\n", mx->M, cp9b->cm_M);
 
-  if((status = cm_tr_hb_mx_SizeNeeded(cm, errbuf, cp9b, L, &Jncells, &Lncells, &Rncells, &Tncells, &Mb_needed)) != eslOK) return status;
+  if(el_banded) {
+    ESL_ALLOC(Jeldmax, sizeof(int) * (L+1));
+    ESL_ALLOC(Leldmax, sizeof(int) * (L+1));
+    ESL_ALLOC(Reldmax, sizeof(int) * (L+1));
+    cm_tr_hb_mx_ELDmax(cm, cp9b, L, TRMODE_J, Jeldmax);
+    cm_tr_hb_mx_ELDmax(cm, cp9b, L, TRMODE_L, Leldmax);
+    cm_tr_hb_mx_ELDmax(cm, cp9b, L, TRMODE_R, Reldmax);
+  }
+  if((status = cm_tr_hb_mx_SizeNeeded_ex(cm, errbuf, cp9b, L, Jeldmax, Leldmax, Reldmax, &Jncells, &Lncells, &Rncells, &Tncells, &Mb_needed)) != eslOK) goto ERROR;
   /*printf("HMM banded Tr matrix requested size: %.2f Mb\n", Mb_needed);*/
   ESL_DPRINTF2(("#DEBUG: HMM banded Tr matrix requested size: %.2f Mb\n", Mb_needed));
-  if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded Tr DP mx of %.2f Mb > %.2f Mb limit.\nUse --mxsize, --maxtau or --tau.", Mb_needed, (float) size_limit);
+  if(Mb_needed > size_limit) {
+    if(Jeldmax != NULL) free(Jeldmax);
+    if(Leldmax != NULL) free(Leldmax);
+    if(Reldmax != NULL) free(Reldmax);
+    ESL_FAIL(eslERANGE, errbuf, "requested HMM banded Tr DP mx of %.2f Mb > %.2f Mb limit.\nUse --mxsize, --maxtau or --tau.", Mb_needed, (float) size_limit);
+  }
 
   /* check if we should free the matrix */
   if((mx->size_Mb > (0.5  * size_limit)) && /* matrix is >= 0.5 * size of our limit (based on bands from previous sequence) */
@@ -1557,48 +1724,53 @@ cm_tr_hb_mx_GrowTo(CM_t *cm, CM_TR_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, in
     if(mx->Jdp[v] != NULL) { 
       for(jp = 0; jp <= (cp9b->jmax[v] - cp9b->jmin[v]); jp++) { 
 	mx->Jdp[v][jp] = mx->Jdp_mem + Jcur_size;
-	Jcur_size += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	Jcur_size += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
       }
     }
     if(mx->Ldp[v] != NULL) { 
       for(jp = 0; jp <= (cp9b->jmax[v] - cp9b->jmin[v]); jp++) { 
 	mx->Ldp[v][jp] = mx->Ldp_mem + Lcur_size;
-	Lcur_size += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	Lcur_size += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
       }
     }
     if(mx->Rdp[v] != NULL) { 
       for(jp = 0; jp <= (cp9b->jmax[v] - cp9b->jmin[v]); jp++) { 
 	mx->Rdp[v][jp] = mx->Rdp_mem + Rcur_size;
-	Rcur_size += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	Rcur_size += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
       }
     }
     if(mx->Tdp[v] != NULL) { 
       for(jp = 0; jp <= (cp9b->jmax[v] - cp9b->jmin[v]); jp++) { 
 	mx->Tdp[v][jp] = mx->Tdp_mem + Tcur_size;
-	Tcur_size += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	Tcur_size += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
       }
     }
   }
   if(have_el) {
-    if(mx->Jdp[mx->M] != NULL) { 
-      for(jp = 0; jp <= L; jp++) { 
+    /* sparse EL: if el_banded, row jp of mode X holds only d=0..Xeldmax[jp] (none if -1) */
+    if(mx->Jdp[mx->M] != NULL) {
+      for(jp = 0; jp <= L; jp++) {
 	mx->Jdp[mx->M][jp] = mx->Jdp_mem + Jcur_size;
-	Jcur_size += jp + 1;
+	Jcur_size += el_banded ? (Jeldmax[jp] + 1) : (jp + 1);
       }
-    }      
-    if(mx->Ldp[mx->M] != NULL) { 
-      for(jp = 0; jp <= L; jp++) { 
+    }
+    if(mx->Ldp[mx->M] != NULL) {
+      for(jp = 0; jp <= L; jp++) {
 	mx->Ldp[mx->M][jp] = mx->Ldp_mem + Lcur_size;
-	Lcur_size += jp + 1;
+	Lcur_size += el_banded ? (Leldmax[jp] + 1) : (jp + 1);
       }
-    }      
-    if(mx->Rdp[mx->M] != NULL) { 
-      for(jp = 0; jp <= L; jp++) { 
+    }
+    if(mx->Rdp[mx->M] != NULL) {
+      for(jp = 0; jp <= L; jp++) {
 	mx->Rdp[mx->M][jp] = mx->Rdp_mem + Rcur_size;
-	Rcur_size += jp + 1;
+	Rcur_size += el_banded ? (Reldmax[jp] + 1) : (jp + 1);
       }
-    }      
+    }
   }
+  mx->el_banded = el_banded;
+  if(Jeldmax != NULL) { free(Jeldmax); Jeldmax = NULL; }
+  if(Leldmax != NULL) { free(Leldmax); Leldmax = NULL; }
+  if(Reldmax != NULL) { free(Reldmax); Reldmax = NULL; }
 
   /*printf("J ncells %10" PRId64 " %10" PRId64 "\n", Jcur_size, mx->Jncells_valid);
     printf("L ncells %10" PRId64 " %10" PRId64 "\n", Lcur_size, mx->Lncells_valid);
@@ -1622,6 +1794,9 @@ cm_tr_hb_mx_GrowTo(CM_t *cm, CM_TR_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, in
   return eslOK;
 
  ERROR:
+  if(Jeldmax != NULL) free(Jeldmax);
+  if(Leldmax != NULL) free(Leldmax);
+  if(Reldmax != NULL) free(Reldmax);
   return status;
 }
 
@@ -1704,8 +1879,8 @@ cm_tr_hb_mx_Dump(FILE *ofp, CM_TR_HB_MX *mx, char mode, int print_mx)
     for (v = 0; v < mx->M; v++) {
       for(jp = 0; jp <= mx->cp9b->jmax[v] - mx->cp9b->jmin[v]; jp++) {
 	j = jp + mx->cp9b->jmin[v];
-	for(dp = 0; dp <= mx->cp9b->hdmax[v][jp] - mx->cp9b->hdmin[v][jp]; dp++) {
-	  d = dp + mx->cp9b->hdmin[v][jp];
+	for(dp = 0; dp <= hd_max(mx->cp9b, v, jp) - hd_min(mx->cp9b, v, jp); dp++) {
+	  d = dp + hd_min(mx->cp9b, v, jp);
 	  if(mx->Jdp[v])           fprintf(ofp, "Jdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Jdp[v][jp][dp]);
 	  if(fill_L && mx->Ldp[v]) fprintf(ofp, "Ldp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Ldp[v][jp][dp]);
 	  if(fill_R && mx->Rdp[v]) fprintf(ofp, "Rdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Rdp[v][jp][dp]);
@@ -1715,9 +1890,9 @@ cm_tr_hb_mx_Dump(FILE *ofp, CM_TR_HB_MX *mx, char mode, int print_mx)
       }
       fprintf(ofp, "\n\n");
     }
-    /* print EL deck, if it's valid */
+    /* print EL deck, if it's valid (only a full-triangle layout is printed) */
     v = mx->M;
-    for(j = 0; j <= mx->L; j++) {
+    for(j = 0; j <= mx->L && (! mx->el_banded); j++) {
       for(d = 0; d <= j; d++) {
 	if(mx->Jdp[v] && mx->JnrowsA[v] == (mx->L+1)) fprintf(ofp, "Jdp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Jdp[v][j][d]);
 	if(fill_L && mx->Ldp[v] && mx->LnrowsA[v] == (mx->L+1)) fprintf(ofp, "Ldp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->Ldp[v][j][d]);
@@ -1758,6 +1933,53 @@ cm_tr_hb_mx_Dump(FILE *ofp, CM_TR_HB_MX *mx, char mode, int print_mx)
 int
 cm_tr_hb_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_Jncells, int64_t *ret_Lncells, int64_t *ret_Rncells, int64_t *ret_Tncells, float *ret_Mb)
 {
+  return cm_tr_hb_mx_SizeNeeded_ex(cm, errbuf, cp9b, L, NULL, NULL, NULL, ret_Jncells, ret_Lncells, ret_Rncells, ret_Tncells, ret_Mb);
+}
+
+/* Function:  cm_tr_hb_mx_SizeNeededELBanded()
+ * Incept:    EPN, Wed Oct  7 2026 (w/Claude)
+ *
+ * Purpose:   Truncated version of cm_hb_mx_SizeNeededELBanded(): sizes the
+ *            J/L/R EL decks the way cm_tr_hb_mx_GrowTo() lays them out for a
+ *            default matrix (banded, cm_tr_hb_mx_ELDmax(), unless
+ *            CM_ALIGN_CHECKINOUT).
+ *
+ * Returns:   <eslOK> on success; <eslEMEM> on allocation failure.
+ */
+int
+cm_tr_hb_mx_SizeNeededELBanded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t *ret_Jncells, int64_t *ret_Lncells, int64_t *ret_Rncells, int64_t *ret_Tncells, float *ret_Mb)
+{
+  int  status;
+  int *Jeldmax = NULL, *Leldmax = NULL, *Reldmax = NULL;
+  if((cm->flags & CMH_LOCAL_END) && (! (cm->align_opts & CM_ALIGN_CHECKINOUT))) {
+    ESL_ALLOC(Jeldmax, sizeof(int) * (L+1));
+    ESL_ALLOC(Leldmax, sizeof(int) * (L+1));
+    ESL_ALLOC(Reldmax, sizeof(int) * (L+1));
+    cm_tr_hb_mx_ELDmax(cm, cp9b, L, TRMODE_J, Jeldmax);
+    cm_tr_hb_mx_ELDmax(cm, cp9b, L, TRMODE_L, Leldmax);
+    cm_tr_hb_mx_ELDmax(cm, cp9b, L, TRMODE_R, Reldmax);
+  }
+  status = cm_tr_hb_mx_SizeNeeded_ex(cm, errbuf, cp9b, L, Jeldmax, Leldmax, Reldmax, ret_Jncells, ret_Lncells, ret_Rncells, ret_Tncells, ret_Mb);
+  if(Jeldmax != NULL) free(Jeldmax);
+  if(Leldmax != NULL) free(Leldmax);
+  if(Reldmax != NULL) free(Reldmax);
+  return status;
+
+ ERROR:
+  if(Jeldmax != NULL) free(Jeldmax);
+  if(Leldmax != NULL) free(Leldmax);
+  ESL_FAIL(status, errbuf, "out of memory");
+}
+
+/* cm_tr_hb_mx_SizeNeeded_ex(): as cm_tr_hb_mx_SizeNeeded(), but if <Jeldmax>,
+ * <Leldmax>, <Reldmax> are non-NULL, count that mode's EL deck as banded
+ * (row j holds d=0..Xeldmax[j], see cm_tr_hb_mx_ELDmax()) instead of as the
+ * full triangle. cm_tr_hb_mx_GrowTo() passes them for its banded layout.
+ */
+static int
+cm_tr_hb_mx_SizeNeeded_ex(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int *Jeldmax, int *Leldmax, int *Reldmax,
+                          int64_t *ret_Jncells, int64_t *ret_Lncells, int64_t *ret_Rncells, int64_t *ret_Tncells, float *ret_Mb)
+{
   int     v, jp;
   int64_t Jncells, Lncells, Rncells, Tncells;
   int     jbw;
@@ -1782,40 +2004,40 @@ cm_tr_hb_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int L, int64_t 
     if(cp9b->Jvalid[v]) { 
       Mb_needed += (float) (sizeof(float *) * (jbw+1)); /* mx->Jdp[v][] ptrs */
       for(jp = 0; jp <= jbw; jp++) {
-	Jncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	Jncells += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
       }
     }
     if(cp9b->Lvalid[v]) { 
       Mb_needed += (float) (sizeof(float *) * (jbw+1)); /* mx->Ldp[v][] ptrs */
       for(jp = 0; jp <= jbw; jp++) {
-	Lncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	Lncells += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
       }
     }
     if(cp9b->Rvalid[v]) { 
       Mb_needed += (float) (sizeof(float *) * (jbw+1)); /* mx->Rdp[v][] ptrs */
       for(jp = 0; jp <= jbw; jp++) {
-	Rncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	Rncells += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
       }
     }
     if(cp9b->Tvalid[v]) {
       Mb_needed += (float) (sizeof(float *) * (jbw+1)); /* mx->Tdp[v][] ptrs */
       for(jp = 0; jp <= jbw; jp++) {
-	Tncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	Tncells += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
       }
     }
   }
   if(have_el) { /* space for EL deck */
     if(cp9b->Jvalid[cp9b->cm_M]) { 
       Mb_needed += (float) (sizeof(float *) * (L+1)); /* mx->Jdp[cm->M][] ptrs */
-      Jncells += (int64_t) ((int64_t) (L+2) * (int64_t) (L+1) * 0.5); 
+      Jncells += el_ncells(L, Jeldmax); /* full triangle if Jeldmax is NULL, else banded */
     }
     if(cp9b->Lvalid[cp9b->cm_M]) { 
       Mb_needed += (float) (sizeof(float *) * (L+1)); /* mx->Ldp[cm->M][] ptrs */
-      Lncells += (int64_t) ((int64_t) (L+2) * (int64_t) (L+1) * 0.5); 
+      Lncells += el_ncells(L, Leldmax); /* full triangle if Leldmax is NULL, else banded */
     }
     if(cp9b->Rvalid[cp9b->cm_M]) { 
       Mb_needed += (float) (sizeof(float *) * (L+1)); /* mx->Ldp[cm->M][] ptrs */
-      Rncells += (int64_t) ((int64_t) (L+2) * (int64_t) (L+1) * 0.5); 
+      Rncells += el_ncells(L, Reldmax); /* full triangle if Reldmax is NULL, else banded */
     }
   }
 
@@ -3059,13 +3281,13 @@ cm_hb_shadow_mx_GrowTo(CM_t *cm, CM_HB_SHADOW_MX *mx, char *errbuf, CP9Bands_t *
     if(cm->sttype[v] == B_st) { 
       for(jp = 0; jp <= (cp9b->jmax[v] - cp9b->jmin[v]); jp++) { 
 	mx->kshadow[v][jp] = mx->kshadow_mem + k_cur_size;
-	k_cur_size        += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	k_cur_size        += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
       }
     }
     else { 
       for(jp = 0; jp <= (cp9b->jmax[v] - cp9b->jmin[v]); jp++) { 
 	mx->yshadow[v][jp] = mx->yshadow_mem + y_cur_size;
-	y_cur_size        += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	y_cur_size        += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
       }
     }
   }
@@ -3136,8 +3358,8 @@ cm_hb_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_HB_SHADOW_MX *mx, int print_mx)
       if(cm->sttype[v] == B_st) { 
 	for(jp = 0; jp <= mx->cp9b->jmax[v] - mx->cp9b->jmin[v]; jp++) {
 	  j = jp + mx->cp9b->jmin[v];
-	  for(dp = 0; dp <= mx->cp9b->hdmax[v][jp] - mx->cp9b->hdmin[v][jp]; dp++) {
-	    d = dp + mx->cp9b->hdmin[v][jp];
+	  for(dp = 0; dp <= hd_max(mx->cp9b, v, jp) - hd_min(mx->cp9b, v, jp); dp++) {
+	    d = dp + hd_min(mx->cp9b, v, jp);
 	    fprintf(ofp, "kshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->kshadow[v][jp][dp]);
 	  }
 	  fprintf(ofp, "\n");
@@ -3147,8 +3369,8 @@ cm_hb_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_HB_SHADOW_MX *mx, int print_mx)
       else { 
 	for(jp = 0; jp <= mx->cp9b->jmax[v] - mx->cp9b->jmin[v]; jp++) {
 	  j = jp + mx->cp9b->jmin[v];
-	  for(dp = 0; dp <= mx->cp9b->hdmax[v][jp] - mx->cp9b->hdmin[v][jp]; dp++) {
-	    d = dp + mx->cp9b->hdmin[v][jp];
+	  for(dp = 0; dp <= hd_max(mx->cp9b, v, jp) - hd_min(mx->cp9b, v, jp); dp++) {
+	    d = dp + hd_min(mx->cp9b, v, jp);
 	    fprintf(ofp, "yshad[v:%5d][j:%5d][d:%5d] %8c\n", v, j, d, mx->yshadow[v][jp][dp]);
 	  }
 	  fprintf(ofp, "\n");
@@ -3207,12 +3429,12 @@ cm_hb_shadow_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int64_t *re
     if(cm->sttype[v] == B_st) { 
       Mb_needed += (float) (sizeof(int *) * (jbw+1)); /* mx->kshadow[v][] ptrs */
       for(jp = 0; jp <= jbw; jp++) 
-	k_ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	k_ncells += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
     }
     else { 
       Mb_needed += (float) (sizeof(char *) * (jbw+1)); /* mx->yshadow[v][] ptrs */
       for(jp = 0; jp <= jbw; jp++) 
-	y_ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	y_ncells += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
     }
   }
   Mb_needed += sizeof(char) * y_ncells; /* mx->yshadow_mem */
@@ -3716,19 +3938,19 @@ cm_tr_hb_shadow_mx_GrowTo(CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char *errbuf, CP9Ban
       if(mx->Jyshadow[v] != NULL) { 
 	for(jp = 0; jp <= (cp9b->jmax[v] - cp9b->jmin[v]); jp++) { 
 	  mx->Jyshadow[v][jp] = mx->Jyshadow_mem + Jy_cur_size;
-	  Jy_cur_size        += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	  Jy_cur_size        += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
 	}
       }
       if(mx->Lyshadow[v] != NULL) { 
 	for(jp = 0; jp <= (cp9b->jmax[v] - cp9b->jmin[v]); jp++) { 
 	  mx->Lyshadow[v][jp] = mx->Lyshadow_mem + Ly_cur_size;
-	  Ly_cur_size        += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	  Ly_cur_size        += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
 	}
       }
       if(mx->Ryshadow[v] != NULL) { 
 	for(jp = 0; jp <= (cp9b->jmax[v] - cp9b->jmin[v]); jp++) { 
 	  mx->Ryshadow[v][jp] = mx->Ryshadow_mem + Ry_cur_size;
-	  Ry_cur_size        += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	  Ry_cur_size        += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
 	}
       }
     }
@@ -3736,7 +3958,7 @@ cm_tr_hb_shadow_mx_GrowTo(CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char *errbuf, CP9Ban
       if(mx->Jkshadow[v] != NULL) { 
 	for(jp = 0; jp <= (cp9b->jmax[v] - cp9b->jmin[v]); jp++) { 
 	  mx->Jkshadow[v][jp] = mx->Jkshadow_mem + Jk_cur_size;
-	  Jk_cur_size        += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	  Jk_cur_size        += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
 	}
       }
       if(mx->Lkshadow[v] != NULL) { 
@@ -3744,7 +3966,7 @@ cm_tr_hb_shadow_mx_GrowTo(CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char *errbuf, CP9Ban
 	for(jp = 0; jp <= (cp9b->jmax[v] - cp9b->jmin[v]); jp++) { 
 	  mx->Lkshadow[v][jp] = mx->Lkshadow_mem + Lk_cur_size;
 	  mx->Lkmode[v][jp]   = mx->Lkmode_mem   + Lk_cur_size;
-	  Lk_cur_size        += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	  Lk_cur_size        += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
 	}
       }
       if(mx->Rkshadow[v] != NULL) { 
@@ -3752,13 +3974,13 @@ cm_tr_hb_shadow_mx_GrowTo(CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char *errbuf, CP9Ban
 	for(jp = 0; jp <= (cp9b->jmax[v] - cp9b->jmin[v]); jp++) { 
 	  mx->Rkshadow[v][jp] = mx->Rkshadow_mem + Rk_cur_size;
 	  mx->Rkmode[v][jp]   = mx->Rkmode_mem   + Rk_cur_size;
-	  Rk_cur_size        += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	  Rk_cur_size        += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
 	}
       }
       if(mx->Tkshadow[v] != NULL) { 
 	for(jp = 0; jp <= (cp9b->jmax[v] - cp9b->jmin[v]); jp++) { 
 	  mx->Tkshadow[v][jp] = mx->Tkshadow_mem + Tk_cur_size;
-	  Tk_cur_size        += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	  Tk_cur_size        += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
 	}
       }
     }
@@ -3914,8 +4136,8 @@ cm_tr_hb_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char mode, 
       if(cm->sttype[v] == B_st) { 
 	for(jp = 0; jp <= mx->cp9b->jmax[v] - mx->cp9b->jmin[v]; jp++) {
 	  j = jp + mx->cp9b->jmin[v];
-	  for(dp = 0; dp <= mx->cp9b->hdmax[v][jp] - mx->cp9b->hdmin[v][jp]; dp++) {
-	    d = dp + mx->cp9b->hdmin[v][jp];
+	  for(dp = 0; dp <= hd_max(mx->cp9b, v, jp) - hd_min(mx->cp9b, v, jp); dp++) {
+	    d = dp + hd_min(mx->cp9b, v, jp);
 	    if(mx->Jkshadow[v])           fprintf(ofp, "Jkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Jkshadow[v][jp][dp]);
 	    if(mx->Lkshadow[v] && fill_L) fprintf(ofp, "Lkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Lkshadow[v][jp][dp]);
 	    if(mx->Rkshadow[v] && fill_R) fprintf(ofp, "Rkshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Rkshadow[v][jp][dp]);
@@ -3928,8 +4150,8 @@ cm_tr_hb_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_TR_HB_SHADOW_MX *mx, char mode, 
       else { 
 	for(jp = 0; jp <= mx->cp9b->jmax[v] - mx->cp9b->jmin[v]; jp++) {
 	  j = jp + mx->cp9b->jmin[v];
-	  for(dp = 0; dp <= mx->cp9b->hdmax[v][jp] - mx->cp9b->hdmin[v][jp]; dp++) {
-	    d = dp + mx->cp9b->hdmin[v][jp];
+	  for(dp = 0; dp <= hd_max(mx->cp9b, v, jp) - hd_min(mx->cp9b, v, jp); dp++) {
+	    d = dp + hd_min(mx->cp9b, v, jp);
 	    if(mx->Jyshadow[v])           fprintf(ofp, "Jyshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Jyshadow[v][jp][dp]);
 	    if(mx->Lyshadow[v] && fill_L) fprintf(ofp, "Lyshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Lyshadow[v][jp][dp]);
 	    if(mx->Ryshadow[v] && fill_R) fprintf(ofp, "Ryshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->Ryshadow[v][jp][dp]);
@@ -4008,27 +4230,27 @@ cm_tr_hb_shadow_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int64_t 
       if(cp9b->Jvalid[v]) { 
 	Mb_needed += (float) (sizeof(int *) * (jbw+1)); /* mx->Jkshadow[v][] ptrs */
 	for(jp = 0; jp <= jbw; jp++) {
-	  Jk_ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	  Jk_ncells += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
 	}
       }
       if(cp9b->Lvalid[v]) { 
 	Mb_needed += (float) (sizeof(int *) * (jbw+1));  /* mx->Lkshadow[v][] ptrs */
 	Mb_needed += (float) (sizeof(char *) * (jbw+1)); /* mx->Lkmode[v][] ptrs */
 	for(jp = 0; jp <= jbw; jp++) {
-	  Lk_ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	  Lk_ncells += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
 	}
       }
       if(cp9b->Rvalid[v]) { 
 	Mb_needed += (float) (sizeof(int *) * (jbw+1));  /* mx->Rkshadow[v][] ptrs */
 	Mb_needed += (float) (sizeof(char *) * (jbw+1)); /* mx->Rkmode[v][] ptrs */
 	for(jp = 0; jp <= jbw; jp++) {
-	  Rk_ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	  Rk_ncells += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
 	}
       }
       if(cp9b->Tvalid[v]) { 
 	Mb_needed += (float) (sizeof(int *) * (jbw+1)); /* mx->Tkshadow[v][] ptrs */
 	for(jp = 0; jp <= jbw; jp++) {
-	  Tk_ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	  Tk_ncells += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
 	}
       }
     }
@@ -4036,19 +4258,19 @@ cm_tr_hb_shadow_mx_SizeNeeded(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int64_t 
       if(cp9b->Jvalid[v]) { 
 	Mb_needed += (float) (sizeof(char *) * (jbw+1)); /* mx->Jyshadow[v][] ptrs */
 	for(jp = 0; jp <= jbw; jp++) {
-	  Jy_ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	  Jy_ncells += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
 	}
       }
       if(cp9b->Lvalid[v]) { 
 	Mb_needed += (float) (sizeof(char *) * (jbw+1)); /* mx->Lyshadow[v][] ptrs */
 	for(jp = 0; jp <= jbw; jp++) {
-	  Ly_ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	  Ly_ncells += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
 	}
       }
       if(cp9b->Rvalid[v]) { 
 	Mb_needed += (float) (sizeof(char *) * (jbw+1)); /* mx->Ryshadow[v][] ptrs */
 	for(jp = 0; jp <= jbw; jp++) {
-	  Ry_ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+	  Ry_ncells += hd_max(cp9b, v, jp) - hd_min(cp9b, v, jp) + 1;
 	}
       }
     }
