@@ -6,14 +6,13 @@
 #   - a dense #=GC bp_cov  family covariation (mutual information) line;
 #   - NON-BLANK placeholders so the annotated output is re-readable by the
 #     standard Easel Stockholm parser (the write-then-re-read gate, the hole
-#     that guards against a value with embedded blanks);
+#     that hid the round-trip bug found in review of the first implementation);
 #   - the per-seq PS line and BOTH #=GC family lines survive the low-memory /
 #     multi-block (merge) output path (bp_cons / bp_cov via cross-block
-#     accumulation).
+#     accumulation, briefs 26_0617-020/26_0617-022).
 #
-# Exercises a model built from the PK-HAV seed (its pseudoknot is stripped at
-# build time, so the CM is nested-only) and the tutorial-style tRNA model, so
-# all of v / ? / : / + can appear.
+# Exercises a model that carries BOTH nested and pseudoknot pairs (PK-HAV) and a
+# pure-nested model (tRNA), so all of v / ? / : / + / = / $ / x can appear.
 #
 # Usage:    ./itest14-cmalign-bpannot.pl <builddir> <srcdir> <tmpfile prefix>
 # Example:  ./itest14-cmalign-bpannot.pl ..         ..       tmpfoo
@@ -48,19 +47,20 @@ sub cleanup { for my $s (@tmpsuffixes) { unlink "$tmppfx.$s" if -e "$tmppfx.$s";
 cleanup();
 
 ######################################################################
-# Build a CM from the PK-HAV seed. cmbuild removes the seed's A/a pseudoknot
-# stem, so the model carries only the nested stems.
+# Build a pknot CM (PK-HAV carries one A/a pseudoknot stem plus a nested stem).
 ######################################################################
 run("$cmbuild --wnone -F $tmppfx.pk.cm $pkseed > $tmppfx.log 2>&1",
-    "cmbuild of PK-HAV seed failed");
+    "cmbuild of PK-HAV pknot seed failed");
+file_has_header("$tmppfx.pk.cm", "PKNOT", "yes")
+    or die "FAIL: built PK-HAV CM is not a pseudoknot model (PKNOT yes missing)\n";
 
 ######################################################################
-# Subtest 1: PK-HAV model, single-block, all three flags.
+# Subtest 1: pknot model, single-block, both flags.
 ######################################################################
 run("$cmemit -N 5 --seed 7 -o $tmppfx.pk.fa $tmppfx.pk.cm > $tmppfx.log 2>&1",
-    "cmemit from PK-HAV CM failed");
+    "cmemit from pknot CM failed");
 run("$cmalign --cpu 0 --bpstatus --bpcons --bpcov $tmppfx.pk.cm $tmppfx.pk.fa > $tmppfx.pk.sto 2>$tmppfx.log",
-    "cmalign --bpstatus --bpcons --bpcov (PK-HAV) failed");
+    "cmalign --bpstatus --bpcons --bpcov (pknot) failed");
 
 my $nseq_pk = count_match("$tmppfx.pk.fa", qr/^>/);
 assert_count("$tmppfx.pk.sto", qr/^#=GR\s+\S+\s+PS\b/, $nseq_pk, "subtest 1: one combined PS line per sequence");
@@ -71,6 +71,8 @@ assert_dense_ps("$tmppfx.pk.sto", "subtest 1");
 # both family lines must be dense (whitespace-free token, length == alen):
 assert_dense_gc("$tmppfx.pk.sto", "bp_cons", "subtest 1");
 assert_dense_gc("$tmppfx.pk.sto", "bp_cov",  "subtest 1");
+# pknot model must show at least one pknot pair-status mark (= / $ / x):
+ps_marks_include("$tmppfx.pk.sto", qr/[=\$x]/, "subtest 1: pknot pair-status mark (=/\$/x)");
 # bp_cons must carry at least one conservation digit; bp_cov a covariation digit:
 gc_has("$tmppfx.pk.sto", "bp_cons", qr/[0-9*]/, "subtest 1: bp_cons conservation digit");
 gc_has("$tmppfx.pk.sto", "bp_cov",  qr/[0-9*]/, "subtest 1: bp_cov covariation digit");
@@ -79,7 +81,7 @@ gc_has("$tmppfx.pk.sto", "bp_cov",  qr/[0-9*]/, "subtest 1: bp_cov covariation d
 assert_same_pair_cols("$tmppfx.pk.sto", "bp_cons", "bp_cov", "subtest 1");
 gc_lines_differ("$tmppfx.pk.sto", "bp_cons", "bp_cov", "subtest 1: bp_cov differs from bp_cons");
 # WRITE-THEN-RE-READ gate (standard Easel reader, via `easel reformat`):
-reread_ok("$tmppfx.pk.sto", "$tmppfx.pk.rr", "subtest 1 (PK-HAV, all three flags)");
+reread_ok("$tmppfx.pk.sto", "$tmppfx.pk.rr", "subtest 1 (pknot, all three flags)");
 
 ######################################################################
 # Subtest 2: pure-nested model (tRNA), single-block, both flags.
@@ -135,8 +137,8 @@ assert_count("$tmppfx.def.sto", qr/^#=GC\s+bp_cov\b/,   0, "subtest 5: no bp_cov
 ######################################################################
 # Subtest 6: multi-block (merge) path. Emit > 10000 seqs so cmalign routes
 # output through the temporary merge file. The per-seq PS line must survive the
-# regurgitation and re-read; #=GC bp_cons is emitted there too, computed by
-# cross-block accumulation: it must be present, dense (no embedded
+# regurgitation and re-read; #=GC bp_cons is now EMITTED there too (brief 26_0617-020),
+# computed by cross-block accumulation: it must be present, dense (no embedded
 # blanks), carry a conservation digit, and re-read cleanly. A tiny model is built
 # just for this volume test (keeps the 10001-seq alignment cheap).
 ######################################################################
@@ -159,15 +161,20 @@ gc_has("$tmppfx.big.sto", "bp_cons", qr/[0-9*]/, "subtest 6: multi-block bp_cons
 gc_has("$tmppfx.big.sto", "bp_cov",  qr/[0-9*]/, "subtest 6: multi-block bp_cov covariation digit");
 # merge-path bp_cov annotates exactly the same columns as bp_cons (same pair set):
 assert_same_pair_cols("$tmppfx.big.sto", "bp_cons", "bp_cov", "subtest 6");
+# no suppression note should be printed any more:
+slurp("$tmppfx.big.err") =~ /bp_cons.*suppressed|suppressed.*bp_cons/i
+    and die "FAIL: subtest 6: a stale bp_cons-suppression note was printed on stderr\n";
 # WRITE-THEN-RE-READ gate on the merge-path output WITH the bp_cons line present:
 reread_ok("$tmppfx.big.sto", "$tmppfx.big.sto.rr", "subtest 6 (multi-block, merge path)");
 unlink "$tmppfx.big.sto.rr";
 
 ######################################################################
-# Subtest 7: --sub partial-span. Fragmentary targets that
-# cover only PART of the model build per-seq sub-CMs that span only a sub-range
-# of the consensus. The annotation is computed post-hoc against the FULL cm
-# (emap/ct/cmcons), so the marks must stay correct and the line re-readable:
+# Subtest 7 (brief 26_0617-023, Part A): partial-span. Fragmentary targets that cover
+# only PART of the model, aligned glocally (-g) with truncation allowed, give
+# parses that span only a sub-range of the consensus. (This subtest used
+# -g --sub --notrunc until --sub was removed, brief 26_0821-173.) The
+# annotation is computed post-hoc against the FULL cm (emap/ct/cmcons), so the
+# marks must stay correct and the line re-readable:
 #   - the cpos!=clen RF-length guard must NOT trip on a legitimate partial-span
 #     parse (cmalign exits 0);
 #   - one dense combined PS line per seq, re-readable by the standard parser;
@@ -175,11 +182,11 @@ unlink "$tmppfx.big.sto.rr";
 #     (NOT a spurious mark), so each fragment's PS line has a long run of '-';
 #   - a pair straddling the span boundary (one half in-span, the other out) is a
 #     half-present pair -> 'v' (nested) appears.
-# 5'-half and 3'-half fragments of the PK-HAV model are the partial-span targets.
+# 5'-half and 3'-half fragments of the pknot model are the partial-span targets.
 ######################################################################
 write_halves("$tmppfx.pk.fa", "$tmppfx.sub.fa");
-run("$cmalign -g --sub --notrunc --cpu 0 --bpstatus --bpcons $tmppfx.pk.cm $tmppfx.sub.fa > $tmppfx.sub.sto 2>$tmppfx.log",
-    "subtest 7: cmalign -g --sub --notrunc --bpstatus --bpcons (partial-span) failed (cpos!=clen guard?)");
+run("$cmalign -g --cpu 0 --bpstatus --bpcons $tmppfx.pk.cm $tmppfx.sub.fa > $tmppfx.sub.sto 2>$tmppfx.log",
+    "subtest 7: cmalign -g --bpstatus --bpcons (partial-span) failed (cpos!=clen guard?)");
 my $nseq_sub = count_match("$tmppfx.sub.fa", qr/^>/);
 assert_count("$tmppfx.sub.sto", qr/^#=GR\s+\S+\s+PS\b/, $nseq_sub, "subtest 7: one combined PS line per partial-span seq");
 assert_dense_ps("$tmppfx.sub.sto", "subtest 7");
@@ -187,13 +194,19 @@ assert_dense_ps("$tmppfx.sub.sto", "subtest 7");
 ps_marks_include("$tmppfx.sub.sto", qr/-{8,}/, "subtest 7: out-of-span '-' placeholder run");
 # a boundary-straddling nested pair -> half-present 'v':
 ps_marks_include("$tmppfx.sub.sto", qr/v/,     "subtest 7: half-present nested 'v' on a span-boundary pair");
-reread_ok("$tmppfx.sub.sto", "$tmppfx.sub.rr", "subtest 7 (--sub partial-span)");
+reread_ok("$tmppfx.sub.sto", "$tmppfx.sub.rr", "subtest 7 (-g partial-span)");
 
 ######################################################################
-# Subtest 8: truncated-half '?' on truncated cmalign parses. With --miss,
-# cmalign marks a truncated 5'/3' flank with missing-data '~'; a nested base
-# pair straddling the truncation boundary then has one present half and one
-# '~' half, and the present half must be classified '?'.
+# Subtest 8 (brief 26_0617-023, Part B): truncated-half '?' fidelity on truncated cmalign
+# parses. With --miss, cmalign marks a truncated 5'/3' flank with missing-data
+# '~'; a base pair straddling the truncation boundary then has one present half
+# and one '~' half. The truncated half must be classified '?' (not 'v', not a
+# placeholder, not a spurious '=/$/x'):
+#   - NESTED pairs: the present half -> '?' (mode-L/R rule, already correct);
+#   - PKNOT pairs: the present half -> '?' too (brief 26_0617-023 fix in
+#     annotate_pknot_pairs_str: a '~' half is "truncated", NOT "broken 'x'").
+# So under --miss a '?' must appear AT A PKNOT-LETTER column of SS_cons -- the
+# direct regression guard for the fix (pre-fix that column showed 'x').
 ######################################################################
 write_halves("$tmppfx.pk.fa", "$tmppfx.miss.fa");
 run("$cmalign --miss --cpu 0 --bpstatus --bpcons $tmppfx.pk.cm $tmppfx.miss.fa > $tmppfx.miss.sto 2>$tmppfx.log",
@@ -203,6 +216,9 @@ assert_count("$tmppfx.miss.sto", qr/^#=GR\s+\S+\s+PS\b/, count_match("$tmppfx.mi
 assert_dense_ps("$tmppfx.miss.sto", "subtest 8");
 ps_marks_include("$tmppfx.miss.sto", qr/\?/, "subtest 8: truncated-half '?' mark present");
 ps_marks_include("$tmppfx.miss.sto", qr/~/,  "subtest 8: missing-data '~' placeholder present");
+# THE FIX: a truncated half of a PKNOT pair must be '?' (not 'x'). Assert some PS
+# line carries '?' at a column where SS_cons holds a pknot letter (A-Za-z):
+ps_mark_at_pknot_col("$tmppfx.miss.sto", '?', "subtest 8: pknot truncated half -> '?' (brief 023 fix)");
 reread_ok("$tmppfx.miss.sto", "$tmppfx.miss.rr", "subtest 8 (--miss truncated)");
 
 ######################################################################
@@ -238,6 +254,18 @@ sub assert_count {
     my ($file, $re, $want, $where) = @_;
     my $got = count_match($file, $re);
     if ($got != $want) { die "FAIL: $where: expected $want, got $got (in $file)\n"; }
+}
+
+# True if file has a "<tag> <value>" header line whose first value token == value.
+sub file_has_header {
+    my ($file, $tag, $value) = @_;
+    open(my $fh, "<", $file) or die "FAIL: cannot open $file\n";
+    while (my $l = <$fh>) {
+        chomp $l;
+        if ($l =~ /^\Q$tag\E\s+(\S+)/) { close $fh; return ($1 eq $value) ? 1 : 0; }
+    }
+    close $fh;
+    return 0;
 }
 
 # Every #=GR PS value must be ONE whitespace-free token (no embedded blanks) and
@@ -344,8 +372,8 @@ sub reread_ok {
 
 # Read a FASTA file and write a new one holding the 5' half and the 3' half of
 # each sequence (named <name>_5half / <name>_3half). These fragmentary targets
-# cover only part of the model: under --sub they build partial-span sub-CMs;
-# under --miss (truncation on) they produce 5'/3'-truncated parses. Determinism
+# cover only part of the model: they produce 5'/3'-truncated parses, and
+# under --miss the truncated flanks are marked as missing data. Determinism
 # comes from the fixed-seed cmemit that produced the input.
 sub write_halves {
     my ($infa, $outfa) = @_;
@@ -366,6 +394,26 @@ sub write_halves {
         print $out ">${n}_3half\n", substr($s, $h),    "\n";
     }
     close $out;
+}
+
+# At least one #=GR PS value carries char <mark> at a column where #=GC SS_cons
+# holds a pseudoknot letter (A-Z / a-z). Used to assert the brief 26_0617-023 fix: a
+# truncated half of a PKNOT pair is marked '?' there (pre-fix it was 'x').
+sub ps_mark_at_pknot_col {
+    my ($file, $mark, $where) = @_;
+    my $ss;
+    for my $l (split /\n/, slurp($file)) {
+        if ($l =~ /^#=GC\s+SS_cons\s+(\S+)\s*$/) { $ss = $1; last; }
+    }
+    defined $ss or die "FAIL: $where: no #=GC SS_cons found\n";
+    my @pkcol = grep { substr($ss,$_,1) =~ /[A-Za-z]/ } (0 .. length($ss)-1);
+    @pkcol or die "FAIL: $where: SS_cons carries no pknot letters to check\n";
+    for my $l (split /\n/, slurp($file)) {
+        next unless $l =~ /^#=GR\s+\S+\s+PS\s+(\S+)\s*$/;
+        my $ps = $1;
+        for my $c (@pkcol) { return 1 if substr($ps,$c,1) eq $mark; }
+    }
+    die "FAIL: $where: no PS line carried '$mark' at a pknot column\n";
 }
 
 # A tiny gapless nested-stem alignment, used only for the multi-block volume

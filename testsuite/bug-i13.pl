@@ -33,6 +33,11 @@
 #
 # ~/nawrockie/notebook/8_0930_inf_bug_1rc3_sub_illegal_cm/00LOG.
 #
+# cmalign --sub was removed in 1.2 (brief 26_0821-173), and with it the
+# sub CM construction this bug lived in. The test now aligns the same
+# fragment to the same adjacent-pair CM with the default truncated
+# alignment that replaces --sub, in local and glocal (-g) mode.
+#
 # i13.1 =  simple example alignment (1 seq)
 # i13.2 =  sequence to align 
 
@@ -70,7 +75,11 @@ if ($ok) {
     if ($? != 0) { $ok = 0; }
 }
 if ($ok) {
-    system("$cmalign -g --sub --notrunc i13.cm i13.2 > /dev/null 2> /dev/null");
+    system("$cmalign i13.cm i13.2 > /dev/null 2> /dev/null");
+    if ($? != 0) { $ok = 0; }
+}
+if ($ok) {
+    system("$cmalign -g i13.cm i13.2 > /dev/null 2> /dev/null");
     if ($? != 0) { $ok = 0; }
 }
 
