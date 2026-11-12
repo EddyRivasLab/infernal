@@ -235,6 +235,12 @@
  * fixes a `cmbuild --refine` bug related to fragments (github issue
    #42).
 
+ * fixes `cmalign --mpi` workers quitting early when they were given
+   no sequence, for example when there were fewer sequences than
+   workers. Open MPI then printed "unexpected tag-receive descriptor
+   ... not matched" warnings to standard output, and in rare cases the
+   run could hang. Alignments were not affected.
+
  * consensus structure lines now annotate single-stranded positions
    between top-level stems as `:` (full WUSS notation) instead of `-`
    or `,` (github issue #69).
