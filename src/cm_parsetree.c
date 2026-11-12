@@ -1405,9 +1405,13 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	    msa->ss_cons[matmap[cpos]] = '.';
 	    msa->rf[matmap[cpos]]      = (cm->flags & CMH_RF) ? cm->rf[cpos] : cm->cmcons->cseq[cpos-1];
 	  } else {
-	    msa->ss_cons[matmap[cpos]] = cm->cmcons->cstr[cpos-1];	
+	    msa->ss_cons[matmap[cpos]] = cm->cmcons->cstr[cpos-1];
 	    msa->rf[matmap[cpos]]      = (cm->flags & CMH_RF) ? cm->rf[cpos] : cm->cmcons->cseq[cpos-1];
 	  }
+	  /* Feature B: overlay the canonical pseudoknot letter (if any) for this consensus
+	   * column; nested structure stays from cstr. Truncation orphans are removed below. */
+	  if ((cm->flags & CMH_PKNOT) && isalpha((int) cm->pknot[cpos]))
+	    msa->ss_cons[matmap[cpos]] = cm->pknot[cpos];
 	}
       if ((maxil[cpos] > 0) && (! do_matchonly)) 
 	for (apos = ilmap[cpos]; apos < ilmap[cpos] + maxil[cpos]; apos++)
@@ -1430,6 +1434,8 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
     }
   msa->ss_cons[alen] = '\0';
   msa->rf[alen] = '\0';
+  /* Feature B: drop any pseudoknot letter whose partner column was truncated/absent */
+  if (cm->flags & CMH_PKNOT) cm_pknot_FixBrokenString(msa->ss_cons, alen);
   if (wgt != NULL) msa->flags |= eslMSA_HASWGTS;
 
   if(tmp_aseq != NULL) free(tmp_aseq);
@@ -1525,6 +1531,38 @@ bp_cons_digit(CM_t *cm, ESL_MSA *msa, int apos1, int apos2, char *bpc)
   return;
 }
 
+/* bp_cons_pknot(): walk msa->ss_cons with the per-letter pushdown discipline
+ * (same as annotate_pknot_pairs_str / esl_wuss2ct), recovering each complete
+ * pknot pair as alignment columns and writing its conservation digit via
+ * bp_cons_digit(). Requires cm_pknot_FixBrokenString() already applied to
+ * ss_cons (Parsetrees2Alignment does this). */
+static void
+bp_cons_pknot(CM_t *cm, ESL_MSA *msa, char *bpc, int alen)
+{
+  int  sp[26];
+  int *stack[26];
+  int  i, c, idx;
+  for (idx = 0; idx < 26; idx++) { sp[idx] = 0; stack[idx] = NULL; }
+  for (i = 0; i < alen; i++) {
+    c = (int) msa->ss_cons[i];
+    if (isupper(c)) {
+      idx = c - 'A';
+      if (stack[idx] == NULL && (stack[idx] = malloc(sizeof(int) * (alen + 1))) == NULL) goto DONE;
+      stack[idx][sp[idx]++] = i;
+    }
+    else if (islower(c)) {
+      idx = c - 'a';
+      if (sp[idx] > 0) {
+        int zo = stack[idx][--sp[idx]];
+        bp_cons_digit(cm, msa, zo, i, bpc);
+      }
+    }
+  }
+ DONE:
+  for (idx = 0; idx < 26; idx++) if (stack[idx] != NULL) free(stack[idx]);
+  return;
+}
+
 /*****************************************************************
  * #=GC bp_cov : per-pair covariation digit (mutual information)
  *
@@ -1535,11 +1573,11 @@ bp_cons_digit(CM_t *cm, ESL_MSA *msa, int apos1, int apos2, char *bpc)
  * value is a transparent hint, NOT a substitute for R-scape's rigorous
  * covariation statistics.
  *
- * Encoding: digit =
+ * Scheme P1 (locked, briefs/summaries 021): digit =
  *   EncodePostProb( min( MI_bits / CM_BPCOV_HSAT_BITS, 1.0 ) ).
  * MI is bounded by min(column entropy), so near-invariant pairs intrinsically
- * have MI~0 and self-limit to a low digit, so no special no-power glyph is
- * needed.
+ * have MI~0 and self-limit to a low digit -- no special no-power glyph is
+ * needed (that was scaffolding for a rejected normalized-MI scheme).
  *
  * Both the single-block in-memory path and the cross-block merge path route
  * through the same three helpers below, and the 4x4 joint counts are an
@@ -1591,8 +1629,8 @@ bpcov_accum_pair(ESL_MSA *msa, int apos1, int apos2, int *joint16)
  * the joint; MI = sum_{a,b} p(a,b) * log2[ p(a,b) / (p(a) p(b)) ], with
  * 0*log0 = 0 and tiny numerical negatives clamped to 0. Returns 0.0 when the
  * table is empty (no sequence with both residues standard). Computed in double
- * precision with the C library log2(), so an independent reimplementation
- * (e.g. Python's math.log2) reproduces it bit-for-bit. */
+ * precision with the C library log2() so an independent Python (math.log2)
+ * oracle reproduces it bit-for-bit. */
 static double
 bpcov_mi_bits(const int *joint16)
 {
@@ -1622,12 +1660,11 @@ bpcov_mi_bits(const int *joint16)
   return mi;
 }
 
-/* bpcov_encode(): map of a pair's MI (bits) to a bp_cov digit. Normalize
+/* bpcov_encode(): Scheme-P1 map of a pair's MI (bits) to a bp_cov digit. Normalize
  * by the fixed saturation point CM_BPCOV_HSAT_BITS, clamp to 1.0, and pass through
  * the SAME PP bucketing as bp_cons / cmsearch posteriors so bp_cov and bp_cons
- * share a visual 0-9/'*' scale. The (float) cast happens once here, so an
- * independent reimplementation that casts to float32 at the same point lands on
- * the same bucket boundary. */
+ * share a visual 0-9/'*' scale. The (float) cast happens once here (mirrored by a
+ * float32 cast in the oracle) so the bucket boundary lands identically. */
 static char
 bpcov_encode(double mi_bits)
 {
@@ -1653,41 +1690,72 @@ bpcov_digit(ESL_MSA *msa, int apos1, int apos2, char *bcv)
   return;
 }
 
+/* bpcov_pknot(): pknot-pair pass for the in-memory bp_cov line. Walks
+ * msa->ss_cons with the per-letter pushdown (same discipline as bp_cons_pknot),
+ * writing each complete pknot pair's covariation digit via bpcov_digit(). */
+static void
+bpcov_pknot(ESL_MSA *msa, char *bcv, int alen)
+{
+  int  sp[26];
+  int *stack[26];
+  int  i, c, idx;
+  for (idx = 0; idx < 26; idx++) { sp[idx] = 0; stack[idx] = NULL; }
+  for (i = 0; i < alen; i++) {
+    c = (int) msa->ss_cons[i];
+    if (isupper(c)) {
+      idx = c - 'A';
+      if (stack[idx] == NULL && (stack[idx] = malloc(sizeof(int) * (alen + 1))) == NULL) goto DONE;
+      stack[idx][sp[idx]++] = i;
+    }
+    else if (islower(c)) {
+      idx = c - 'a';
+      if (sp[idx] > 0) {
+        int zo = stack[idx][--sp[idx]];
+        bpcov_digit(msa, zo, i, bcv);
+      }
+    }
+  }
+ DONE:
+  for (idx = 0; idx < 26; idx++) if (stack[idx] != NULL) free(stack[idx]);
+  return;
+}
+
 /* Function: cm_alignment_annotate_status()
  * Date:     EPN, Jun 2026 (w/Claude)
  *
  * Purpose:  Post-hoc structure-status annotation for a cmalign alignment, added
  *           as opt-in #=GR / #=GC lines. Computes everything over the FINISHED
  *           <msa> returned by Parsetrees2Alignment() (its aligned residues,
- *           consensus RF and SS_cons), mirroring cmsearch's match and NC lines
- *           (see cm_alidisplay.c). No parsetree re-walk: the
+ *           consensus RF, and pknot-overlaid SS_cons), mirroring the shipped
+ *           cmsearch PS line (see cm_alidisplay.c). No parsetree re-walk: the
  *           per-pair / per-singlet state is recovered from the gap pattern of
  *           each sequence and the MATP/MATL/MATR node->state->score lookup
  *           (cm->emap + cm->esc), reusing the shared cm_bp_match_marks() /
- *           cm_bp_nc_mark() / cm_singlet_mark() helpers so the marks match
- *           cmsearch exactly.
+ *           cm_bp_nc_mark() / cm_singlet_mark() / annotate_pknot_pairs_str()
+ *           helpers so the marks match cmsearch exactly.
  *
  *           If <do_perseq>: add ONE combined #=GR <seq> PS line per sequence,
- *           a fusion of cmsearch's match line and NC line. Marks (consensus
+ *           a fusion of cmsearch's match line and NC/PS line. Marks (consensus
  *           columns only):
+ *             '=' '$' 'x' : pknot pair maintained / covarying / broken
  *             'v' '?'     : nested pair broken-or-half-present / truncated half
  *             ':'         : consistent (pair score >= 0) base-pair substitution
  *             '+'         : favorable (singlet avg score > 0) singlet substitution
- *           Collision: a half-present nested pair resolves to the pair-status
- *           'v' (the present half's '+' is dropped). Everywhere else the marks
- *           are mutually exclusive, so the merge is lossless.
+ *           Collision: the only column where two marks compete is a pknot column
+ *           (an ML/MR singlet that can be both a '+' singlet-sub and a '='/'$'/'x'
+ *           pknot pair) -- pknot status wins, the '+' is dropped. The half-present
+ *           nested case similarly resolves to the pair-status 'v'. Everywhere else
+ *           the marks are mutually exclusive, so the merge is lossless.
  *           Every other column holds a NON-BLANK placeholder so the line is dense
  *           and re-readable by the standard Easel Stockholm parser:
  *             '.' insert/off-consensus col;  '~' missing/local-end (echo aseq);
  *             '-' deletion at a consensus col (echo aseq);  '_' present-unmarked.
- *           If <do_famcons>: add one #=GC bp_cons line: per consensus base
- *           pair, the fraction of sequences whose two residues form a canonical
+ *           If <do_famcons>: add one #=GC bp_cons line: per base pair (nested +
+ *           pknot), the fraction of sequences whose two residues form a canonical
  *           WC/GU pair, bucketed to the 0..9/'*' PP-digit convention at both
  *           paired columns; '.' if fewer than BP_CONS_MIN_NPAIR sequences have
  *           both residues present, and '.' at all non-pair/insert columns (dense,
  *           non-blank, SS_cons-like).
- *           If <do_famcov>: add one #=GC bp_cov line: per consensus base pair,
- *           the mutual information of the two columns, as a digit (see above).
  *
  *           Marks are placed on consensus (match) columns only; insert/EL columns
  *           get the '.'/'~' placeholder (match-column apos are fixed anchors, so
@@ -1706,6 +1774,7 @@ cm_alignment_annotate_status(CM_t *cm, char *errbuf, ESL_MSA *msa, int do_perseq
   int          *cpos2nd  = NULL;  /* [0..clen]   consensus pos -> CM node index                              */
   char         *modelstr = NULL;  /* [0..alen]   consensus residue per column ('.' off-consensus), NUL-term  */
   char         *ps       = NULL;  /* [0..alen]   per-seq combined #=GR PS line scratch                       */
+  char         *pk       = NULL;  /* [0..alen]   per-seq pknot-overlay scratch (blank input for helper)      */
   char         *bpc      = NULL;  /* [0..alen]   #=GC bp_cons line                                           */
   char         *bcv      = NULL;  /* [0..alen]   #=GC bp_cov  line                                           */
   int          *ct;
@@ -1743,8 +1812,8 @@ cm_alignment_annotate_status(CM_t *cm, char *errbuf, ESL_MSA *msa, int do_perseq
     else if (cm->ndtype[nd] == MATR_nd) { cpos2nd[emap->rpos[nd]] = nd; }
   }
 
-  /* (3) consensus-residue string aligned to msa columns, for the identity
-   *     tests. Same source as cm_alidisplay's "model" line. */
+  /* (3) consensus-residue string aligned to msa columns, for the pknot pass and
+   *     identity tests. Same source as cm_alidisplay's "model" line. */
   ESL_ALLOC(modelstr, sizeof(char) * (alen+1));
   for (apos = 0; apos < alen; apos++) modelstr[apos] = '.';
   modelstr[alen] = '\0';
@@ -1756,6 +1825,7 @@ cm_alignment_annotate_status(CM_t *cm, char *errbuf, ESL_MSA *msa, int do_perseq
   /* ---- per-seq combined #=GR PS line ---- */
   if (do_perseq) {
     ESL_ALLOC(ps, sizeof(char) * (alen+1));
+    ESL_ALLOC(pk, sizeof(char) * (alen+1));
     for (i = 0; i < msa->nseq; i++) {
       char *aseq = msa->aseq[i];
 
@@ -1765,7 +1835,7 @@ cm_alignment_annotate_status(CM_t *cm, char *errbuf, ESL_MSA *msa, int do_perseq
        *       '~'  missing / local-end (echo aseq's '~')
        *       '-'  deletion at a consensus column (echo aseq's '-')
        *       '_'  consensus column, residue present, no mark
-       *     Marks (set in (b)) overwrite these. */
+       *     Marks (set in (b)/(c)) overwrite these. */
       for (apos = 0; apos < alen; apos++) {
         char c = aseq[apos];
         if (modelstr[apos] != '.') {             /* consensus (match) column */
@@ -1810,7 +1880,7 @@ cm_alignment_annotate_status(CM_t *cm, char *errbuf, ESL_MSA *msa, int do_perseq
           }
           else if ((Lres && R == '-') || (L == '-' && Rres)) {  /* half present (MATP_ML/MR) */
             /* pair status 'v' wins the column; the present half's singlet '+'
-             * is dropped. */
+             * is dropped (same precedence as pknot-status over '+'). */
             ps[apos] = 'v'; ps[papos] = 'v';
           }
           else if (Lres) { ps[apos]  = '?'; }    /* right side truncated/missing */
@@ -1818,13 +1888,26 @@ cm_alignment_annotate_status(CM_t *cm, char *errbuf, ESL_MSA *msa, int do_perseq
           /* else: both deleted/missing -> placeholders remain */
         }
         else {
-          /* unpaired in nested ct: a singlet (MATL/MATR). '+' mark only. */
+          /* unpaired in nested ct: a true singlet (MATL/MATR) or a pknot column
+           * (pknots are modeled as singlets). Singlet '+' mark only; the pknot
+           * pair status (=/$/x) is overlaid in (c) and wins the column. */
           if (isalpha((int) seq)) {
             int   sstate = cm->nodemap[nd];      /* MATL_ML or MATR_MR (first state of node) */
             float avgsc  = esl_abc_FAvgScore(cm->abc, esl_abc_DigitizeSymbol(cm->abc, toupper((int)seq)), cm->esc[sstate]);
             if (cm_singlet_mark(toupper((int)seq), modelstr[apos], avgsc) == MM_SUBSINGLET) ps[apos] = MM_SUBSINGLET;
           }
         }
+      }
+
+      /* (c) pknot pair status (=/$/x) overlay. Computed on a blank scratch (the
+       *     shared annotate_pknot_pairs_str() requires blank input and asserts
+       *     it), then merged in -- pknot status WINS any '+' at the shared
+       *     ML/MR pknot column. */
+      if (cm->flags & CMH_PKNOT) {
+        for (apos = 0; apos < alen; apos++) pk[apos] = ' ';
+        pk[alen] = '\0';
+        annotate_pknot_pairs_str(msa->ss_cons, aseq, modelstr, pk, alen);
+        for (apos = 0; apos < alen; apos++) if (pk[apos] != ' ') ps[apos] = pk[apos];
       }
 
       if ((status = esl_msa_AppendGR(msa, "PS", i, ps)) != eslOK) ESL_XFAIL(status, errbuf, "cm_alignment_annotate_status(): AppendGR PS failed");
@@ -1846,6 +1929,8 @@ cm_alignment_annotate_status(CM_t *cm, char *errbuf, ESL_MSA *msa, int do_perseq
       if ((apos1 = cpos2apos[cpos]) < 0 || (apos2 = cpos2apos[pcpos]) < 0) continue;
       bp_cons_digit(cm, msa, apos1, apos2, bpc);
     }
+    /* pknot pairs from the SS_cons pushdown (alignment columns directly) */
+    if (cm->flags & CMH_PKNOT) bp_cons_pknot(cm, msa, bpc, alen);
 
     if ((status = esl_msa_AppendGC(msa, "bp_cons", bpc)) != eslOK) ESL_XFAIL(status, errbuf, "cm_alignment_annotate_status(): AppendGC bp_cons failed");
   }
@@ -1865,6 +1950,8 @@ cm_alignment_annotate_status(CM_t *cm, char *errbuf, ESL_MSA *msa, int do_perseq
       if ((apos1 = cpos2apos[cpos]) < 0 || (apos2 = cpos2apos[pcpos]) < 0) continue;
       bpcov_digit(msa, apos1, apos2, bcv);
     }
+    /* pknot pairs from the SS_cons pushdown (alignment columns directly) */
+    if (cm->flags & CMH_PKNOT) bpcov_pknot(msa, bcv, alen);
 
     if ((status = esl_msa_AppendGC(msa, "bp_cov", bcv)) != eslOK) ESL_XFAIL(status, errbuf, "cm_alignment_annotate_status(): AppendGC bp_cov failed");
   }
@@ -1872,6 +1959,7 @@ cm_alignment_annotate_status(CM_t *cm, char *errbuf, ESL_MSA *msa, int do_perseq
   FreeEmitMap(emap);
   free(cpos2apos); free(cpos2nd); free(modelstr);
   if (ps  != NULL) free(ps);
+  if (pk  != NULL) free(pk);
   if (bpc != NULL) free(bpc);
   if (bcv != NULL) free(bcv);
   return eslOK;
@@ -1882,6 +1970,7 @@ cm_alignment_annotate_status(CM_t *cm, char *errbuf, ESL_MSA *msa, int do_perseq
   if (cpos2nd   != NULL) free(cpos2nd);
   if (modelstr  != NULL) free(modelstr);
   if (ps  != NULL) free(ps);
+  if (pk  != NULL) free(pk);
   if (bpc != NULL) free(bpc);
   if (bcv != NULL) free(bcv);
   return status;
@@ -1901,14 +1990,15 @@ cm_alignment_annotate_status(CM_t *cm, char *errbuf, ESL_MSA *msa, int do_perseq
  *
  * Pairs are keyed in consensus-position space (1..clen), which is invariant
  * across blocks (only the insert columns between consensus columns vary). The
- * pair list (from cm->cmcons->ct) is built once in _Create() and consumed
- * unchanged by every _Add().
+ * pair list (nested from cm->cmcons->ct + pknot from the SS_cons pushdown) is
+ * built once in _Create() and consumed unchanged by every _Add().
  *****************************************************************/
 
 /* Function: cm_alignment_bpcons_acc_Create()
- * Purpose:  Build the consensus base-pair list and a zeroed accumulator.
- *           <msa> is any one block's MSA, used only for the contract check
- *           that it carries RF/SS_cons. Returns eslEMEM / eslEINCOMPAT
+ * Purpose:  Build the consensus base-pair list (nested + pknot) and a zeroed
+ *           accumulator. <msa> is any one block's MSA, used only for its
+ *           SS_cons (pknot annotation) and RF (apos->cpos map); the pknot
+ *           structure is identical across blocks. Returns eslEMEM / eslEINCOMPAT
  *           on failure (errbuf set), with *ret_acc = NULL.
  */
 int
@@ -1916,9 +2006,15 @@ cm_alignment_bpcons_acc_Create(CM_t *cm, char *errbuf, ESL_MSA *msa, int do_cov,
 {
   int            status;
   CM_BPCONS_ACC *acc       = NULL;
+  int           *apos2cpos = NULL;   /* [0..alen-1] consensus pos (1..clen) of an aln col, 0 if insert/non-consensus */
+  int            sp[26];
+  int           *stack[26];          /* pknot pushdown stacks A..Z, freed in ERROR */
   int           *ct;
   int            clen = cm->clen;
-  int            cpos, np;
+  int            alen = msa->alen;
+  int            cpos, apos, np, idx, c;
+
+  for (idx = 0; idx < 26; idx++) { sp[idx] = 0; stack[idx] = NULL; }
 
   if (cm->cmcons == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_alignment_bpcons_acc_Create(): cm->cmcons is NULL");
   if (msa->rf == NULL || msa->ss_cons == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_alignment_bpcons_acc_Create(): msa lacks RF/SS_cons");
@@ -1946,14 +2042,47 @@ cm_alignment_bpcons_acc_Create(CM_t *cm, char *errbuf, ESL_MSA *msa, int do_cov,
     acc->lcpos[np] = cpos; acc->rcpos[np] = pcpos; np++;
   }
 
+  /* pknot pairs from the SS_cons pushdown (same discipline as bp_cons_pknot /
+   * esl_wuss2ct), mapped from alignment columns to consensus positions via RF.
+   * Pknot columns are MATL/MATR singlets -> consensus columns, so each maps to a
+   * valid cpos (defensively skip any that don't). */
+  if (cm->flags & CMH_PKNOT) {
+    ESL_ALLOC(apos2cpos, sizeof(int) * alen);
+    cpos = 0;
+    for (apos = 0; apos < alen; apos++) {
+      if ((! esl_abc_CIsGap(cm->abc, msa->rf[apos])) && (! esl_abc_CIsMissing(cm->abc, msa->rf[apos]))) { cpos++; apos2cpos[apos] = cpos; }
+      else apos2cpos[apos] = 0;
+    }
+    for (apos = 0; apos < alen; apos++) {
+      c = (int) msa->ss_cons[apos];
+      if (isupper(c)) {
+        idx = c - 'A';
+        if (stack[idx] == NULL) ESL_ALLOC(stack[idx], sizeof(int) * (alen+1));
+        stack[idx][sp[idx]++] = apos;
+      }
+      else if (islower(c)) {
+        idx = c - 'a';
+        if (sp[idx] > 0) {
+          int ao = stack[idx][--sp[idx]];
+          int lc = apos2cpos[ao], rc = apos2cpos[apos];
+          if (lc > 0 && rc > 0) { acc->lcpos[np] = lc; acc->rcpos[np] = rc; np++; }
+        }
+      }
+    }
+  }
+
   acc->npair = np;
   for (np = 0; np < acc->npair; np++) { acc->n_pair[np] = 0; acc->n_wc[np] = 0; }
   if (acc->joint != NULL) { int k; for (k = 0; k < 16 * acc->npair; k++) acc->joint[k] = 0; }
 
+  for (idx = 0; idx < 26; idx++) if (stack[idx] != NULL) free(stack[idx]);
+  if (apos2cpos != NULL) free(apos2cpos);
   *ret_acc = acc;
   return eslOK;
 
  ERROR:
+  for (idx = 0; idx < 26; idx++) if (stack[idx] != NULL) free(stack[idx]);
+  if (apos2cpos != NULL) free(apos2cpos);
   cm_alignment_bpcons_acc_Destroy(acc);
   *ret_acc = NULL;
   return status;
@@ -2059,7 +2188,7 @@ cm_alignment_bpcons_acc_Finalize(CM_t *cm, char *errbuf, CM_BPCONS_ACC *acc, con
  * Purpose:  Build the dense '.'-initialized #=GC bp_cov string for the merged
  *           alignment from the per-pair joint nt tables accumulated over all
  *           blocks. <rf2print> is the final merged RF; its consensus columns are
- *           mapped to each pair and the encoded covariation digit
+ *           mapped to each pair and the encoded covariation digit (MI -> P1)
  *           written at both columns. <acc->joint> must be non-NULL (--bpcov was
  *           requested). Caller frees *ret_bpc.
  *
@@ -2129,7 +2258,6 @@ cm_alignment_bpcons_acc_Destroy(CM_BPCONS_ACC *acc)
   free(acc);
   return;
 }
-
 
 /* Function: ParsetreeScore_Global2Local()
  * Date:     EPN, Wed May 23 09:57:38 2007
@@ -3743,7 +3871,7 @@ cm_StochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *
   /* ensure a full alignment to ROOT_S (v==0) is possible */
   if (cp9b->jmin[0] > L || cp9b->jmax[0] < L)               ESL_FAIL(eslEINVAL, errbuf, "cm_StochasticParsetreeHB(): L (%d) is outside ROOT_S's j band (%d..%d)\n", L, cp9b->jmin[0], cp9b->jmax[0]);
   jp_0 = L - jmin[0];
-  if (cp9b->hdmin[0][jp_0] > L || cp9b->hdmax[0][jp_0] < L) ESL_FAIL(eslEINVAL, errbuf, "cm_StochasticParsetreeHB(): L (%d) is outside ROOT_S's d band (%d..%d)\n", L, cp9b->hdmin[0][jp_0], cp9b->hdmax[0][jp_0]);
+  if (hd_min(cp9b, 0, jp_0) > L || hd_max(cp9b, 0, jp_0) < L) ESL_FAIL(eslEINVAL, errbuf, "cm_StochasticParsetreeHB(): L (%d) is outside ROOT_S's d band (%d..%d)\n", L, hd_min(cp9b, 0, jp_0), hd_max(cp9b, 0, jp_0));
 
   /* Create a parse tree structure and initialize it by adding the root state, with appropriate mode */
   tr = CreateParsetree(100);
@@ -3764,7 +3892,7 @@ cm_StochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *
       y = cm->cfirst[v];
       z = cm->cnum[v];
       jp_z = j-jmin[z];
-      k = kp_z + hdmin[z][jp_z];  /* k = offset len of right fragment */
+      k = kp_z + hd_min(cp9b, z, jp_z);  /* k = offset len of right fragment */
 
       /* Determine valid k values. This is complex, and
        * uncommented. It was taken from
@@ -3777,9 +3905,9 @@ cm_StochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *
       jp_y = j - jmin[y];
       jp_z = j - jmin[z];
       if(j < jmin[v] || j > jmax[v])               ESL_FAIL(eslFAIL, errbuf, "cm_StochasticParsetreeHB() B_st v: %d j: %d outside band jmin: %d jmax: %d\n", v, j, jmin[v], jmax[v]);
-      if(d < hdmin[v][jp_v] || d > hdmax[v][jp_v]) ESL_FAIL(eslFAIL, errbuf, "cm_StochasticParsetreeHB() B_st v: %d j: %d d: %d outside band dmin: %d dmax: %d\n", v, j, d, hdmin[v][jp_v], hdmax[v][jp_v]);
-      kmin = ((j-jmax[y]) > (hdmin[z][jp_z])) ? (j-jmax[y]) : hdmin[z][jp_z];
-      kmax = ( jp_y       < (hdmax[z][jp_z])) ?  jp_y       : hdmax[z][jp_z];
+      if(d < hd_min(cp9b, v, jp_v) || d > hd_max(cp9b, v, jp_v)) ESL_FAIL(eslFAIL, errbuf, "cm_StochasticParsetreeHB() B_st v: %d j: %d d: %d outside band dmin: %d dmax: %d\n", v, j, d, hd_min(cp9b, v, jp_v), hd_max(cp9b, v, jp_v));
+      kmin = ((j-jmax[y]) > (hd_min(cp9b, z, jp_z))) ? (j-jmax[y]) : hd_min(cp9b, z, jp_z);
+      kmax = ( jp_y       < (hd_max(cp9b, z, jp_z))) ?  jp_y       : hd_max(cp9b, z, jp_z);
 
       cur_vec_size = d+1;
       esl_vec_FSet(pA, cur_vec_size, IMPOSSIBLE); /* only valid k's will be reset to a non-IMPOSSIBLE score */
@@ -3788,9 +3916,9 @@ cm_StochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *
        * and choose a k. 
        */
       for(k = kmin; k <= kmax; k++) { 
-	if((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k]) { 
-	  kp_z       = k-hdmin[z][jp_z];
-	  dp_y       = d-hdmin[y][jp_y-k];
+	if((k >= d - hd_max(cp9b, y, jp_y-k)) && k <= d - hd_min(cp9b, y, jp_y-k)) { 
+	  kp_z       = k-hd_min(cp9b, z, jp_z);
+	  dp_y       = d-hd_min(cp9b, y, jp_y-k);
 	  pA[k]      = alpha[y][jp_y-k][dp_y-k] + alpha[z][jp_z][kp_z]; 
 	}
       }
@@ -3850,14 +3978,17 @@ cm_StochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *
 	  y = cm->cfirst[v] + yoffset;
 	  if((j-sdr) >= jmin[y] && (j-sdr) <= jmax[y]) { /* j-sdr is valid in y */
 	    jp_y_sdr = j - jmin[y] - sdr;
-	    if((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) { 
-	      dp_y_sd = d - hdmin[y][jp_y_sdr] - sd;
+	    if((d-sd) >= hd_min(cp9b, y, jp_y_sdr) && (d-sd) <= hd_max(cp9b, y, jp_y_sdr)) { 
+	      dp_y_sd = d - hd_min(cp9b, y, jp_y_sdr) - sd;
 	      pA[yoffset] = cm->tsc[v][yoffset] + alpha[y][jp_y_sdr][dp_y_sd];
 	    }
 	  }
 	}
 	if(el_is_possible) {
-	  pA[cur_vec_size-1] = cm->endsc[v] + alpha[cm->M][j][d]; /* remember EL deck is non-banded */
+	  /* EL deck value alpha[cm->M][j][d] is the fixed ramp el_selfsc * d;
+	   * cm_InsideAlignHB() does not fill that deck (sparse EL), so reading
+	   * it here gave IMPOSSIBLE and EL could never be sampled. */
+	  pA[cur_vec_size-1] = cm->endsc[v] + (cm->el_selfsc * d);
 	}
 	/* sample yoffset */
 	if((status = sample_helper(r, pA, validA, cur_vec_size, &choice)) != eslOK) ESL_FAIL(status, errbuf, "cm_StochasticParsetree() number of valid transitions (non-B_st) is 0.");
@@ -3877,8 +4008,8 @@ cm_StochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *
 	  if(NOT_IMPOSSIBLE(cm->beginsc[y])) { 
 	    if(j >= jmin[y] && j <= jmax[y]) { /* j is valid in y */
 	      jp_y = j - jmin[y];
-	      if(d >= hdmin[y][jp_y] && d <= hdmax[y][jp_y]) { 
-		dp_y = d - hdmin[y][jp_y];
+	      if(d >= hd_min(cp9b, y, jp_y) && d <= hd_max(cp9b, y, jp_y)) { 
+		dp_y = d - hd_min(cp9b, y, jp_y);
 		pA[y] = cm->beginsc[y] + alpha[y][jp_y][dp_y];   
 	      }
 	    }
@@ -4594,8 +4725,8 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
   }
   if (cp9b->jmin[0] > L || cp9b->jmax[0] < L)               ESL_FAIL(eslEINVAL, errbuf, "cm_TrStochasticParsetreeHB(): L (%d) is outside ROOT_S's j band (%d..%d)\n", L, cp9b->jmin[0], cp9b->jmax[0]);
   jp_0 = L - jmin[0];
-  if (cp9b->hdmin[0][jp_0] > L || cp9b->hdmax[0][jp_0] < L) ESL_FAIL(eslEINVAL, errbuf, "cm_TrStochasticParsetreeHB(): L (%d) is outside ROOT_S's d band (%d..%d)\n", L, cp9b->hdmin[0][jp_0], cp9b->hdmax[0][jp_0]);
-  Lp_0 = L - hdmin[0][jp_0];
+  if (hd_min(cp9b, 0, jp_0) > L || hd_max(cp9b, 0, jp_0) < L) ESL_FAIL(eslEINVAL, errbuf, "cm_TrStochasticParsetreeHB(): L (%d) is outside ROOT_S's d band (%d..%d)\n", L, hd_min(cp9b, 0, jp_0), hd_max(cp9b, 0, jp_0));
+  Lp_0 = L - hd_min(cp9b, 0, jp_0);
 
   /* Truncated specific step: sample alignment marginal mode if <preset_mode> == TRMODE_UNKNOWN */
   parsetree_mode = preset_mode;
@@ -4654,8 +4785,8 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
       /* check for errors */
       if(j > jmax[v])        ESL_FAIL(eslFAIL, errbuf, "cm_TrStochasticParsetreeHB(), j: %d > jmax[%d] (%d)\n", j, v, jmax[v]);
       if(j < jmin[v])        ESL_FAIL(eslFAIL, errbuf, "cm_TrStochasticParsetreeHB(), j: %d < jmin[%d] (%d)\n", j, v, jmin[v]);
-      if(d > hdmax[v][jp_v]) ESL_FAIL(eslFAIL, errbuf, "cm_TrStochasticParsetreeHB(), d: %d > hdmax[%d] (%d)\n", d, v, hdmax[v][jp_v]);
-      if(d < hdmin[v][jp_v]) ESL_FAIL(eslFAIL, errbuf, "cm_TrStochasticParsetreeHB(), d: %d < hdmin[%d] (%d)\n", d, v, hdmin[v][jp_v]);
+      if(d > hd_max(cp9b, v, jp_v)) ESL_FAIL(eslFAIL, errbuf, "cm_TrStochasticParsetreeHB(), d: %d > hdmax[%d] (%d)\n", d, v, hd_max(cp9b, v, jp_v));
+      if(d < hd_min(cp9b, v, jp_v)) ESL_FAIL(eslFAIL, errbuf, "cm_TrStochasticParsetreeHB(), d: %d < hdmin[%d] (%d)\n", d, v, hd_min(cp9b, v, jp_v));
       if(v_mode == TRMODE_J && (! cp9b->Jvalid[v]))  ESL_FAIL(eslFAIL, errbuf, "cm_TrStochasticParsetreeHB(), mode is TRMODE_J for v: %d but cp9b->Jvalid[v] is FALSE", v);
       if(v_mode == TRMODE_L && (! cp9b->Lvalid[v]))  ESL_FAIL(eslFAIL, errbuf, "cm_TrStochasticParsetreeHB(), mode is TRMODE_L for v: %d but cp9b->Lvalid[v] is FALSE", v);
       if(v_mode == TRMODE_R && (! cp9b->Rvalid[v]))  ESL_FAIL(eslFAIL, errbuf, "cm_TrStochasticParsetreeHB(), mode is TRMODE_R for v: %d but cp9b->Rvalid[v] is FALSE", v);
@@ -4666,7 +4797,7 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
       y = cm->cfirst[v];
       z = cm->cnum[v];
       jp_z = j-jmin[z];
-      k = kp_z + hdmin[z][jp_z];  /* k = offset len of right fragment */
+      k = kp_z + hd_min(cp9b, z, jp_z);  /* k = offset len of right fragment */
 
       /* Determine valid k values, this is mode-independent. This is
        * complex, and uncommented. It was taken from
@@ -4679,9 +4810,9 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
       jp_y = j - jmin[y];
       jp_z = j - jmin[z];
       if(j < jmin[v] || j > jmax[v])               ESL_FAIL(eslFAIL, errbuf, "cm_TrStochasticParsetreeHB() B_st v: %d j: %d outside band jmin: %d jmax: %d\n", v, j, jmin[v], jmax[v]);
-      if(d < hdmin[v][jp_v] || d > hdmax[v][jp_v]) ESL_FAIL(eslFAIL, errbuf, "cm_TrStochasticParsetreeHB() B_st v: %d j: %d d: %d outside band dmin: %d dmax: %d\n", v, j, d, hdmin[v][jp_v], hdmax[v][jp_v]);
-      kmin = ((j-jmax[y]) > (hdmin[z][jp_z])) ? (j-jmax[y]) : hdmin[z][jp_z];
-      kmax = ( jp_y       < (hdmax[z][jp_z])) ?  jp_y       : hdmax[z][jp_z];
+      if(d < hd_min(cp9b, v, jp_v) || d > hd_max(cp9b, v, jp_v)) ESL_FAIL(eslFAIL, errbuf, "cm_TrStochasticParsetreeHB() B_st v: %d j: %d d: %d outside band dmin: %d dmax: %d\n", v, j, d, hd_min(cp9b, v, jp_v), hd_max(cp9b, v, jp_v));
+      kmin = ((j-jmax[y]) > (hd_min(cp9b, z, jp_z))) ? (j-jmax[y]) : hd_min(cp9b, z, jp_z);
+      kmax = ( jp_y       < (hd_max(cp9b, z, jp_z))) ?  jp_y       : hd_max(cp9b, z, jp_z);
 
       cur_vec_size = d+3;
       esl_vec_FSet(pA, cur_vec_size, IMPOSSIBLE); /* only valid k's will be reset to a non-IMPOSSIBLE score, d+1 and d+2 store special cases in L and R mode, remain invalid for J and T mode */
@@ -4695,9 +4826,9 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
 	/* v is J, y and z must be J mode also */
 	if(cp9b->Jvalid[y] && cp9b->Jvalid[z]) { 
 	  for(k = kmin; k <= kmax; k++) { 
-	    if((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k]) { 
-	      kp_z       = k-hdmin[z][jp_z];
-	      dp_y       = d-hdmin[y][jp_y-k];
+	    if((k >= d - hd_max(cp9b, y, jp_y-k)) && k <= d - hd_min(cp9b, y, jp_y-k)) { 
+	      kp_z       = k-hd_min(cp9b, z, jp_z);
+	      dp_y       = d-hd_min(cp9b, y, jp_y-k);
 	      pA[k]      = Jalpha[y][jp_y-k][dp_y-k] + Jalpha[z][jp_z][kp_z]; 
 	      kA[k]      = k;
 	      y_modeA[k] = TRMODE_J;
@@ -4711,9 +4842,9 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
 	/* v is L, y will be J or L, z will be L */
 	if(filled_L && cp9b->Jvalid[y] && cp9b->Lvalid[z]) { 
 	  for(k = kmin; k <= kmax; k++) { 
-	    if((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k]) { 
-	      kp_z       = k-hdmin[z][jp_z];
-	      dp_y       = d-hdmin[y][jp_y-k];
+	    if((k >= d - hd_max(cp9b, y, jp_y-k)) && k <= d - hd_min(cp9b, y, jp_y-k)) { 
+	      kp_z       = k-hd_min(cp9b, z, jp_z);
+	      dp_y       = d-hd_min(cp9b, y, jp_y-k);
 	      pA[k]      = Jalpha[y][jp_y-k][dp_y-k] + Lalpha[z][jp_z][kp_z]; 
 	      kA[k]      = k;
 	      y_modeA[k] = TRMODE_J;
@@ -4724,8 +4855,8 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
 	/* allow for the two special L cases, if they're valid */
 	if(j >= jmin[y] && j <= jmax[y]) { /* j is valid in y */
 	  jp_y = j-jmin[y];
-	  if(d >= hdmin[y][jp_y] && d <= hdmax[y][jp_y]) { /* d is valid in j, y */
-	    dp_y = d - hdmin[y][jp_y];
+	  if(d >= hd_min(cp9b, y, jp_y) && d <= hd_max(cp9b, y, jp_y)) { /* d is valid in j, y */
+	    dp_y = d - hd_min(cp9b, y, jp_y);
 	    if(cp9b->Jvalid[y]) { 
 	      pA[d+1]      = Jalpha[y][jp_y][dp_y]; /* entire sequence is on left in J mode, k is 0 */
 	      kA[d+1]      = 0;
@@ -4745,9 +4876,9 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
 	/* v is R, y will be R, z will be J or R */
 	if(filled_R && cp9b->Rvalid[y] && cp9b->Jvalid[z]) { 
 	  for(k = kmin; k <= kmax; k++) { 
-	    if((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k]) { 
-	      kp_z       = k-hdmin[z][jp_z];
-	      dp_y       = d-hdmin[y][jp_y-k];
+	    if((k >= d - hd_max(cp9b, y, jp_y-k)) && k <= d - hd_min(cp9b, y, jp_y-k)) { 
+	      kp_z       = k-hd_min(cp9b, z, jp_z);
+	      dp_y       = d-hd_min(cp9b, y, jp_y-k);
 	      pA[k]      = Ralpha[y][jp_y-k][dp_y-k] + Jalpha[z][jp_z][kp_z]; 
 	      kA[k]      = k;
 	      y_modeA[k] = TRMODE_R;
@@ -4758,8 +4889,8 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
 	/* allow for the two special R cases, if they're valid */
 	if(j >= jmin[z] && j <= jmax[z]) { 
 	  jp_z = j-jmin[z];
-	  if(d >= hdmin[z][jp_z] && d <= hdmax[z][jp_z]) { 
-	    dp_z = d - hdmin[z][jp_z];
+	  if(d >= hd_min(cp9b, z, jp_z) && d <= hd_max(cp9b, z, jp_z)) { 
+	    dp_z = d - hd_min(cp9b, z, jp_z);
 	    if(cp9b->Jvalid[z]) { 
 	      pA[d+1]      = Jalpha[z][jp_z][dp_z]; /* entire sequence is on right in J mode, k is d */
 	      kA[d+1]      = d;
@@ -4781,9 +4912,9 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
 	  kn = ESL_MAX(kmin, 1);
 	  kx = ESL_MIN(kmax, d);
 	  for(k = kn; k <= kx; k++) { 
-	    if((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k]) { 
-	      kp_z       = k-hdmin[z][jp_z];
-	      dp_y       = d-hdmin[y][jp_y-k];
+	    if((k >= d - hd_max(cp9b, y, jp_y-k)) && k <= d - hd_min(cp9b, y, jp_y-k)) { 
+	      kp_z       = k-hd_min(cp9b, z, jp_z);
+	      dp_y       = d-hd_min(cp9b, y, jp_y-k);
 	      pA[k]      = Ralpha[y][jp_y-k][dp_y-k] + Lalpha[z][jp_z][kp_z]; 
 	      kA[k]      = k;
 	      y_modeA[k] = TRMODE_R;
@@ -4853,8 +4984,8 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
 	for(y = 0; y < cm->M; y++) { 
 	  if(j >= jmin[y] && j <= jmax[y]) { /* j is valid in y */
 	    jp_y = j - jmin[y];
-	    if(d >= hdmin[y][jp_y] && d <= hdmax[y][jp_y]) { 
-	      dp_y = d - hdmin[y][jp_y];
+	    if(d >= hd_min(cp9b, y, jp_y) && d <= hd_max(cp9b, y, jp_y)) { 
+	      dp_y = d - hd_min(cp9b, y, jp_y);
 	      trpenalty = (cm->flags & CMH_LOCAL_BEGIN) ? cm->trp->l_ptyAA[pty_idx][y] : cm->trp->g_ptyAA[pty_idx][y];
 	      if(NOT_IMPOSSIBLE(trpenalty)) { 
 		if(            do_J && cp9b->Jvalid[y])   pA[y] = trpenalty + Jalpha[y][jp_y][dp_y];   
@@ -4948,17 +5079,19 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
 	    y = cm->cfirst[v] + yoffset;
 	    if((j-vms_sdr) >= jmin[y] && (j-vms_sdr) <= jmax[y]) { /* j-vms_sdr is valid in y */
 	      jp_y_vms_sdr = j - jmin[y] - vms_sdr;
-	      if((d-vms_sd) >= hdmin[y][jp_y_vms_sdr] && (d-vms_sd) <= hdmax[y][jp_y_vms_sdr]) { 
-		dp_y_vms_sd = d - hdmin[y][jp_y_vms_sdr] - vms_sd;
+	      if((d-vms_sd) >= hd_min(cp9b, y, jp_y_vms_sdr) && (d-vms_sd) <= hd_max(cp9b, y, jp_y_vms_sdr)) { 
+		dp_y_vms_sd = d - hd_min(cp9b, y, jp_y_vms_sdr) - vms_sd;
 		if(            do_J && cp9b->Jvalid[y]) JpA[yoffset] = cm->tsc[v][yoffset] + Jalpha[y][jp_y_vms_sdr][dp_y_vms_sd];
 		if(filled_L && do_L && cp9b->Lvalid[y]) LpA[yoffset] = cm->tsc[v][yoffset] + Lalpha[y][jp_y_vms_sdr][dp_y_vms_sd];
 		if(filled_R && do_R && cp9b->Rvalid[y]) RpA[yoffset] = cm->tsc[v][yoffset] + Ralpha[y][jp_y_vms_sdr][dp_y_vms_sd];
 	      }
 	    }
 	  }
-	  if(Jel_is_possible) JpA[Jntrans-1] = cm->endsc[v] + Jalpha[cm->M][j][d]; /* remember EL deck is non-banded */
-	  if(Lel_is_possible) LpA[Lntrans-1] = cm->endsc[v] + Lalpha[cm->M][j][d]; /* remember EL deck is non-banded */
-	  if(Rel_is_possible) RpA[Rntrans-1] = cm->endsc[v] + Ralpha[cm->M][j][d]; /* remember EL deck is non-banded */
+	  /* EL deck value Xalpha[cm->M][j][d] is the fixed ramp el_selfsc * d;
+	   * cm_TrInsideAlignHB() no longer fills that deck (sparse EL). */
+	  if(Jel_is_possible) JpA[Jntrans-1] = cm->endsc[v] + (cm->el_selfsc * d); /* == Jalpha[cm->M][j][d] */
+	  if(Lel_is_possible) LpA[Lntrans-1] = cm->endsc[v] + (cm->el_selfsc * d); /* == Lalpha[cm->M][j][d] */
+	  if(Rel_is_possible) RpA[Rntrans-1] = cm->endsc[v] + (cm->el_selfsc * d); /* == Ralpha[cm->M][j][d] */
 	
 	  /* create one big vector of all possibilities, and for convenience keep track of mode and mode-specific index (q) of each */
 	  cur_vec_size = Jntrans + Lntrans + Rntrans;
@@ -5086,199 +5219,6 @@ cm_TrStochasticParsetreeHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, char pre
 
   ESL_FAIL(status, errbuf, "out of memory");
   return status; /* NEVER REACHED */
-}
-
-
-/* Function: cm_parsetree_Doctor()
- * Incept:   EPN, Mon Apr 23 12:48:32 2012 
- *           SRE, Thu May 21 08:45:46 2009 [p7_trace_Doctor()]
- * 
- * Purpose:  CMs with zero basepairs are parameterized similarly to
- *           Plan 7 HMMs, so we can use the ML p7 HMM with fast HMM
- *           algorithms and approximate the CM as closely as
- *           possible. This means we need to disallow MATL_D->MATL_IL
- *           and MATL_IL->MATL_D transitions, as explained below in
- *           the notes from p7_trace_Doctor() from hmmer. 
- *
- *           We should only enter this function if our CM has zero
- *           basepairs, in which case we'll only have three types of
- *           nodes in the CM: MATL nodes, 1 ROOT node and 1 END node.
- *           The only types of D->I transitions we'll have will be
- *           MATL_D->MATL_IL. We can have three types of I->D
- *           transitions, MATL_IL->MATL_D or ROOT_IL->MATL_D or
- *           ROOT_IR->MATL_D. We only remove the first type
- *           (MATL_IL->MATL_D). Normally, later on in the build
- *           process we'll zero out any transitions involving ROOT_IL
- *           and ROOT_IR states in cm_zero_flanking_insert_counts().
- *
- *           If the parsetree is truncated (from a sequence with
- *           missing data '~' at its 5' and/or 3' end), Transmogrify()
- *           gives each node the truncation mode implied by its
- *           subtree's span, and we must preserve those modes. The
- *           possible patterns are:
- *           1. all TRMODE_J nodes     ending with an END_nd
- *           2. all TRMODE_L nodes not ending with an END_nd
- *           3. a ROOT_S in a marginal mode (TRMODE_R or TRMODE_T),
- *              then a (possibly empty) prefix of marginal nodes that
- *              do not emit to the left: ROOT_IR and MATL_ML nodes in
- *              TRMODE_R if the parsetree ends with an END_nd, or
- *              MATL_ML nodes in TRMODE_T if it does not; then all
- *              remaining nodes in TRMODE_J (ending with an END_nd)
- *              or TRMODE_L (not ending with an END_nd). ROOT_IL
- *              nodes may be TRMODE_L in an otherwise TRMODE_J
- *              parsetree, because the ROOT_IL span includes any 3'
- *              missing data.
- *           Case 3 happens for 5' truncated sequences whose first
- *           residue is emitted by an IL state, or that have residues
- *           in the 3' flanking insert (ROOT_IR), or that start in the
- *           5' flanking insert (ROOT_IL) and are also 3' truncated.
- *           The marginal prefix nodes correspond to missing data and
- *           must stay marginal: forcing them to TRMODE_J would make
- *           them appear to emit residues they do not have.
- *
- *           A parsetree with no MATL nodes (only flanking insert
- *           residues) has no D->I or I->D transitions, and is
- *           returned unchanged.
- *
- *           We verify we have one of these cases and fail with an
- *           error if not. D->I and I->D pairs are always within the
- *           final TRMODE_J or TRMODE_L section, so collapsing them
- *           never merges nodes of different modes (we check this).
- *
- *           HMMER's p7_trace_Doctor() notes:
- *           Plan 7 disallows D->I and I->D "chatter" transitions.
- *           However, these transitions will be implied by many
- *           alignments. trace_doctor() arbitrarily collapses I->D or
- *           D->I into a single M position in the trace.
- *           
- *           trace_doctor does not examine any scores when it does
- *           this. In ambiguous situations (D->I->D) the symbol
- *           will be pulled arbitrarily to the left, regardless
- *           of whether that's the best column to put it in or not.
- *           
- * Args:     tr      - trace to doctor
- *           opt_ndi - optRETURN: number of DI transitions doctored
- *           opt_nid - optRETURN: number of ID transitions doctored
- * 
- * Return:   <eslOK> on success, and the parsetree <tr> is modified.
- *
- * Throws:   <eslEINVAL> if parsetree has any states other than
- *           ROOT_S, ROOT_IL, ROOT_IR, END_E, MATL_ML, MATL_IL, MATL_D;
- *           errbuf filled.
- */               
-int
-cm_parsetree_Doctor(CM_t *cm, char *errbuf, Parsetree_t *tr, int *opt_ndi, int *opt_nid)
-{
-  int opos;			/* position in old parsetree           */
-  int npos;			/* position in new parsetree (<= opos) */
-  int x;                        /* position ctr in parsetree */
-  int ndi, nid;			/* number of DI, ID transitions doctored */
-  int tail_mode;                /* TRMODE_J if parsetree ends with an END_E, else TRMODE_L */
-  int nmatl;                    /* number of MATL states in the parsetree */
-  int stid;                     /* state id of a parsetree node */
-
-  /* validate the parsetree states, should be ROOT_S->[ROOT_IL|ROOT_IR]_n->[MATL_{M,I,D}]_n->[END_E] */
-  if(tr->n < 1 || cm->stid[tr->state[0]] != ROOT_S) { 
-    ESL_FAIL(eslEINVAL, errbuf, "cm_parsetree_Doctor() parsetree doesn't begin with a ROOT_S state\n");
-  }
-  x = 1;
-  while(x < tr->n && (cm->stid[tr->state[x]] == ROOT_IL || cm->stid[tr->state[x]] == ROOT_IR)) x++;
-  nmatl = 0;
-  while(x < tr->n && (cm->stid[tr->state[x]] == MATL_ML || cm->stid[tr->state[x]] == MATL_IL || cm->stid[tr->state[x]] == MATL_D)) { x++; nmatl++; }
-  if(x < tr->n && cm->stid[tr->state[x]] == END_E) x++;
-  if(x != tr->n) { 
-    ESL_FAIL(eslEINVAL, errbuf, "cm_parsetree_Doctor() unexpected state id %s at position %d\n", CMStateid(cm->stid[tr->state[x]]), x);
-  }
-  /* no MATL states (sequence has only flanking insert residues): nothing to doctor */
-  if(nmatl == 0) { 
-    if (opt_ndi != NULL) *opt_ndi = 0;
-    if (opt_nid != NULL) *opt_nid = 0;
-    return eslOK;
-  }
-
-  /* validate the truncation modes, see 'Purpose' above for the possible cases */
-  tail_mode = (cm->stid[tr->state[tr->n-1]] == END_E) ? TRMODE_J : TRMODE_L;
-  x = 1;
-  if(tr->mode[0] != tail_mode) { 
-    /* case 3: ROOT_S in a marginal mode, then a prefix of marginal nodes */
-    if(! (tr->mode[0] == TRMODE_T || (tr->mode[0] == TRMODE_R && tail_mode == TRMODE_J))) { 
-      ESL_FAIL(eslEINVAL, errbuf, "cm_parsetree_Doctor() unable to determine case of truncation mode");
-    }
-    while(x < tr->n) { 
-      stid = cm->stid[tr->state[x]];
-      if     (tail_mode == TRMODE_J && tr->mode[x] == TRMODE_R && (stid == ROOT_IR || stid == MATL_ML)) x++;
-      else if(tail_mode == TRMODE_L && tr->mode[x] == TRMODE_T && stid == MATL_ML)                      x++;
-      else break;
-    }
-  }
-  for(; x < tr->n; x++) { 
-    if(tr->mode[x] != tail_mode && 
-       (! (tail_mode == TRMODE_J && tr->mode[x] == TRMODE_L && cm->stid[tr->state[x]] == ROOT_IL))) { 
-      ESL_FAIL(eslEINVAL, errbuf, "cm_parsetree_Doctor() unable to determine case of truncation mode");
-    }
-  }
-
-  /* overwrite the trace from left to right */
-  ndi  = nid  = 0; 
-  opos = npos = 0;
-  while (opos < tr->n) { 
-    /* first set data that is predetermined since we know we're all MATL nodes: 
-     * mode:  unchanged, each node keeps its own truncation mode
-     * nxtl:  always points to next position (except for final node, which we'll fix at end)
-     * nxtr:  always -1 
-     * prv:   always npos-1
-     * emitr: always == tr->emitr[opos] (only right emitters we'll have are ROOT_IRs)
-     * at next parsetree node.
-     */ 
-    tr->mode[npos]  = tr->mode[opos];
-    tr->nxtl[npos]  = npos+1;
-    tr->nxtr[npos]  = -1;
-    tr->prv[npos]   = npos-1;  /* even correct for npos == 0 */
-    tr->emitr[npos] = tr->emitr[opos]; /* this never changes */
-
-    /* D->I and I->D pairs should never span a change in truncation mode (see 'Purpose') */
-    if ((opos < (tr->n-1)) && (tr->mode[opos] != tr->mode[opos+1]) && 
-        (((cm->stid[tr->state[opos]] == MATL_D)  && (cm->stid[tr->state[opos+1]] == MATL_IL)) || 
-         ((cm->stid[tr->state[opos]] == MATL_IL) && (cm->stid[tr->state[opos+1]] == MATL_D)))) { 
-      ESL_FAIL(eslEINVAL, errbuf, "cm_parsetree_Doctor() D->I or I->D transition spans a change in truncation mode at position %d\n", opos);
-    }
-    /* fix implied D->I transitions; D transforms to M, I pulled in */
-    if ((opos < (tr->n-1)) && (cm->stid[tr->state[opos]] == MATL_D) && (cm->stid[tr->state[opos+1]] == MATL_IL)) {
-      tr->state[npos] = tr->state[opos] - 1; /* MATL_D --> MATL_ML */
-      tr->emitl[npos] = tr->emitl[opos+1];   /* insert char moves back */
-      opos += 2;
-      npos += 1;
-      ndi++;
-    } /* fix implied I->D transitions; D transforms to M, I is pushed in */
-    else if ((opos < (tr->n-1)) && (cm->stid[tr->state[opos]] == MATL_IL) && (cm->stid[tr->state[opos+1]] == MATL_D)) {
-      tr->state[npos] = tr->state[opos+1] - 1; /* MATL_D --> MATL_ML */
-      tr->emitl[npos] = tr->emitl[opos];       /* insert char moves back */
-      opos += 2;
-      npos += 1;
-      nid++; 
-    } /* else, we just copy state and emitl */
-    else {
-      tr->state[npos] = tr->state[opos];
-      tr->emitl[npos] = tr->emitl[opos];
-      opos++;
-      npos++;
-    }
-  }
-  tr->n    = npos;
-  /* fix nxtl and possible emitr for the final node */
-  tr->nxtl[tr->n-1] = -1;
-  if(tail_mode == TRMODE_J) { /* parsetree ends with END_E */
-    /* emitr for END_E are always -1 */
-    tr->emitr[tr->n-1] = -1;
-  }
-
-  /* we don't have to worry about changing anything else
-   * (i.e. is_std, nalloc, memblock, pass_idx, trpenalty)
-   */
-
-  if (opt_ndi != NULL) *opt_ndi = ndi;
-  if (opt_nid != NULL) *opt_nid = nid;
-  return eslOK;
 }
 
 

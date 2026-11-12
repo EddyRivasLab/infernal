@@ -452,15 +452,31 @@ main(int argc, char **argv)
       if ((status = cm_file_Read(cfg.cmfp, TRUE, &(cfg.abc), &cm)) != eslOK) cm_Fail("Ran out of CMs too early in pass 2");
       if (cm == NULL)                                                        cm_Fail("CM file %s was corrupted? Parse failed in pass 2", cfg.cmfile);
 
-      if(cm->expA != NULL) { 
-	for(i = 0; i < EXP_NMODES; i++) {
-          free(cm->expA[i]);
+      /* Store the freshly calibrated stats into the slot that matches this
+       * run's null3 setting, PRESERVING the other slot if the input CM carried
+       * it (store-both, briefs 26_0422-053/26_0422-069). Pass-2 cm_file_Read() above already
+       * repopulated cm->expA (on) and/or cm->expA_nonull3 (off) from the input
+       * file; we overwrite only our own slot. The off-set lives behind the v1c
+       * magic, set automatically by the writer when CMH_EXPTAIL_NONULL3_STATS
+       * is present. */
+      if(esl_opt_GetBoolean(go, "--nonull3")) {
+        /* --nonull3: fill the OFF slot; preserve any existing ON slot. */
+        if(cm->expA_nonull3 != NULL) {
+          for(i = 0; i < EXP_NMODES; i++) free(cm->expA_nonull3[i]);
+          free(cm->expA_nonull3);
         }
-        free(cm->expA);
+        cm->expA_nonull3 = cfg.expAA[cmi];
+        cm->flags |= CMH_EXPTAIL_NONULL3_STATS;
       }
-
-      cm->expA   = cfg.expAA[cmi];
-      cm->flags |= CMH_EXPTAIL_STATS; 
+      else {
+        /* default: fill the ON slot; preserve any existing OFF slot. */
+        if(cm->expA != NULL) {
+          for(i = 0; i < EXP_NMODES; i++) free(cm->expA[i]);
+          free(cm->expA);
+        }
+        cm->expA   = cfg.expAA[cmi];
+        cm->flags |= CMH_EXPTAIL_STATS;
+      }
 
       if(esl_opt_GetBoolean(go, "--merge")) { 
         status = esl_strcat(&cm->comlog, -1, "\n", -1);
@@ -471,7 +487,7 @@ main(int argc, char **argv)
       cm_AppendComlog(cm, go->argc, go->argv, FALSE, 0); /* we don't check return status, it should be fine, but if not, we don't want to die now... */
 
       if(cfg.cmfp->is_binary) { 
-	if ((status = cm_file_WriteBinary(outfp, -1, cm, NULL)) != eslOK) ESL_FAIL(status, errbuf, "binary CM save failed");
+	if ((status = cm_file_WriteBinary(outfp, -1, cm, NULL, NULL)) != eslOK) ESL_FAIL(status, errbuf, "binary CM save failed");
       }
       else { 
 	if ((status = cm_file_WriteASCII(outfp, -1, cm)) != eslOK) ESL_FAIL(status, errbuf, "CM save failed");
