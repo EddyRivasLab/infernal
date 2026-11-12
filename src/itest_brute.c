@@ -568,7 +568,7 @@ create_brute_matl_cm(ESL_ALPHABET *abc, char *errbuf, int do_local, struct cm_br
   /* add END_nd  */
   v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, END_nd);
 
-  if((status = cm_from_guide(cm, errbuf, gtr, FALSE)) != eslOK) cm_Fail("Failed to create CM: %s", errbuf);
+  if((status = cm_from_guide(cm, errbuf, gtr)) != eslOK) cm_Fail("Failed to create CM: %s", errbuf);
   FreeParsetree(gtr);
 
   cm->t[0][0] = prm->t0t1;      	/* cm->t[0][0] ROOT_S  (0) -> ROOT_IL (1) */
