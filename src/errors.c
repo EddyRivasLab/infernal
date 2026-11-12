@@ -66,3 +66,36 @@ cm_Fail(char *format, ...)
   exit(1);
 }
 
+
+/* Function:  cm_StageVerbose()
+ * Incept:    EPN, Sun Oct 11 2026 (w/Claude)
+ *
+ * Purpose:   Return TRUE if developer diagnostics are on (--devdiag;
+ *            see cm_SetStageVerbose()), FALSE if not.
+ *
+ *            Developer diagnostics -- which alignment engine or band
+ *            builder ran, and per-stage timings -- are printed only
+ *            when they are on.
+ */
+static int stage_verbose = FALSE; /* see cm_StageVerbose(), cm_SetStageVerbose() */
+
+int
+cm_StageVerbose(void)
+{
+  return stage_verbose;
+}
+
+/* Function:  cm_SetStageVerbose()
+ * Incept:    EPN, Tue Oct 20 2026 (w/Claude)
+ *
+ * Purpose:   Turn developer diagnostics on (<on> = TRUE) or off for the
+ *            rest of the run. Programs call this right after option
+ *            parsing when --devdiag is used (brief 26_0821-135). The
+ *            INFERNAL_STAGE_VERBOSE environment variable that also did
+ *            this was removed in brief 26_0821-174.
+ */
+void
+cm_SetStageVerbose(int on)
+{
+  stage_verbose = on ? TRUE : FALSE;
+}
