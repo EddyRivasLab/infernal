@@ -24,10 +24,35 @@
 #include "infernal.h"
 
 static float post_code_to_avg_pp(char postcode);
-/* bp_is_canonical(), cm_bp_match_marks(), cm_bp_nc_mark() and cm_singlet_mark()
- * are extern (declared in infernal.h) so the cmalign per-seq annotation path can
- * share the exact same classification rules.
+/* bp_is_canonical(), cm_bp_match_marks(), cm_bp_nc_mark(), cm_singlet_mark()
+ * and annotate_pknot_pairs_str() are now extern (declared in infernal.h) so the
+ * cmalign per-seq annotation path can share the exact same classification rules.
  */
+
+/* Pseudoknot pair-status (PS line) glyphs.
+ * The NC base-pair-quality line is relabeled "PS" (Pair Status) on all CM hits.
+ * For pseudoknot pairs (singlet ML/MR columns, disjoint from the MATP columns
+ * that carry the nested 'v'/'?' markup) we overlay one of these three marks at
+ * both ends of each complete pknot pair. Gathered here so they are easy to
+ * change in one place. See annotate_pknot_pairs_str().
+ *   Note the documented asymmetry: nested base pairs still get negative-only
+ *   markup ('v' broken nested, '?' truncated); only pknot pairs get the full
+ *   positive+negative (=/$/x) scheme. */
+#define PS_PKNOT_MAINT   '='   /* pknot pair maintained: WC/GU and observed pair == consensus pair          */
+#define PS_PKNOT_COVARY  '$'   /* pknot pair covarying: WC/GU but observed pair differs from consensus (high-value) */
+#define PS_PKNOT_BROKEN  'x'   /* pknot pair broken: observed pair non-WC/GU, or a column deleted ('-')      */
+#define PS_NESTED_TRUNC  '?'   /* truncated half: pair partner is missing-data ('~'), pair can't be evaluated */
+#define PS_PKNOT_SHIFT_RECOVERABLE 'o' /* pknot pair broken, BUT a per-stem register shift would restore WC/GU pairing to it (alert only; see cm_pknot_MarkShiftRecoverable()) */
+/* MM_SUBPAIR / MM_SUBSINGLET glyphs are defined in infernal.h (shared with cmalign). */
+
+/* Parameters for the register-shift-recoverable overlay (cm_pknot_MarkShiftRecoverable()).
+ * These reproduce slip_metric.py defaults of brief 26_0617-013 verbatim:
+ *   K:    scan gapless-space open-side shifts k = -K..+K.
+ *   T_LO: a stem is a candidate only if its in-register WC count slidWC(0) <= T_LO.
+ *   T_hi: computed per stem as E-1 (E = # complete pknot pairs in the stem); the winning
+ *         shift must reach slidWC(k) >= T_hi. Not a #define because it depends on E. */
+#define PKNOT_SHIFT_K     3
+#define PKNOT_SHIFT_T_LO  2
 
 /*****************************************************************
  * 1. The CM_ALIDISPLAY object
@@ -452,6 +477,7 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
 	  do_left = TRUE;
 	  if (cm->rf != NULL) lrf = cm->rf[lc+1];
 	  lstr   = cm->cmcons->cstr[lc];
+	  if ((cm->flags & CMH_PKNOT) && isalpha((int) cm->pknot[lc+1])) lstr = cm->pknot[lc+1]; /* Feature B pknot overlay */
 	  lcons  = (cm->flags & CMH_CONS) ? cm->consensus[(lc+1)] : cm->cmcons->cseq[lc];
 	  if (cm->sttype[v] == MP_st || cm->sttype[v] == ML_st) {
 	    lseq = cm->abc->sym[symi];
@@ -466,6 +492,7 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
 	  do_right = TRUE;
 	  if (cm->rf != NULL) rrf = cm->rf[rc+1];
 	  rstr   = cm->cmcons->cstr[rc];
+	  if ((cm->flags & CMH_PKNOT) && isalpha((int) cm->pknot[rc+1])) rstr = cm->pknot[rc+1]; /* Feature B pknot overlay */
 	  rcons  = (cm->flags & CMH_CONS) ? cm->consensus[(rc+1)] : cm->cmcons->cseq[rc];
 	  if (cm->sttype[v] == MP_st || cm->sttype[v] == MR_st) {
 	    rseq = cm->abc->sym[symj];
@@ -483,29 +510,29 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
       lmid = rmid = ' ';
       lnnc = rnnc = ' ';
       if (cm->sttype[v] == MP_st) {
-	if (mode == TRMODE_L) { 
+	if (mode == TRMODE_L) {
 	  if(lseq == toupper(lcons)) lmid = lseq;
 	  lnnc = '?';
 	}
-	else if (mode == TRMODE_R) { 
+	else if (mode == TRMODE_R) {
 	  if(rseq == toupper(rcons)) rmid = rseq;
 	  rnnc = '?';
 	}
-	else if (mode == TRMODE_J) { 
+	else if (mode == TRMODE_J) {
 	  /* shared classification: identity-letter / ':' (consistent sub) for the
 	   * mline, and 'v' (negative non-canonical) for the ncline. */
 	  char clmid, crmid;  /* lmid/rmid are int here; helper takes char* */
-	  tmpsc = DegeneratePairScore(cm->abc, cm->esc[v], symi, symj); 
+	  tmpsc = DegeneratePairScore(cm->abc, cm->esc[v], symi, symj);
 	  cm_bp_match_marks(lseq, rseq, lcons, rcons, tmpsc, &clmid, &crmid);
 	  lmid = clmid; rmid = crmid;
 	  lnnc = rnnc = cm_bp_nc_mark(lseq, rseq, tmpsc);
 	}
-      } 
+      }
       else if ((cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) &&
-	       (mode == TRMODE_J || mode == TRMODE_L)) { 
+	       (mode == TRMODE_J || mode == TRMODE_L)) {
 	lmid = cm_singlet_mark(lseq, lcons, esl_abc_FAvgScore(cm->abc, symi, cm->esc[v]));
-      } 
-      else if ((cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) && 
+      }
+      else if ((cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) &&
 	       (mode == TRMODE_J || mode == TRMODE_R)) {
 	rmid = cm_singlet_mark(rseq, rcons, esl_abc_FAvgScore(cm->abc, symj, cm->esc[v]));
       }
@@ -588,10 +615,23 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
   if(cm->rf != NULL) ad->rfline[ad->N] = '\0';
   ad->ncline[ad->N] = '\0';
   ad->csline[ad->N] = '\0';
+  /* Feature B: keep any pseudoknot letter on the CS line whose partner isn't present in this
+   * hit's displayed alignment (truncated away, or simply not spanned by local coverage), and
+   * mark it '?' on ncline instead of erasing it to '.'. */
+  if (cm->flags & CMH_PKNOT) cm_pknot_MarkOrphansTrunc(ad->csline, ad->ncline, ad->N);
   ad->model[ad->N]  = '\0';
   ad->mline[ad->N]  = '\0';
   ad->aseq[ad->N]   = '\0';
-  if(ppstr != NULL)  ad->ppline[ad->N] = '\0'; 
+  if(ppstr != NULL)  ad->ppline[ad->N] = '\0';
+  /* PS line: overlay pseudoknot pair-status marks (=/$/x) onto ncline. Done
+   * here (after FixBrokenString fixed csline and the lines are NUL-terminated)
+   * so the marks are baked into ncline before serialization. */
+  if (cm->flags & CMH_PKNOT) annotate_pknot_pairs_str(ad->csline, ad->aseq, ad->model, ad->ncline, ad->N);
+  /* Alert-only overlay: for each broken ('x') pknot pair, mark it 'o' instead if a
+   * per-stem register shift would restore WC/GU pairing to it. Runs after the =/$/x
+   * classification above (needs the final marks to know which positions are 'x').
+   * Never changes the reported alignment; cmsearch/cmscan only (not cmalign). */
+  if (cm->flags & CMH_PKNOT) cm_pknot_MarkShiftRecoverable(ad->csline, ad->aseq, ad->ncline, ad->N);
   ad->sqfrom      = tr->emitl[0] + seqoffset-1;
   ad->sqto        = tr->emitr[0] + seqoffset-1;
   ad->cfrom_emit  = cfrom_emit;
@@ -625,6 +665,36 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
  *            was written for special pipeline runs which use an 
  *            HMM only. 
  *
+ *            For a LOCAL HMM only hit (<is_glocal> FALSE), <cfrom_span>/
+ *            <cto_span> are just set equal to <cfrom_emit>/<cto_emit>
+ *            (<p7ad->hmmfrom>/<p7ad->hmmto>), as before: truncation is
+ *            undefined for a local hit, and cm_alidisplay_TruncString()
+ *            special-cases <ad->hmmonly> to print "-" for it regardless.
+ *
+ *            For a GLOCAL HMM only hit (<is_glocal> TRUE, --hmmonly -g,
+ *            brief 26_0824-076), <cfrom_span>/<cto_span>/<cfrom_emit>/
+ *            <cto_emit> are built to follow the same convention CM hits
+ *            use (ParsetreeToCMBounds()): span is where pass <pass_idx>
+ *            "guesses" a full (untruncated) hit would be, which here is
+ *            always 1..M, and emit is what the trace actually spans. The
+ *            generic glocal OA trace is wing-retracted (entry B->Mk,
+ *            exit Mk->E; no explicit delete states at the ends), so a
+ *            trace that starts at model position k > 1 could be a
+ *            terminal deletion (ordinary glocal entry, ends up at k by
+ *            chance) or genuine truncation (this pass's Rgm/Tgm profile
+ *            enters anywhere): the trace alone can't tell them apart,
+ *            only the pipeline pass (<pass_idx>) can. So: emit is 1 (M)
+ *            unless the pass forces that end (<cm_pli_PassEnforcesFirstRes>/
+ *            <cm_pli_PassEnforcesFinalRes>) AND the trace's own hmmfrom
+ *            (hmmto) is short of it, in which case emit is that hmmfrom
+ *            (hmmto) -- real truncation, nothing added to the display.
+ *            Otherwise the display is extended with hmmfrom-1 (M-hmmto)
+ *            delete columns at that end, so what's printed matches what's
+ *            claimed (a terminal deletion, not a truncation): the CM
+ *            equivalent already displays deleted consensus columns at the
+ *            ends of an unforced hit, and this makes the HMM-only display
+ *            do the same.
+ *
  * Args:      cm           - model
  *            errbuf       - for error messages
  *            sq           - the sequence, parsetree corresponds to subseq beginning at seqoffset
@@ -632,6 +702,12 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
  *            p7sc         - score of envelope p7ad was derived from
  *            p7pp         - avg pp of all aligned residues in envelope P7_ALIDISPLAY was derived from
  *            p7ad         - P7_ALIDISPLAY to convert 
+ *            om           - profile p7ad's trace is relative to; only read for its consensus/cs/rf
+ *                           text, to fill delete columns added for a glocal terminal deletion (ignored
+ *                           if <is_glocal> is FALSE, since no columns are ever added then)
+ *            is_glocal    - TRUE if this is a glocal HMM only hit (--hmmonly -g), FALSE if local
+ *            pass_idx     - the pipeline pass (PLI_PASS_*) p7ad's hit was found on; ignored if
+ *                           <is_glocal> is FALSE
  *            ret_ad       - RETURN: CM_ALIDISPLAY, allocated and filled here.
  *
  * Returns:   eslOK on success.
@@ -640,25 +716,46 @@ cm_alidisplay_Create(CM_t *cm, char *errbuf, CM_ALNDATA *adata, const ESL_SQ *sq
  * Xref:      STL6 p.58
  */
 int
-cm_alidisplay_CreateFromP7(CM_t *cm, char *errbuf, const ESL_SQ *sq, int64_t seqoffset, float p7sc, float p7pp, P7_ALIDISPLAY *p7ad, CM_ALIDISPLAY **ret_ad)
+cm_alidisplay_CreateFromP7(CM_t *cm, char *errbuf, const ESL_SQ *sq, int64_t seqoffset, float p7sc, float p7pp, P7_ALIDISPLAY *p7ad, P7_OPROFILE *om, int is_glocal, int pass_idx, CM_ALIDISPLAY **ret_ad)
 {
   int            status;
   CM_ALIDISPLAY *ad = NULL;      /* alidisplay structure we're building       */
   int            n;
   int            cm_namelen, cm_acclen, cm_desclen;
   int            sq_namelen, sq_acclen, sq_desclen;
-  int            len;
+  int            len;             /* length of the displayed alignment (model/mline/aseq/csline/...) */
   int            len_el;
   int            pos;		  /* position in ad->mem */
   int            x; 		  /* residue position */
+  int            k;               /* model consensus position */
   float         *act = NULL;      /* [0..cm->abc->K-1], count of residue in hit */
-  int            n5p_skipped = 0; /* number of 5' match positions skipped (p7ad->hmmfrom-1) */
-  int            n3p_skipped = 0; /* number of 3' match positions skipped (p7ad->M - p7ad->hmmto) */
+  int            n5p_skipped = 0; /* number of 5' match positions skipped (p7ad->hmmfrom-1); EL display only */
+  int            n3p_skipped = 0; /* number of 3' match positions skipped (p7ad->M - p7ad->hmmto); EL display only */
+  int            force5, force3;  /* does the pass force the sequence's first/final residue into the hit? */
+  int            ext5 = 0, ext3 = 0; /* number of delete columns prepended/appended to the display, glocal only */
+  int            new_cfrom_span, new_cto_span, new_cfrom_emit, new_cto_emit;
 
-  len = p7ad->N;
-  n5p_skipped = p7ad->hmmfrom -1;
+  n5p_skipped = p7ad->hmmfrom - 1;
   n3p_skipped = p7ad->M - p7ad->hmmto;
-  len_el = len + n5p_skipped + n3p_skipped;
+
+  if(is_glocal) { 
+    force5 = cm_pli_PassEnforcesFirstRes(pass_idx);
+    force3 = cm_pli_PassEnforcesFinalRes(pass_idx);
+    new_cfrom_span = 1;
+    new_cto_span   = p7ad->M;
+    if(force5 && p7ad->hmmfrom > 1) { new_cfrom_emit = p7ad->hmmfrom; ext5 = 0;           }
+    else                            { new_cfrom_emit = 1;             ext5 = n5p_skipped; }
+    if(force3 && p7ad->hmmto < p7ad->M) { new_cto_emit = p7ad->hmmto; ext3 = 0;           }
+    else                                { new_cto_emit = p7ad->M;    ext3 = n3p_skipped; }
+  }
+  else { 
+    new_cfrom_span = new_cfrom_emit = p7ad->hmmfrom;
+    new_cto_span   = new_cto_emit   = p7ad->hmmto;
+  }
+
+  len    = p7ad->N + ext5 + ext3;
+  len_el = p7ad->N + n5p_skipped + n3p_skipped; /* unrelated to ext5/ext3: the EL-inclusive display below
+                                                  * always pads to the full model, regardless of truncation */
 
   /* Allocate the char arrays, we copy aseq into aseq_el, rf into
    * rfline_el and ppline into ppline_el for consistency with
@@ -673,7 +770,7 @@ cm_alidisplay_CreateFromP7(CM_t *cm, char *errbuf, const ESL_SQ *sq, int64_t seq
   cm_desclen = (cm->desc != NULL ? strlen(cm->desc) : 0);  n += cm_desclen + 1; 
   sq_namelen = strlen(sq->name);                           n += sq_namelen + 1;
   sq_acclen  = strlen(sq->acc);                            n += sq_acclen  + 1; /* sq->acc is "\0" when unset */
-  sq_desclen = strlen(sq->desc);                           n += sq_desclen + 1; /* sq->desc is "\0" when unset */
+  sq_desclen = strlen(sq->desc);                            n += sq_desclen + 1; /* sq->desc is "\0" when unset */
 
   ESL_ALLOC(ad, sizeof(CM_ALIDISPLAY));
   ad->mem          = NULL;
@@ -684,17 +781,18 @@ cm_alidisplay_CreateFromP7(CM_t *cm, char *errbuf, const ESL_SQ *sq, int64_t seq
   ad->matrix_Mb    = 0.0;  /* unknown */
   ad->elapsed_secs = 0.0;  /* unknown */
   ad->hmmonly      = TRUE; 
+  ad->glocal       = is_glocal;
   ad->N            = len;
-  ad->N_el         = len + n5p_skipped + n3p_skipped;
+  ad->N_el         = len_el;
 
   ad->clen = cm->clen;
 
   ad->sqfrom     = p7ad->sqfrom;
   ad->sqto       = p7ad->sqto;
-  ad->cfrom_emit = p7ad->hmmfrom;
-  ad->cto_emit   = p7ad->hmmto;
-  ad->cfrom_span = p7ad->hmmfrom;
-  ad->cto_span   = p7ad->hmmto;
+  ad->cfrom_emit = new_cfrom_emit;
+  ad->cto_emit   = new_cto_emit;
+  ad->cfrom_span = new_cfrom_span;
+  ad->cto_span   = new_cto_span;
 
   /* calculate GC frequency */
   ESL_ALLOC(act, sizeof(float) * cm->abc->K);
@@ -729,35 +827,65 @@ cm_alidisplay_CreateFromP7(CM_t *cm, char *errbuf, const ESL_SQ *sq, int64_t seq
   strcpy(ad->sqacc,   sq->acc);
   strcpy(ad->sqdesc,  sq->desc);
 
-  /* Copy strings from p7ad */
-  if(p7ad->rfline) strcpy(ad->rfline,  p7ad->rfline);
-  strcpy(ad->csline,  p7ad->csline);
-  strcpy(ad->model,   p7ad->model);
-  strcpy(ad->mline,   p7ad->mline);
-  strcpy(ad->aseq,    p7ad->aseq);
-  if(p7ad->ppline) strcpy(ad->ppline,  p7ad->ppline);
+  /* Copy strings from p7ad, at offset ext5 (0 unless we're adding leading delete columns, glocal
+   * only). If ext5 and/or ext3 are nonzero, fill the added columns with a delete column's usual
+   * text: om's consensus/cs/rf letter, '-' for aseq, ' ' for mline, '.' for ppline -- the same
+   * convention HMMER's own p7_alidisplay.c uses for a D state (brief 26_0824-076). */
+  memcpy(ad->model  + ext5, p7ad->model,  p7ad->N);
+  memcpy(ad->mline  + ext5, p7ad->mline,  p7ad->N);
+  memcpy(ad->aseq   + ext5, p7ad->aseq,   p7ad->N);
+  memcpy(ad->csline + ext5, p7ad->csline, p7ad->N);
+  if(p7ad->rfline) memcpy(ad->rfline + ext5, p7ad->rfline, p7ad->N);
+  if(p7ad->ppline) memcpy(ad->ppline + ext5, p7ad->ppline, p7ad->N);
+  for(x = 0; x < ext5; x++) { 
+    k = x + 1; /* model consensus position 1..ext5 */
+    ad->model[x]  = om->consensus[k];
+    ad->mline[x]  = ' ';
+    ad->aseq[x]   = '-';
+    ad->csline[x] = om->cs[k];
+    if(ad->rfline != NULL) ad->rfline[x] = om->rf[k];
+    if(ad->ppline != NULL) ad->ppline[x] = '.';
+  }
+  for(x = 0; x < ext3; x++) { 
+    k = p7ad->hmmto + x + 1; /* model consensus position hmmto+1..M */
+    ad->model[ext5 + p7ad->N + x]  = om->consensus[k];
+    ad->mline[ext5 + p7ad->N + x]  = ' ';
+    ad->aseq[ext5 + p7ad->N + x]   = '-';
+    ad->csline[ext5 + p7ad->N + x] = om->cs[k];
+    if(ad->rfline != NULL) ad->rfline[ext5 + p7ad->N + x] = om->rf[k];
+    if(ad->ppline != NULL) ad->ppline[ext5 + p7ad->N + x] = '.';
+  }
+  ad->model[len]  = '\0';
+  ad->mline[len]  = '\0';
+  ad->aseq[len]   = '\0';
+  ad->csline[len] = '\0';
+  if(ad->rfline != NULL) ad->rfline[len] = '\0';
+  if(ad->ppline != NULL) ad->ppline[len] = '\0';
 
   /* Create aseq_el, rfline_el, and ppline_el. aseq_el and ppline_el
    * are copies of p7ad->aseq p7ad->ppline with n5p_skipped '-'
    * characters prepended and n3p_skipped '-' characters appended.
    * rfline_el is a copy of p7ad->rfline but with 'x' instead
    * '-' (to indicate the skipped positions were match positions).
+   * (Unaffected by ext5/ext3 above: this EL-inclusive display always
+   * pads to the full model from p7ad->hmmfrom/hmmto, regardless of
+   * how cfrom_emit/cto_emit ended up labeling truncation.)
    */
   for(x = 0; x < n5p_skipped; x++) ad->aseq_el[x] = '-';
-  memcpy(ad->aseq_el + n5p_skipped, p7ad->aseq, ad->N);
-  for(x = ad->N + n5p_skipped; x < ad->N_el; x++) ad->aseq_el[x] = '-';
+  memcpy(ad->aseq_el + n5p_skipped, p7ad->aseq, p7ad->N);
+  for(x = p7ad->N + n5p_skipped; x < ad->N_el; x++) ad->aseq_el[x] = '-';
   ad->aseq_el[ad->N_el] = '\0';
 
   for(x = 0; x < n5p_skipped; x++) ad->rfline_el[x] = 'x';
   /* copy p7ad->model NOT p7ad->rfline into p7ad->rfline_el (p7ad->rfline is not mandatory) */
-  memcpy(ad->rfline_el + n5p_skipped, p7ad->model, ad->N);
-  for(x = ad->N + n5p_skipped; x < ad->N_el; x++) ad->rfline_el[x] = 'x';
+  memcpy(ad->rfline_el + n5p_skipped, p7ad->model, p7ad->N);
+  for(x = p7ad->N + n5p_skipped; x < ad->N_el; x++) ad->rfline_el[x] = 'x';
   ad->rfline_el[ad->N_el] = '\0';
 
   if(p7ad->ppline) { 
     for(x = 0; x < n5p_skipped; x++) ad->ppline_el[x] = '-';
-    memcpy(ad->ppline_el + n5p_skipped, p7ad->ppline, ad->N);
-    for(x = ad->N + n5p_skipped; x < ad->N_el; x++) ad->ppline_el[x] = '-';
+    memcpy(ad->ppline_el + n5p_skipped, p7ad->ppline, p7ad->N);
+    for(x = p7ad->N + n5p_skipped; x < ad->N_el; x++) ad->ppline_el[x] = '-';
     ad->ppline_el[ad->N_el] = '\0';
   }
   else { 
@@ -1078,7 +1206,7 @@ cm_bp_match_marks(char lseq, char rseq, char lcons, char rcons, float pairsc, ch
  * Date:     EPN, Sun Jun 28 2026 (w/Claude)
  *
  * Purpose:  Shared classification of a both-residues-present (Joint-mode MP)
- *           consensus base pair for the negative-non-canonical "NC" (ncline)
+ *           consensus base pair for the negative-non-canonical "PS" (ncline)
  *           mark: returns 'v' iff the observed pair scores negative AND is not a
  *           canonical WC/GU pair; ' ' otherwise. (The 'v' for half-present pairs
  *           and the '?' for truncated pairs are state/gap-pattern based and set
@@ -1110,6 +1238,333 @@ cm_singlet_mark(char seq, char cons, float avgsc)
   if (seq == toupper(cons)) return seq;
   else if (avgsc > 0)       return MM_SUBSINGLET;
   return ' ';
+}
+
+/* Function: annotate_pknot_pairs_str()
+ *
+ * Purpose:  Overlay pseudoknot pair-status marks (=/$/x) onto the <out> line
+ *           (the "PS" line for cmsearch alidisplay, or a per-seq #=GR PS line
+ *           for cmalign), at both ends of each complete pknot pair. Generalized
+ *           from the old annotate_pknot_pairs(ad): operates on plain strings so
+ *           both the alidisplay path (ss=csline, aseq, model=consensus residues,
+ *           out=ncline) and the cmalign path (ss=msa->ss_cons, aseq=msa->aseq[i],
+ *           model=consensus-residue string, out=per-seq PS) share one rule.
+ *
+ *           Requires that <ss> has already had incomplete pknot pairs resolved,
+ *           so that only complete pairs still carry their (upper/lower) letters.
+ *           The two callers use different upstream functions for this, and that
+ *           difference is exactly what keeps their orphan-handling independent:
+ *             - cmsearch/cmscan (ss=ad->csline): cm_pknot_MarkOrphansTrunc() runs
+ *               first (cm_alidisplay_Create()) -- it KEEPS an orphan letter (partner
+ *               missing, whether from truncation or ordinary local-alignment
+ *               coverage) and marks its <out> (ncline) position '?' directly.
+ *               By the time this function's pushdown scan reaches that letter, it
+ *               is an unmatched open or an orphan close (sp[idx]==0); either way
+ *               the scan below simply never triggers its matched-close branch for
+ *               it, so it can't collide with -- or overwrite -- the '?' already
+ *               written by MarkOrphansTrunc.
+ *             - cmalign (ss=msa->ss_cons): cm_pknot_FixBrokenString() runs first
+ *               (cm_alignment_annotate_status()) -- it ERASES an orphan letter to
+ *               '.', so it never reaches this function's isupper()/islower() tests
+ *               at all. cmalign does NOT get orphan '?' marking (a deliberate
+ *               scope boundary, not a gap to close here).
+ *           Walk <ss> with the SAME per-letter pushdown discipline that
+ *           cm_pknot_FixBrokenString()/cm_pknot_MarkOrphansTrunc()/esl_wuss2ct()
+ *           use, recovering each complete pknot base pair (z_open, z_close), and
+ *           classify it from the observed residues <aseq> vs the consensus
+ *           residues <model>:
+ *             - missing-data ('~') on either side -> '?' on the PRESENT half only
+ *                                                    (truncated half; see note below)
+ *             - gap ('-') on either side, or ! bp_is_canonical(obs_l, obs_r) -> PS_PKNOT_BROKEN
+ *             - canonical AND observed pair == consensus pair           -> PS_PKNOT_MAINT
+ *             - canonical AND observed pair != consensus pair           -> PS_PKNOT_COVARY
+ *           The =/$/x mark is written at BOTH ends, into <out>; the '?' truncated
+ *           mark is written only at the present (non-'~') end (mirroring the nested
+ *           MATP mode-L/R rule). The '~' branch is cmalign-only: cmsearch's
+ *           cm_pknot_MarkOrphansTrunc() never leaves a '~' on ad->csline (it only
+ *           ever sees the real observed residue or a pknot letter, never missing-
+ *           data), so cmsearch never presents a '~'-bearing pknot pair here
+ *           (cmsearch output is unchanged). Pknot columns are ML/MR singlets,
+ *           disjoint from the MATP columns that carry the nested 'v'/'?' markup,
+ *           so the overlay only ever writes onto blank <out> positions; we
+ *           assert/skip defensively if not.
+ *
+ * Returns:  (void) On malloc failure for an internal stack, silently leaves the
+ *           remaining pairs unmarked (annotation is cosmetic; never fatal).
+ */
+void
+annotate_pknot_pairs_str(const char *ss, const char *aseq, const char *model, char *out, int N)
+{
+  int   sp[26];        /* stack pointers, one per pknot letter A-Z / a-z */
+  int  *stack[26];     /* per-letter stacks of open display positions     */
+  int   i, c, idx;
+
+  if (ss == NULL || aseq == NULL || model == NULL || out == NULL) return;
+  for (idx = 0; idx < 26; idx++) { sp[idx] = 0; stack[idx] = NULL; }
+
+  for (i = 0; i < N; i++) {
+    c = (int) ss[i];
+    if (isupper(c)) {
+      idx = c - 'A';
+      if (stack[idx] == NULL && (stack[idx] = malloc(sizeof(int) * (N + 1))) == NULL) goto DONE;
+      stack[idx][sp[idx]++] = i;
+    }
+    else if (islower(c)) {
+      idx = c - 'a';
+      if (sp[idx] > 0) {              /* matched close: recover the pair (z_open, z_close) */
+        int  zo = stack[idx][--sp[idx]];
+        int  zc = i;
+        char ol = aseq[zo],  orr = aseq[zc];
+        char ml = model[zo], mr  = model[zc];
+        /* pknot columns are singlets, disjoint from nested-pair MATP columns,
+         * so out must be blank here by construction. ESL_DASSERT1 catches a
+         * violation in debug builds; the runtime guard below additionally
+         * makes a release-build violation degrade to "this pair's mark is
+         * silently skipped" rather than "silently clobber whatever mark (e.g.
+         * a nested v/?) was already at this position" -- a future regression
+         * that breaks the disjointness invariant should lose a pknot mark,
+         * not corrupt an unrelated one. (review-012 ROBUSTNESS finding.) */
+        ESL_DASSERT1((out[zo] == ' ' && out[zc] == ' '));
+        if (out[zo] != ' ' || out[zc] != ' ') continue;
+        if (ol == '~' || orr == '~') {
+          /* One (or both) halves truncated away (missing-data '~'): the pair
+           * CANNOT be evaluated -- it is not "broken" (we don't know the absent
+           * residue), so it must not become 'x'. Mark the PRESENT (residue) half
+           * '?' -- the same truncated-half glyph the nested MATP path emits in
+           * mode L/R -- and leave the '~' half unmarked so its placeholder
+           * survives. A '-' (deletion) half here is NOT present, so it stays a
+           * placeholder too (matches the nested rule: only a present half is
+           * marked).
+           *   cmsearch never reaches this branch: its collapsed per-hit display
+           * has no missing-data '~' placeholder concept at all (truncated flanks
+           * are represented via the "*[N]*" collapse, not a per-column char), so
+           * <aseq> can never contain '~' on the cmsearch call path regardless of
+           * which upstream orphan-handling function ran (see this function's
+           * header comment). It only fires on cmalign's full-width per-seq
+           * alignment, where the partner column physically exists (another
+           * sequence spans it) but THIS sequence's residue there is missing.
+           * Hence cmsearch output is byte-identical across this change. */
+          if (isalpha((int) ol))  out[zo] = PS_NESTED_TRUNC;
+          if (isalpha((int) orr)) out[zc] = PS_NESTED_TRUNC;
+        }
+        else {
+          char mark;
+          if      (ol == '-' || orr == '-' || ! bp_is_canonical(ol, orr))     mark = PS_PKNOT_BROKEN;
+          else if (toupper(ol) == toupper(ml) && toupper(orr) == toupper(mr)) mark = PS_PKNOT_MAINT;
+          else                                                                mark = PS_PKNOT_COVARY;
+          out[zo] = mark;
+          out[zc] = mark;
+        }
+      }
+      /* sp[idx]==0 here is an orphan close (its partner absent from this hit's
+       * display) -- not a matched pair, nothing to do here on either caller's
+       * path. On cmsearch's path cm_pknot_MarkOrphansTrunc() already marked
+       * this ncline position '?' and left ss[i] as-is (the orphan letter is
+       * still visible but this scan's matched-close branch never fires for
+       * it). On cmalign's path cm_pknot_FixBrokenString() already erased ss[i]
+       * to '.' (no orphan '?' marking there, see function header), so this
+       * branch is unreachable for cmalign orphans (islower('.') is false). */
+    }
+  }
+
+ DONE:
+  for (idx = 0; idx < 26; idx++) if (stack[idx] != NULL) free(stack[idx]);
+  return;
+}
+
+/* ascending-integer comparator for qsort() (used by cm_pknot_MarkShiftRecoverable) */
+static int
+cmp_int_incr(const void *a, const void *b)
+{
+  int ia = *(const int *) a;
+  int ib = *(const int *) b;
+  return (ia < ib) ? -1 : (ia > ib) ? 1 : 0;
+}
+
+/* Function:  cm_pknot_MarkShiftRecoverable()
+ * Synopsis:  Overlay 'o' on broken pknot pairs that a register shift would restore to WC/GU.
+ *
+ * Purpose:   Post-hoc, ALERT-ONLY annotation pass over an already-produced
+ *            cmsearch/cmscan hit's PS line. For each pseudoknot pair currently
+ *            marked broken (PS_PKNOT_BROKEN, 'x') by annotate_pknot_pairs_str(),
+ *            test whether a single per-STEM uniform register shift of the stem's
+ *            5' (open) side would restore canonical Watson-Crick / GU wobble
+ *            pairing to it. If so, change that pair's 'x' mark to
+ *            PS_PKNOT_SHIFT_RECOVERABLE ('o') at BOTH ends, in place. Nothing
+ *            else is touched: this never re-scores, re-aligns, or changes what
+ *            cmsearch reports as its best alignment -- it is purely a "there is a
+ *            nearby alternate registration a human might want to look at" hint.
+ *
+ *            The check is brief 26_0617-013's slidWC(k) metric (its slip_metric.py),
+ *            ported here verbatim rather than re-derived:
+ *              - RES = gapless, uppercased residue string of the hit; pref[i] =
+ *                number of residue chars [A-Za-z] strictly before display column i
+ *                (= the 0-based index into RES of the residue AT column i). A raw
+ *                column-index shift would be WRONG when inserts/gaps intervene;
+ *                the shift is done in gapless (RES) space via pref[].
+ *              - Complete pknot pairs are recovered per stem letter with the same
+ *                per-letter pushdown discipline as annotate_pknot_pairs_str() /
+ *                cm_pknot_MarkOrphansTrunc(); antiparallel pairing pairs the i-th
+ *                ascending open column with the i-th descending close column.
+ *              - slidWC(k) shifts the OPEN side by k gapless residues (k = -K..+K,
+ *                K = PKNOT_SHIFT_K), keeps the close side in register, and counts
+ *                canonical pairs (bp_is_canonical(), whose WC/GU set is identical
+ *                to slip_metric.py's is_wc, DNA T equivalents included).
+ *              - A stem qualifies (RECOVER-SLIP) exactly on brief 26_0617-013's thresholds:
+ *                slidWC(0) is not already >= T_hi (else MAINTAINED), slidWC(0) <=
+ *                T_LO, and the best k!=0 reaches slidWC(k) >= T_hi, where
+ *                T_hi = E-1 (E = # complete pairs in the stem). Tie among winning
+ *                k is broken toward the most-negative k (matches slip_metric.py's
+ *                Python max() first-wins iteration).
+ *              - Only the individual currently-'x' pairs that actually flip to WC
+ *                under the winning shift become 'o' -- NOT a blanket mark on every
+ *                x in a recovering stem (brief 26_0617-027: 5 of stem B's 7 x's flip under
+ *                k=-1, not all 7). Pairs already =/$ are never touched, even if the
+ *                winning shift would "break" them.
+ *
+ *            Pseudoknot pairs ONLY: the mechanism argument (pknot columns are
+ *            scored as independent singlets with no pair-emission term, so nothing
+ *            in the CM rewards a WC-friendlier registration) is specific to pknot
+ *            columns. Nested MATP pairs already have a joint pair-emission score,
+ *            so their register is actively optimized and this blind spot does not
+ *            exist -- nested 'v'/'?' marks and MATP columns are never touched.
+ *            cmsearch/cmscan only; cmalign's per-seq PS line is out of scope.
+ *
+ *            Must run AFTER cm_pknot_MarkOrphansTrunc() and
+ *            annotate_pknot_pairs_str(): it needs the final =/$/x classification
+ *            already written into <out> to know which positions are candidates.
+ *
+ * Args:      ss   - consensus structure string (csline), pknot letters overlaid,
+ *                   0-based, length N.
+ *            aseq - the hit's aligned residue string (aseq), length N.
+ *            out  - the PS line (ncline) to overlay 'o' onto, length N. Only
+ *                   positions currently holding PS_PKNOT_BROKEN are ever changed.
+ *            N    - common length of ss/aseq/out.
+ *
+ * Returns:   (void). On malloc failure for an internal buffer, silently leaves the
+ *            remaining pairs unmarked (annotation is cosmetic; never fatal).
+ */
+void
+cm_pknot_MarkShiftRecoverable(const char *ss, const char *aseq, char *out, int N)
+{
+  int   sp[26];          /* per-letter stack pointers                                */
+  int  *stack[26];       /* per-letter stacks of unmatched open display columns      */
+  int  *Lcol[26];        /* per-letter open  display columns of complete pknot pairs */
+  int  *Rcol[26];        /* per-letter close display columns of complete pknot pairs */
+  int   npair[26];       /* per-letter complete-pair count (== E for that stem)      */
+  int  *pref = NULL;     /* pref[i] = # residue chars [A-Za-z] in aseq[0..i-1]        */
+  char *res  = NULL;     /* gapless, uppercased residue string of the hit            */
+  int   nres = 0;
+  int   i, c, idx, k;
+
+  if (ss == NULL || aseq == NULL || out == NULL) return;
+  for (idx = 0; idx < 26; idx++) { sp[idx]=0; stack[idx]=NULL; Lcol[idx]=NULL; Rcol[idx]=NULL; npair[idx]=0; }
+
+  /* Build RES and the gapless prefix-count map pref[] (slip_metric.py gapless()/
+   * ridx_map()). pref[i] is the # of residue chars before column i, i.e. the
+   * 0-based index into RES of the residue at column i. */
+  if ((pref = malloc(sizeof(int)  * (N + 1))) == NULL) goto DONE;
+  if ((res  = malloc(sizeof(char) * (N + 1))) == NULL) goto DONE;
+  pref[0] = 0;
+  for (i = 0; i < N; i++) {
+    if (isalpha((int) aseq[i])) res[nres++] = (char) toupper((int) aseq[i]);
+    pref[i+1] = nres;
+  }
+
+  /* Recover every complete pknot pair (z_open, z_close), grouped by stem letter,
+   * with the SAME per-letter pushdown discipline as annotate_pknot_pairs_str(). */
+  for (i = 0; i < N; i++) {
+    c = (int) ss[i];
+    if (isupper(c)) {
+      idx = c - 'A';
+      if (stack[idx] == NULL && (stack[idx] = malloc(sizeof(int) * (N+1))) == NULL) goto DONE;
+      stack[idx][sp[idx]++] = i;
+    }
+    else if (islower(c)) {
+      idx = c - 'a';
+      if (sp[idx] > 0) {                                   /* matched close: recover pair */
+        int zo = stack[idx][--sp[idx]];
+        if (Lcol[idx] == NULL && (Lcol[idx] = malloc(sizeof(int) * (N+1))) == NULL) goto DONE;
+        if (Rcol[idx] == NULL && (Rcol[idx] = malloc(sizeof(int) * (N+1))) == NULL) goto DONE;
+        Lcol[idx][npair[idx]] = zo;
+        Rcol[idx][npair[idx]] = i;
+        npair[idx]++;
+      }
+      /* sp[idx]==0: orphan close, not a complete pair -- nothing to recover. */
+    }
+  }
+
+  /* Process each stem (letter) independently: a per-STEM uniform register shift,
+   * never per-pair (brief 26_0617-013 measured and rejected per-pair checks as too noisy). */
+  for (idx = 0; idx < 26; idx++) {
+    int E = npair[idx];
+    int T_hi, s0, bestk, bestv, anyx;
+    if (E == 0) continue;
+
+    /* candidate only if the stem currently carries at least one broken ('x') pair;
+     * a stem already fully =/$ has nothing to flag. */
+    anyx = FALSE;
+    for (i = 0; i < E; i++)
+      if (out[Lcol[idx][i]] == PS_PKNOT_BROKEN || out[Rcol[idx][i]] == PS_PKNOT_BROKEN) { anyx = TRUE; break; }
+    if (! anyx) continue;
+
+    /* antiparallel pairing (slip_metric.py): sort opens ascending, closes ascending,
+     * pair Lcol[i] with Rcol[E-1-i] (leftmost open with rightmost close). */
+    qsort(Lcol[idx], (size_t) E, sizeof(int), cmp_int_incr);
+    qsort(Rcol[idx], (size_t) E, sizeof(int), cmp_int_incr);
+
+    /* slidWC(k), k = -K..+K: shift the OPEN (5') side k gapless residues, keep the
+     * close (3') side in register, count canonical WC/GU pairs. Track s0 = slidWC(0)
+     * and the best k!=0 (bestv/bestk), ties broken toward the most-negative k
+     * (matches slip_metric.py's Python max() first-wins iteration order). */
+    s0 = 0; bestk = 0; bestv = -1;
+    for (k = -PKNOT_SHIFT_K; k <= PKNOT_SHIFT_K; k++) {
+      int cnt = 0;
+      for (i = 0; i < E; i++) {
+        int  lcol = Lcol[idx][i];
+        int  rcol = Rcol[idx][E-1-i];
+        int  jl   = pref[lcol] + k;
+        int  jr   = pref[rcol];
+        char lr   = (jl >= 0 && jl < nres) ? res[jl] : '\0';
+        char rr   = (jr >= 0 && jr < nres) ? res[jr] : '\0';
+        if (lr && rr && bp_is_canonical(lr, rr)) cnt++;
+      }
+      if      (k == 0)      s0 = cnt;
+      else if (cnt > bestv) { bestv = cnt; bestk = k; }
+    }
+
+    /* brief 26_0617-013 classifier (verbatim): RECOVER-SLIP iff slidWC(0) is not already
+     * >= T_hi (else MAINTAINED), slidWC(0) <= T_LO, and the best shift reaches
+     * T_hi. T_hi = E-1. */
+    T_hi = E - 1;
+    if (! (s0 < T_hi && s0 <= PKNOT_SHIFT_T_LO && bestv >= T_hi)) continue;
+
+    /* Overlay 'o' only on the currently-'x' pairs that actually flip to WC/GU under
+     * the winning shift bestk -- not a blanket mark on the whole stem. Guard: only a
+     * position currently holding PS_PKNOT_BROKEN is ever overwritten. */
+    for (i = 0; i < E; i++) {
+      int  lcol = Lcol[idx][i];
+      int  rcol = Rcol[idx][E-1-i];
+      int  jl   = pref[lcol] + bestk;
+      int  jr   = pref[rcol];
+      char lr   = (jl >= 0 && jl < nres) ? res[jl] : '\0';
+      char rr   = (jr >= 0 && jr < nres) ? res[jr] : '\0';
+      if (lr && rr && bp_is_canonical(lr, rr)) {
+        if (out[lcol] == PS_PKNOT_BROKEN) out[lcol] = PS_PKNOT_SHIFT_RECOVERABLE;
+        if (out[rcol] == PS_PKNOT_BROKEN) out[rcol] = PS_PKNOT_SHIFT_RECOVERABLE;
+      }
+    }
+  }
+
+ DONE:
+  for (idx = 0; idx < 26; idx++) {
+    if (stack[idx] != NULL) free(stack[idx]);
+    if (Lcol[idx]  != NULL) free(Lcol[idx]);
+    if (Rcol[idx]  != NULL) free(Rcol[idx]);
+  }
+  if (pref != NULL) free(pref);
+  if (res  != NULL) free(res);
+  return;
 }
 
 /*---------------- end, alidisplay object -----------------------*/
@@ -1285,7 +1740,7 @@ cm_alidisplay_Print(FILE *fp, CM_ALIDISPLAY *ad, int min_aliwidth, int linewidth
       if (ad->sqfrom < ad->sqto) { i2 = i1+ni-1; }
       else                       { i2 = i1-ni+1; }
 
-      if (ad->ncline != NULL) { strncpy(buf, ad->ncline+pos,  cur_aliwidth); fprintf(fp, "  %*s %s %*sNC\n", namewidth+coordwidth+1, "", buf, aliwidth-cur_aliwidth, ""); }
+      if (ad->ncline != NULL) { strncpy(buf, ad->ncline+pos,  cur_aliwidth); fprintf(fp, "  %*s %s %*sPS\n", namewidth+coordwidth+1, "", buf, aliwidth-cur_aliwidth, ""); } /* "PS" = Pair Status; was "NC" */
       strncpy(buf, ad->csline+pos, cur_aliwidth); fprintf(fp, "  %*s %s %*sCS\n", namewidth+coordwidth+1, "", buf, aliwidth-cur_aliwidth, "");
       strncpy(buf, ad->model+pos,  cur_aliwidth); fprintf(fp, "  %*s %*d %s %*s%-*d\n", namewidth,  show_cmname, coordwidth, k1, buf, aliwidth-cur_aliwidth, "", coordwidth, k2);
       strncpy(buf, ad->mline+pos,  cur_aliwidth); fprintf(fp, "  %*s %s\n", namewidth+coordwidth+1, " ", buf);
@@ -1359,8 +1814,15 @@ cm_alidisplay_Is3PTruncOnly(const CM_ALIDISPLAY *ad)
 /* Function:  cm_alidisplay_TruncString()
  * Synopsis:  Determine if an alignment is truncated 5', 3' or both
  *            and return a string summarizing the truncation: "5'&3'",
- *            "5'", "3'", or "no". As a special case, if hit was
- *            found using a HMM only pipeline pass, we return "-".
+ *            "5'", "3'", or "no". As a special case, if hit was found
+ *            using a LOCAL HMM only pipeline pass, we return "-": a
+ *            local HMM hit is partial by construction, so truncation
+ *            is undefined for it. A GLOCAL HMM only hit (<ad->glocal>
+ *            TRUE, --hmmonly -g) does not get this special case: its
+ *            cfrom_span/cto_span/cfrom_emit/cto_emit are real (built by
+ *            cm_alidisplay_CreateFromP7() to follow this same
+ *            emit-vs-span convention), so the ordinary comparison below
+ *            labels it correctly (brief 26_0824-076).
  *
  * Returns:   informative string
  */
@@ -1368,7 +1830,7 @@ char *
 cm_alidisplay_TruncString(const CM_ALIDISPLAY *ad)
 {
   if     (ad == NULL)                       return "-";
-  else if(ad->hmmonly)                      return "-";
+  else if(ad->hmmonly && ! ad->glocal)      return "-";
   else if(cm_alidisplay_Is5PAnd3PTrunc(ad)) return "5'&3'";
   else if(cm_alidisplay_Is5PTruncOnly(ad))  return "5'";
   else if(cm_alidisplay_Is3PTruncOnly(ad))  return "3'";
@@ -1433,10 +1895,18 @@ cm_alidisplay_Backconvert(CM_t *cm, const CM_ALIDISPLAY *ad, char *errbuf, ESL_S
   /*cm_alidisplay_Dump(stdout, ad);*/
 
   upos = 0;
-  for(apos = 0; apos < msa->alen; apos++) { 
-    msa->ss_cons[apos] = (isupper(msa->aseq[0][apos]) || msa->aseq[0][apos] == '-') ? cm->cmcons->cstr[upos++] : '.'; 
+  for(apos = 0; apos < msa->alen; apos++) {
+    if (isupper(msa->aseq[0][apos]) || msa->aseq[0][apos] == '-') {
+      char ch = cm->cmcons->cstr[upos];
+      /* Feature B: overlay canonical pseudoknot letter (truncation orphans removed below) */
+      if ((cm->flags & CMH_PKNOT) && isalpha((int) cm->pknot[upos+1])) ch = cm->pknot[upos+1];
+      msa->ss_cons[apos] = ch;
+      upos++;
+    }
+    else msa->ss_cons[apos] = '.';
   }
   msa->ss_cons[msa->alen] = '\0';
+  if (cm->flags & CMH_PKNOT) cm_pknot_FixBrokenString(msa->ss_cons, msa->alen);
   if(upos != cm->clen) ESL_XFAIL(eslERANGE, errbuf, "cm_alidisplay_Backconvert() failed to create temporary msa");
   
   esl_msa_FormatSeqName(msa, 0, "%s/%ld-%ld", ad->sqname, ad->sqfrom, ad->sqto);

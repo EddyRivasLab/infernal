@@ -26,7 +26,7 @@
 #include "infernal.h"
 
 static int *createMultifurcationOrderChart(CM_t *cm);
-/* bp_is_canonical() is extern, shared from cm_alidisplay.c (see infernal.h). */
+/* bp_is_canonical() is now extern, shared from cm_alidisplay.c (see infernal.h). */
 static void createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface);
 
 /* Function:  CreateFancyAli()
@@ -1332,4 +1332,5 @@ GetDate(char *errbuf, char **ret_date)
   ESL_FAIL(status, errbuf, "get_date() error status: %d, probably out of memory.", status);
   return status; 
 }
+
 
