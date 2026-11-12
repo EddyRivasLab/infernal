@@ -66,7 +66,6 @@ PROGS = cmalign\
 	bandcyk-montecarlo-test\
 	bandcyk-truncation-test\
 	cp9-test\
-	sub_cm-test\
 	truncyk_check
 
 # list of executable programs that get installed
@@ -85,8 +84,12 @@ IPROGS = \
 PROGOBJS = \
 	cmalign.o\
 	cmbuild.o\
+	cmcalibrate.o\
+	cmconvert.o\
 	cmemit.o\
 	cmfetch.o\
+	cmpress.o\
+	cmscan.o\
 	cmscore.o\
 	cmsearch.o\
 	cmstat.o\
@@ -94,7 +97,6 @@ PROGOBJS = \
 	bandcyk-montecarlo-test.o\
 	bandcyk-truncation-test.o\
 	cp9-test.o\
-	sub_cm-test.o\
 	truncyk_check.o
 
 HDRS =  infernal.h
@@ -114,15 +116,18 @@ OBJS  = cm.o\
 	cm_parsetree.o\
 	cm_pipeline.o\
 	cm_qdband.o\
-	cm_submodel.o\
 	cm_tophits.o\
 	cm_trunc.o\
 	cm_p7_band.o\
+	cm_p7_band_chk.o\
+	cm_filtercutoff.o\
 	cm_p7_domaindef.o\
+	p7_ibv.o\
 	cm_p7_modelconfig_trunc.o\
 	cm_p7_modelmaker.o\
 	cp9.o\
 	cp9_dp.o\
+	cp9_dp_ckpt.o\
 	cp9_modelmaker.o\
 	cp9_mx.o\
 	cp9_trace.o\
@@ -144,10 +149,13 @@ BENCHMARKS = \
 UTESTS =\
 	cm_tophits_utest\
 	cm_p7_modelmaker_utest\
+	cm_p7_band_utest\
+	p7_ibv_utest\
 	hmmband_utest\
 
 ITESTS =\
-	itest_brute
+	itest_brute\
+	itest_hmmread
 
 # Definitions present in HMMER3's Makefile that are not yet necessary in Infernal's
 #STATS = 
@@ -199,6 +207,8 @@ libinfernal-src.stamp: ${OBJS}
 
 ${OBJS}:     ${HDRS} config.h
 ${PROGOBJS}: ${HDRS} config.h
+# the itest objects need rebuilding when a struct changes too
+$(ITESTS:%=%.o): ${HDRS} config.h
 
 ${PROGS}: % : %.o libinfernal.a ../${HMMERDIR}/src/libhmmer.a ../${ESLDIR}/libeasel.a  
 	${QUIET_GEN}${CC} ${CFLAGS} ${PTHREAD_CFLAGS} ${PIC_CFLAGS} ${NEON_CFLAGS} ${SSE_CFLAGS} ${VMX_CFLAGS} ${DEFS} ${LDFLAGS} ${MYLIBDIRS} -o $@ $@.o ${LIBS}
