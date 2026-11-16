@@ -3535,8 +3535,11 @@ mpi_failure(char *format, ...)
   len = vsnprintf(str, sizeof(str), format, argp);
   va_end(argp);
 
-  /* make sure the error string is terminated */
+  /* make sure the error string is terminated; vsnprintf() returns the
+   * untruncated length, so cap <len> at what <str> holds before it is
+   * sent (brief 26_0821-196) */
   str[sizeof(str)-1] = '\0';
+  if (len < 0 || len > (int) sizeof(str) - 1) len = (int) strlen(str);
 
   /* if the caller is the master, print the results and abort */
   if (rank == 0)
