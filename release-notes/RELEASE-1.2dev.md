@@ -129,7 +129,11 @@
    option selects HMM alignment for any model, and `--hmmvit` and
    `--hmmnoband` select its Viterbi alignment or its unbanded optimal
    accuracy alignment. HMM alignment scores are HMM bit scores, and
-   are not comparable to CM bit scores.
+   are not comparable to CM bit scores. HMM alignment has no local
+   ends: sequence that does not match the model goes to insert states
+   or to the unaligned ends, never to a `~` local-end column; the
+   closest CM alignment is `-g` (`--nohmm -g` for a model with no
+   basepairs).
 
  * **`cmalign` stops with an error when a sequence has no valid
    truncated alignment within the HMM bands.** Earlier versions
