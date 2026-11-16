@@ -3728,15 +3728,6 @@ cm_CheckptCYKAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float size_lim
  * three passes' peaks (that is the true --mxsize-relevant peak over the
  * whole 3-pass pipeline, since only one pass's memory is ever live at
  * once).
- *
- * Does NOT model INFERNAL_CKPT_FORCE_DNC (D&C as the r3 CYK pass-1
- * engine): when that knob is set, pass-1's own footprint is
- * cm_DnCAlignSizeNeededHB()'s estimate instead of this function's CYK-pass
- * component; pass-2/pass-3 (Post/OptAcc) are unaffected either way since
- * they only consume pass-1's *output* (bkind/kpin scalars, negligible
- * size), not its live decks -- confirmed by cm_CheckptPostAlignHB's/
- * cm_CheckptOptAccAlignHB's own alloc code never touching CYstore/pass-1
- * state (cm_dpalign.c:2494-2762, 3108-3259).
  *****************************************************************/
 
 /* running byte counter, mirrors CKPT_CTX's cur_bytes/peak_bytes pair but
