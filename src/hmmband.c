@@ -463,7 +463,7 @@ hmmbands2cmbands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9_MX *pmx, int *occ, CP9B
      * EXCLUDE node 0. That is the one place this differs from the
      * checkpointed original, and it is required here: in this deriver
      * cp9_FB2HMMBands() sets pn_min_m[0] = pn_max_m[0] = i0-1 as a
-     * NON-EMITTER sentinel for M_0 (and HMMBandsEnforceValidParse() asserts
+     * NON-EMITTER sentinel for M_0 (and HMMBandsEnforceValidParse() requires
      * pn_min_m[0] == i0-1 for alignment). Seeding the left-to-right sweep at
      * k = 0 would therefore pick that sentinel up on the first iteration and
      * propagate i0-1 as the lower bound for a leading dead run -- yielding
@@ -2980,6 +2980,13 @@ HMMBandsEnforceValidParse(CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *
   pn_min_d = cp9b->pn_min_d;
   pn_max_d = cp9b->pn_max_d;
 
+  /* For alignment, M_0's band must start at i0-1, the residue before
+   * the first. This was an assert(); with asserts compiled out, bands
+   * that broke it gave a silently wrong alignment (brief 26_0821-196).
+   * Checked before the allocations below, so no cleanup is needed. */
+  if(! doing_search && pn_min_m[0] != (i0-1))
+    ESL_FAIL(eslEINCONCEIVABLE, errbuf, "invalid HMM bands (state 0 band starts at %d, not %d); a bug, please report it. --nonbanded avoids HMM bands", pn_min_m[0], i0-1);
+
   /* allocate and initialize */
   ESL_ALLOC(r_mn, sizeof(int) * (hmm_M+1));
   ESL_ALLOC(r_mx, sizeof(int) * (hmm_M+1));
@@ -3014,7 +3021,6 @@ HMMBandsEnforceValidParse(CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *
    * D_k: detele state of node k
    */
 
-  if(! doing_search) assert(pn_min_m[0] == (i0-1)); 
   if(pn_min_m[0] != -1) { 
     r_mn[0] = pn_min_m[0]; /* initialize min reachable residue for M_0 as pn_min_m[0] */
     r_mx[0] = pn_max_m[0]; /* initialize min reachable residue for M_0 as pn_max_m[0] */
