@@ -2503,6 +2503,10 @@ trunc_noparse_msg(const CM_t *cm, const char *errbuf, const char *sqname, char *
   return msg;
 }
 
+#ifdef HMMER_THREADS
+static pthread_mutex_t aln_fail_mutex = PTHREAD_MUTEX_INITIALIZER; /* see pipeline_thread() */
+#endif
+
 /* serial_loop(): 
  * 
  * Align all sequences in a sequence block and store parsetrees.
@@ -2684,6 +2688,10 @@ pipeline_thread(void *arg)
      * It is now the sequence index, defined in thread_loop() 
      */
 
+    /* Only the first worker to fail prints its error and exits; the
+     * mutex is never released, so other failing workers wait here
+     * instead of interleaving their messages (brief 26_0821-196). */
+    if(status != eslOK) pthread_mutex_lock(&aln_fail_mutex);
     if(status == eslEAMBIGUOUS) cm_Fail("%s", trunc_noparse_msg(info->cm, errbuf, sq->name, msg, sizeof(msg)));
     if(status != eslOK) { 
       fprintf(stderr, "Problem during alignment of sequence %s\n", sq->name);
