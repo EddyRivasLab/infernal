@@ -86,10 +86,6 @@ typedef struct {
   int               pass_idx;    /* pipeline pass index, controls truncation bit sc penalty */
   ESL_STOPWATCH    *w;           /* stopwatch for timing stages (band calc, alignment) */
   ESL_STOPWATCH    *w_tot;       /* stopwatch for timing total time for processing 1 seq */
-  int               do_failover; /* TRUE if we're trying to do HMM banded truncated alignment,
-				  * and bands obscure all possible alignments (very rare) to
-				  * failover into HMM banded standard alignment.
-				  */
   /* HMM-only alignment fields (--hmm mode, used by hmm_pipeline_thread) */
   struct hmm_aligner_s *ha;       /* this thread's HMM-only aligner (NULL if not --hmm) */
   P7_TRACE        **hmm_tr;       /* shared trace array for the current block; worker writes tr[seqidx] (NULL if not --hmm) */
@@ -1172,14 +1168,6 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
     if((status      = esl_workqueue_Init(queue, init_sqA[k])) != eslOK) cm_Fail("Failed to add sequence to work queue");
   }
 #endif
-
-  /* do_failover must be read from the FLAG, not the --hbanded option boolean:
-   * --p7band joined ACCOPTS and Easel unsets toggle-tied option booleans, so
-   * the boolean no longer expresses "am I in HMM-banded mode".  This is set
-   * HERE rather than with the rest of info[] above, because the flag is not
-   * raised until initialize_cm() above. */
-  for (k = 0; k < infocnt; ++k)
-    info[k].do_failover = ((cm->align_opts & CM_ALIGN_HBANDED) && (! esl_opt_GetBoolean(go, "--notrunc"))) ? TRUE : FALSE;
 
   for (k = 0; k < infocnt; ++k) {
     if((status = cm_Clone(cm, errbuf, &(info[k].cm))) != eslOK) cm_Fail(errbuf);
@@ -2334,7 +2322,6 @@ hmm_master(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int ncpus, int nproc)
         winfo[k].pass_idx    = 0;
         winfo[k].w           = NULL;
         winfo[k].w_tot       = NULL;
-        winfo[k].do_failover = FALSE;
         winfo[k].hmm_tr      = NULL;
         winfo[k].hmm_st      = NULL;
         if ((winfo[k].ha = hmm_aligner_Create(go, cm)) == NULL) hmm_fatal("out of memory");
@@ -2483,6 +2470,39 @@ hmm_master(ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int ncpus, int nproc)
   hmm_fatal("Memory allocation error in hmm_master()");
 }
 
+/* trunc_noparse_msg()
+ * Incept: EPN, Mon Nov 16 2026 (w/Claude)
+ *
+ * The error for a sequence that has no valid truncated alignment: the
+ * HMM-banded truncated aligners return eslEAMBIGUOUS when the bands
+ * exclude every parse. cmalign used to realign such a sequence in
+ * non-truncated mode without saying so; now it stops (brief
+ * 26_0821-196). The options suggested depend on how the bands were
+ * made, because --mxsize widens only CP9 bands (by limiting the tau
+ * ratchet) and --p7padplus does not pad --p7ibv bands. <errbuf> is
+ * the aligner's message: if cm_alndata.c skipped the --p7ibv Viterbi
+ * band retry for lack of memory, it ends with "use --mxsize <n>", and
+ * that <n> is suggested. Writes the message to <msg>, a buffer of
+ * <n> bytes, not to errbuf, which is too short for long names.
+ */
+static char *
+trunc_noparse_msg(const CM_t *cm, const char *errbuf, const char *sqname, char *msg, size_t n)
+{
+  const char *notrunc = "--notrunc (assumes the sequence is not truncated)";
+  const char *p;
+  int         mx;
+
+  if (! (cm->align_opts & CM_ALIGN_P7BANDED))
+    snprintf(msg, n, "sequence %s has no valid truncated alignment within the HMM bands; try a larger --mxsize or a smaller --tau, or %s", sqname, notrunc);
+  else if (cm->p7_use_ibv && (p = strstr(errbuf, "use --mxsize ")) != NULL && sscanf(p, "use --mxsize %d", &mx) == 1)
+    snprintf(msg, n, "sequence %s has no valid truncated alignment within the HMM bands; try --mxsize %d, or %s", sqname, mx, notrunc);
+  else if (cm->p7_use_ibv)
+    snprintf(msg, n, "sequence %s has no valid truncated alignment within the HMM bands; try a larger --p7ibv-delta, or %s", sqname, notrunc);
+  else
+    snprintf(msg, n, "sequence %s has no valid truncated alignment within the HMM bands; try a larger --p7padplus, or %s", sqname, notrunc);
+  return msg;
+}
+
 /* serial_loop(): 
  * 
  * Align all sequences in a sequence block and store parsetrees.
@@ -2501,6 +2521,7 @@ serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block, ESL_RANDOMN
   int status;
   int i;  /* counter over sequences */
   ESL_SQ  *sqp = NULL; /* ptr to a ESL_SQ, only used if there's an error */
+  char     msg[1024];  /* error message for a sequence with no valid truncated alignment */
 
   /* allocate dataA */
   info->n = sq_block->count;
@@ -2511,19 +2532,7 @@ serial_loop(WORKER_INFO *info, char *errbuf, ESL_SQ_BLOCK *sq_block, ESL_RANDOMN
     status = DispatchSqAlignment(info->cm, errbuf, sq_block->list + i, sq_block->first_seqidx + i, info->mxsize,
 				 TRMODE_UNKNOWN, info->pass_idx, FALSE, /* FALSE: info->cm->cp9b not valid */
 				 info->w, info->w_tot, r, &(info->dataA[i]));
-    /* If alignment failed: potentially retry alignment in HMM banded
-     * std (non-truncated) mode. We will only possibly do this if our
-     * initial try was HMM banded truncated alignment (if not,
-     * info->do_failover will be FALSE).
-     */
-    if(status == eslEAMBIGUOUS && info->do_failover == TRUE) { 
-      assert(info->cm->align_opts & CM_ALIGN_TRUNC);
-      info->cm->align_opts &= ~CM_ALIGN_TRUNC; /* lower truncated alignment flag, just for this sequence */
-      status = DispatchSqAlignment(info->cm, errbuf, sq_block->list + i, sq_block->first_seqidx + i, info->mxsize,
-				   TRMODE_UNKNOWN, PLI_PASS_STD_ANY, FALSE, /* USE PLI_PASS_STD_ANY; FALSE: info->cm->cp9b not valid */
-				   info->w, info->w_tot, r, &(info->dataA[i]));
-      info->cm->align_opts |= CM_ALIGN_TRUNC; /* reraise truncated alignment flag */
-    }
+    if(status == eslEAMBIGUOUS) cm_Fail("%s", trunc_noparse_msg(info->cm, errbuf, sq_block->list[i].name, msg, sizeof(msg)));
     if(status != eslOK) {
       sqp = (sq_block->list + i);
       fprintf(stderr, "Problem during alignment of sequence %s\n", sqp->name);
@@ -2626,6 +2635,7 @@ pipeline_thread(void *arg)
   ESL_SQ       *sq = NULL;
   void         *new_sq = NULL;
   char          errbuf[eslERRBUFSIZE];
+  char          msg[1024];            /* error message for a sequence with no valid truncated alignment */
   int           nalloc    = 0;
   int           allocsize = 1000;
 #ifdef HAVE_FLUSH_ZERO_MODE
@@ -2674,19 +2684,7 @@ pipeline_thread(void *arg)
      * It is now the sequence index, defined in thread_loop() 
      */
 
-    /* If alignment failed: potentially retry alignment in HMM banded
-     * std (non-truncated) mode. We will only possibly do this if our
-     * initial try was HMM banded truncated alignment (if not,
-     * info->do_failover will be FALSE).
-     */
-    if(status == eslEAMBIGUOUS && info->do_failover == TRUE) { 
-      assert(info->cm->align_opts & CM_ALIGN_TRUNC);
-      info->cm->align_opts &= ~CM_ALIGN_TRUNC; /* lower truncated alignment flag, just for this sequence */
-      status = DispatchSqAlignment(info->cm, errbuf, sq, sq->W, info->mxsize,
-				   TRMODE_UNKNOWN, PLI_PASS_STD_ANY, FALSE, /* USE PLI_PASS_STD_ANY; FALSE: info->cm->cp9b not valid */
-				   info->w, info->w_tot, NULL, &(info->dataA[i]));
-      info->cm->align_opts |= CM_ALIGN_TRUNC; /* reraise truncated alignment flag */
-    }
+    if(status == eslEAMBIGUOUS) cm_Fail("%s", trunc_noparse_msg(info->cm, errbuf, sq->name, msg, sizeof(msg)));
     if(status != eslOK) { 
       fprintf(stderr, "Problem during alignment of sequence %s\n", sq->name);
       cm_Fail(errbuf);
@@ -3377,6 +3375,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
 {
   int             status;                 /* Easel status */
   char            errbuf[eslERRBUFSIZE];  /* for printing error messages */
+  char            msg[1024];              /* error message for a sequence with no valid truncated alignment */
   CM_t           *cm          = NULL;     /* the CM */
   WORKER_INFO     info;                   /* the worker info */
   ESL_SQ         *sq          = NULL;     /* sequence we're aligning */
@@ -3452,10 +3451,6 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
   info.pass_idx    = esl_opt_GetBoolean(go, "--notrunc") ? PLI_PASS_STD_ANY : PLI_PASS_5P_AND_3P_FORCE;
   info.w           = esl_stopwatch_Create();
   info.w_tot       = esl_stopwatch_Create();
-  /* read the FLAG, not the --hbanded boolean: --p7band joined ACCOPTS and Easel
-   * unsets toggle-tied option booleans, so the boolean no longer expresses
-   * "am I in HMM-banded mode".  initialize_cm() above has already set the flag. */
-  info.do_failover = ((cm->align_opts & CM_ALIGN_HBANDED) && (! esl_opt_GetBoolean(go, "--notrunc"))) ? TRUE : FALSE;
 
   /* Main loop: one ready message, then align each sequence the master
    * sends until it sends a NULL dsq, the end of the input. There are no
@@ -3487,19 +3482,7 @@ mpi_worker(ESL_GETOPTS *go, struct cfg_s *cfg)
     status = DispatchSqAlignment(info.cm, errbuf, sq, idx, info.mxsize, TRMODE_UNKNOWN, info.pass_idx, FALSE, /* FALSE: cm->cp9b not valid */
                                  info.w, info.w_tot, NULL, &data);
       
-    /* If alignment failed: potentially retry alignment in HMM banded
-     * std (non-truncated) mode. We will only possibly do this if our
-     * initial try was HMM banded truncated alignment (if not,
-     * info.do_failover will be FALSE).
-     */
-    if(status == eslEAMBIGUOUS && info.do_failover == TRUE) { 
-      assert(info.cm->align_opts & CM_ALIGN_TRUNC);
-      info.cm->align_opts &= ~CM_ALIGN_TRUNC; /* lower truncated alignment flag, just for this sequence */
-      status = DispatchSqAlignment(info.cm, errbuf, sq, idx, info.mxsize,
-                                   TRMODE_UNKNOWN, PLI_PASS_STD_ANY, FALSE, /* USE PLI_PASS_STD_ANY; FALSE: info->cm->cp9b not valid */
-                                   info.w, info.w_tot, NULL, &data);
-      info.cm->align_opts |= CM_ALIGN_TRUNC; /* reraise truncated alignment flag */
-    }
+    if(status == eslEAMBIGUOUS) mpi_failure("%s", trunc_noparse_msg(info.cm, errbuf, sq->name, msg, sizeof(msg)));
     if(status != eslOK) { 
       fprintf(stderr, "Problem during alignment of sequence %s\n", sq->name);
       mpi_failure(errbuf);
@@ -4533,19 +4516,19 @@ output_scores(FILE *ofp, CM_t *cm, char *errbuf, CM_ALNDATA **dataA, int ndata, 
   for(i = 0; i < idxwidth; i++) idxdashes[i] = '-';
 
   fprintf(ofp, "# %*s  %-*s  %6s  %7s  %7s  %5s  %8s  %6s  %-30s  %8s",    idxwidth, "",          namewidth,         "",      " ",        "",        "",      "",         "",       "", "       running time (s)",         "");
-  if(be_verbose) fprintf(ofp, "  %7s  %7s  %7s  %8s", "", "", "", "");
+  if(be_verbose) fprintf(ofp, "  %7s  %7s  %7s", "", "", "");
   fprintf(ofp, "\n");
 
   fprintf(ofp, "# %*s  %-*s  %6s  %7s  %7s  %5s  %8s  %6s  %30s  %8s",     idxwidth, "",          namewidth,         "",      " ",        "",        "",      "",         "",       "", "-------------------------------", "");
-  if(be_verbose) fprintf(ofp, "  %7s  %7s  %7s  %8s", "", "", "", "");
+  if(be_verbose) fprintf(ofp, "  %7s  %7s  %7s", "", "", "");
   fprintf(ofp, "\n");
 
   fprintf(ofp, "# %*s  %-*s  %6s  %7s  %7s  %5s  %8s  %6s  %9s  %9s  %9s  %8s", idxwidth, "idx",   namewidth, "seq name", "length", "cm from",   "cm to", "trunc",   "bit sc", "avg pp", "band calc", "alignment", "total", "mem (Mb)");
-  if(be_verbose) fprintf(ofp, "  %7s  %7s  %7s  %8s", "tau", "thresh1", "thresh2", "failover");
+  if(be_verbose) fprintf(ofp, "  %7s  %7s  %7s", "tau", "thresh1", "thresh2");
   fprintf(ofp, "\n");
 
   fprintf(ofp, "# %*s  %-*s  %6s  %7s  %7s  %5s  %8s  %6s  %9s  %9s  %9s  %8s", idxwidth, idxdashes, namewidth, namedashes, "------", "-------", "-------", "-----", "--------", "------", "---------", "---------", "---------", "--------");
-  if(be_verbose) fprintf(ofp, "  %7s  %7s  %7s  %8s", "-------", "-------", "-------", "--------");
+  if(be_verbose) fprintf(ofp, "  %7s  %7s  %7s", "-------", "-------", "-------");
   fprintf(ofp, "\n");
 
   for(i = first_idx; i < ndata; i++) { 
@@ -4579,12 +4562,6 @@ output_scores(FILE *ofp, CM_t *cm, char *errbuf, CM_ALNDATA **dataA, int ndata, 
       else                     fprintf(ofp, "  %7s", "-");
       if(do_trunc && dataA[i]->tr != NULL) fprintf(ofp, "  %7.2f  %7.2f", dataA[i]->thresh1, dataA[i]->thresh2); 
       else                     fprintf(ofp, "  %7s  %7s", "-", "-");
-      if(do_trunc && (! do_nonbanded) && dataA[i]->tr != NULL) { 
-	fprintf(ofp, "  %8s", (dataA[i]->tr->is_std) ? "yes" : "no");
-      }
-      else {
-	fprintf(ofp, "  %8s", "-");
-      }
     }
     fprintf(ofp, "\n");
   }

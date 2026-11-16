@@ -131,6 +131,15 @@
    accuracy alignment. HMM alignment scores are HMM bit scores, and
    are not comparable to CM bit scores.
 
+ * **`cmalign` stops with an error when a sequence has no valid
+   truncated alignment within the HMM bands.** Earlier versions
+   realigned such a sequence in non-truncated mode without saying so.
+   The error names the sequence and the options that widen its bands
+   (which depend on how the bands were made); `--notrunc`, which
+   assumes the sequence is not truncated, may also let it align. The
+   `failover` column of `--verbose` output, which marked such
+   sequences, is removed.
+
  * **Models with no basepairs are now built the same way as models
    with basepairs**, with the same prior and entropy weighting target,
    instead of as if they were profile HMMs, so adding or removing a
