@@ -3501,7 +3501,7 @@ extern int              cm_tr_penalties_IdxForPass(int pass_idx);
  *
  * To remove them: rename the old names at every call site to the cm_
  * names (one sed over src/, using the pairs below; this also renames the
- * few local declarations of old names, e.g. in p7band-test.c), then
+ * few local declarations of old names), then
  * delete this block and check that the tree builds.
  *
  * !! HAZARD while these exist: they undo the point of the rename. Without

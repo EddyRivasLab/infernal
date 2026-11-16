@@ -377,6 +377,13 @@ has no effect; with
 .B --notrunc,
 .B -g
 configures the HMM for global alignment.
+HMM alignment has no local ends: sequence that does not match the
+model goes to insert states or to the unaligned ends, never to a "~"
+local-end column. The closest CM alignment is with
+.B -g
+(with
+.B --nohmm -g
+for a model with zero basepairs).
 The output options
 .B --noprob,
 .B --matchonly,
@@ -562,6 +569,12 @@ with the default optimal accuracy algorithm with bands (not with
 .B --nonbanded
 or
 .B --small).
+The divide and conquer algorithm's memory estimate covers its worst
+case, which can be far more than a sequence actually needs, so a
+sequence can be refused although its alignment would have fit; a
+larger
+.B --mxsize
+avoids this.
 
 If no alignment algorithm fits within
 .I <x>
