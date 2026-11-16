@@ -1328,9 +1328,7 @@ cm_p7_Seq2BandsKmerChain(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int *nodep
    *    also collected until brief 26_0821-124, but every exact match of length
    *    k > KMC_SEED_K is covered by overlapping KMC_SEED_K-mers on the same
    *    diagonal, so after the merge the anchors were identical (brief
-   *    26_0821-119: identical alignments on 624 genome-scale cells). The
-   *    perk= field of the #KMERCHAIN line keeps its format, with 0 for the
-   *    retired tiers. */
+   *    26_0821-119: identical alignments on 624 genome-scale cells). */
   if (KMC_SEED_K <= M && KMC_SEED_K <= L) {
     int k = KMC_SEED_K, ntgt = 0, t, p;
     ESL_ALLOC(idx, sizeof(kmw_kmer_t) * (L - k + 1));
@@ -7884,15 +7882,15 @@ cm_MxsizeRecommend(double needed_Mb)
  *           region <bnd>, WITHOUT allocating anything. Three sub-cases,
  *           selected by <ckpt_mode> (brief 26_0628-081 added the third):
  *
- *             P7B_OAMEM_NOCKPT (0) (INFERNAL_HMM_CKPT_OFF set):
+ *             P7B_OAMEM_NOCKPT (0) (not chosen by cmalign; the unit
+ *             tests' reference engine):
  *               the non-checkpointed engine -- full banded double F and
  *               B matrices plus a float p7_gmxb_Create(bnd) posterior
  *               (cm_p7_GFBDecodeBandedDouble(), brief 26_0821-141).
  *               O(ncell).
  *
  *             P7B_OAMEM_CKPT (1) (the usual engine: this is what the
- *             caller picks whenever its estimate fits in --mxsize, and
- *             what INFERNAL_HMM_PPCKPT_OFF forces unconditionally):
+ *             caller picks whenever its estimate fits in --mxsize):
  *               the singly-checkpointed engine -- p7b_pp_Create(bnd)'s
  *               resident 2-cell posterior + p7_GCheckptFBDecode_Banded()'s
  *               O(sqrt(nrow)) working set (p7b_forward_seeds()'s <=nblk
@@ -7901,8 +7899,7 @@ cm_MxsizeRecommend(double needed_Mb)
  *               of the resident posterior.
  *
  *             P7B_OAMEM_CKPTPP (2) (the fallback the caller drops to when
- *             mode 1 would not fit in --mxsize; INFERNAL_HMM_PPCKPT_ON
- *             forces it):
+ *             mode 1 would not fit in --mxsize):
  *               the DOUBLE-checkpointed engine, p7_GCheckptFBDecodeOA_Banded().
  *               No resident posterior at all: three ~nblk-entry seed
  *               arrays (Forward, Backward, OA) plus a handful of
@@ -8757,8 +8754,8 @@ p7b_backdecode(const ESL_DSQ *dsq, const P7_PROFILE *gm, const P7B_GEO *g,
  * same p7b_bwd_row() calls, on exactly the same float inputs, in
  * exactly the same order, as the uninterrupted stream would have -- so
  * the recomputed pp rows are bit-identical to the resident ones, and
- * everything downstream is bit-identical too.  The legacy resident-pp
- * path is left fully intact and reachable via INFERNAL_HMM_PPCKPT_OFF.
+ * everything downstream is bit-identical too.  The resident-pp path
+ * (P7B_OAMEM_CKPT) is still used whenever it fits in --mxsize.
  *****************************************************************/
 
 /* A Backward checkpoint seed: the Backward state ENTERING block <b>
@@ -9138,9 +9135,10 @@ cm_p7_GCheckptFBDecode_Banded(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm,
 /* Function: cm_p7_GFBDecodeBandedDouble()
  * Incept:   EPN, Thu Oct 22 2026 (w/Claude)  [brief 26_0821-141]
  *
- * Purpose:  The non-checkpointed engine's (INFERNAL_HMM_CKPT_OFF) banded
- *           Forward + Backward + posterior decoding, in double precision.
- *           Replaces the float
+ * Purpose:  The non-checkpointed engine's banded Forward + Backward +
+ *           posterior decoding, in double precision. cmalign no longer
+ *           selects this engine; the unit tests use it as the reference
+ *           for the checkpointed ones. It replaced the float
  *               my_p7_GForwardBanded + p7_GBackwardBanded + p7_GDecodingBanded
  *           sequence for cmalign's HMM-only alignment, which collapses at
  *           genome scale (see the p7b_dlogsum() comment above).  Those
