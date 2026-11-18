@@ -73,6 +73,14 @@
  *   (b) the erow EL-from-M+1 accumulation is NOT gated on INBAND(i,M).
  *       (erow is dead for band derivation, but reproduced for fidelity.)
  *
+ * BRIEF 26_0821-207: the row kernels no longer follow the originals for the
+ * local-end (EL) transitions. The originals' Forward and Backward used
+ * different EL transition sets under a narrow band (see cp9_chk_fwd_rowF()'s
+ * supplementary pass and the EL block at the top of cp9_chk_bwd_rowF()), so
+ * their totals disagreed; both directions now use every EL transition whose
+ * two cells are in band. The non-checkpointed float originals in cm_p7_band.c
+ * have no live caller and are left as they were.
+ *
  * Function/struct suffix F. Substitutions vs the originals:
  *   mmx[i]->mc, mmx[i-1]->mp, mmx[i+1]->mn (and i/d/el likewise).
  *
@@ -254,17 +262,29 @@ cp9_chk_fwd_rowF(CP9_t *cp9, ESL_DSQ *dsq, int i, int *kmin, int *kmax, int M,
     }
   }
 
-  /* brief 26_0430-134 BM-coverage supplementary pass (double-only; absent in int kernel).
-   * Full row band [max(1,kmin[i]),kmax[i]] MINUS the [kn,kx] match range, adding
-   * begin + EL-from-into-M (no in-band diagonal predecessor here). */
-  if(INBAND(i-1, 0) && mp[0] != -eslINFINITY) {
-    int k_lo = ESL_MAX(1, kmin[i]);
-    int k_hi = kmax[i];
+  /* Supplementary pass over the rest of the row band: [max(1,kmin[i]),kmax[i]]
+   * MINUS the [kn,kx] match range. These cells have no in-band diagonal
+   * predecessor, but M_k(i) can still be reached by a begin (B -> M_k, only
+   * when row i-1 holds column 0) or by an EL return (EL_c(i-1) -> M_k), and
+   * EL_k(i) by M_k(i) -> EL_k(i) or by the self-loop EL_k(i-1) -> EL_k(i).
+   *
+   * brief 26_0430-134 added this pass for the begin term and ran it only when
+   * row i-1 holds column 0, so on every other row the EL transitions into
+   * these cells were dropped while the Backward kept them. The Forward total
+   * then fell short of the Backward total, posteriors (normalized by the
+   * Backward total) lost occupancy after a local end, and the band predictor
+   * opened the truncation window and blew up the CM bands (brief
+   * 26_0821-206). The pass now runs on every row; only its begin term is
+   * gated (brief 26_0821-207). */
+  {
+    int k_lo   = ESL_MAX(1, kmin[i]);
+    int k_hi   = kmax[i];
+    int do_beg = (INBAND(i-1, 0) && mp[0] != -eslINFINITY) ? TRUE : FALSE;
     for (k = k_lo; k <= k_hi; k++) {
       if(k >= kn && k <= kx) continue;   /* already filled by the match loop */
       kpcur = k - kmin[i];
 
-      sc = mp[0] + Scorify(CP9TSC(cp9O_BM,k));  /* begin; diagonal predecessor out of band here */
+      sc = do_beg ? mp[0] + Scorify(CP9TSC(cp9O_BM,k)) : -eslINFINITY;  /* begin; diagonal predecessor out of band here */
 
       if (cp9->flags & CPLAN9_EL) {
         int c_el, kpprv_el;
@@ -423,14 +443,40 @@ cp9_chk_bwd_rowF(CP9_t *cp9, ESL_DSQ *dsq, int i, int *kmin, int *kmax, int M,
   int const *tsc = cp9->otsc;
   int k, c, kpcur, kpprv, kpcur_el, kn, kx, kprv, kprvn, kprvx;
 
+  /* EL_c(i), complete, before any cell of row i reads it. EL cells depend
+   * only on row i+1, so they are filled here in one pass over every EL
+   * transition whose two cells are in band, the mirror of the Forward's
+   * transition set:
+   *   EL_k(i) -> EL_k(i+1)  self-loop, k in the bands of rows i and i+1;
+   *   EL_c(i) -> M_k(i+1)   return (no transition score), every k in row
+   *                         i+1's band whose source c is in row i's band.
+   * They used to be accumulated inside the match loop below, over its window
+   * [max(kmin[i],kmin[i+1]-1), min(kmax[i],kmax[i+1]-1)], plus a separate
+   * k == M block; that dropped the self-loop at in-band k outside the window
+   * and the returns into M_k(i+1) for k outside it, a different set from the
+   * Forward's, so the Forward and Backward totals disagreed (brief
+   * 26_0821-206). Row i's M_k(i) reads EL_k(i) in the DELETIONS loops below
+   * (brief 26_0821-207). */
   kpcur = 0;
   for (k = kmin[i]; k <= kmax[i]; k++, kpcur++) ec[kpcur] = -eslINFINITY;
+  if(cp9->flags & CPLAN9_EL) {
+    kn = ESL_MAX(1, ESL_MAX(kmin[i], kmin[i+1]));
+    kx = ESL_MIN(kmax[i], kmax[i+1]);
+    for (k = kn; k <= kx; k++)
+      if(cp9->has_el[k]) ec[k-kmin[i]] = en[k-kmin[i+1]] + Scorify(cp9->el_selfsc);
+    for (k = ESL_MAX(1, kmin[i+1]); k <= kmax[i+1]; k++) {
+      kpprv = k - kmin[i+1];
+      if(mn[kpprv] == -eslINFINITY) continue;
+      for(c = 0; c < cp9->el_from_ct[k]; c++)
+        if(INBAND(i, cp9->el_from_idx[k][c])) {
+          kpcur_el = cp9->el_from_idx[k][c] - kmin[i];
+          ec[kpcur_el] = cp9_chk_dlogsum(ec[kpcur_el], mn[kpprv]);
+        }
+    }
+  }
 
   if(INBAND(i, M)) {
     kpcur = M-kmin[i];
-    if((cp9->flags & CPLAN9_EL) && (cp9->has_el[M]))
-      ec[kpcur] = ec[kpcur] + Scorify(cp9->el_selfsc);
-
     if(INBAND(i+1, M)) {
       kpprv = M-kmin[i+1];
       mc[kpcur]  = in[kpprv] + Scorify(CP9TSC(cp9O_MI,M));
@@ -442,19 +488,6 @@ cp9_chk_bwd_rowF(CP9_t *cp9, ESL_DSQ *dsq, int i, int *kmin, int *kmax, int M,
     else {
       mc[kpcur] = ic[kpcur] = dc[kpcur] = -eslINFINITY;
     }
-
-    if((cp9->flags & CPLAN9_EL) && (cp9->has_el[M]))
-      mc[kpcur] = cp9_chk_dlogsum(mc[kpcur], ec[kpcur] + Scorify(CP9TSC(cp9O_MEL,M)));
-
-    if(INBAND(i+1, M)) {
-      if(cp9->flags & CPLAN9_EL) {
-        for(c = 0; c < cp9->el_from_ct[M]; c++)
-          if(INBAND(i, cp9->el_from_idx[M][c])) {
-            kpcur_el = cp9->el_from_idx[M][c] - kmin[i];
-            ec[kpcur_el] = cp9_chk_dlogsum(ec[kpcur_el], mn[kpprv]);
-          }
-      }
-    }
   }
 
   /* MATCH: *_k <- M_k+1 */
@@ -462,25 +495,13 @@ cp9_chk_bwd_rowF(CP9_t *cp9, ESL_DSQ *dsq, int i, int *kmin, int *kmax, int M,
   kn = ESL_MAX(kn, 1);
   kx = ESL_MIN(kmax[i], kmax[i+1]-1);
 
-  for (kpcur = 0; kpcur < ESL_MIN(kn-kmin[i], kmax[i]-kmin[i]+1); kpcur++) mc[kpcur] = ic[kpcur] = dc[kpcur] = ec[kpcur] = -eslINFINITY;
-  for (kpcur = ESL_MAX(0,kx-kmin[i]+1); kpcur <= kmax[i]-kmin[i]; kpcur++) mc[kpcur] = ic[kpcur] = dc[kpcur] = ec[kpcur] = -eslINFINITY;
+  for (kpcur = 0; kpcur < ESL_MIN(kn-kmin[i], kmax[i]-kmin[i]+1); kpcur++) mc[kpcur] = ic[kpcur] = dc[kpcur] = -eslINFINITY;
+  for (kpcur = ESL_MAX(0,kx-kmin[i]+1); kpcur <= kmax[i]-kmin[i]; kpcur++) mc[kpcur] = ic[kpcur] = dc[kpcur] = -eslINFINITY;
 
   kpcur = kx - kmin[i];
   kpprv = kx - kmin[i+1];
   for (k = kx; k >= kn; k--, kpcur--, kpprv--)
     {
-      if((cp9->flags & CPLAN9_EL) && INBAND(i+1, k)) { /* M_k at i+1 must be in band (k can be kmin[i+1]-1, giving kpprv = -1) */
-        for(c = 0; c < cp9->el_from_ct[k]; c++) {
-          if(INBAND(i, cp9->el_from_idx[k][c])) {
-            kpcur_el = cp9->el_from_idx[k][c] - kmin[i];
-            ec[kpcur_el] = cp9_chk_dlogsum(ec[kpcur_el], mn[kpprv]);
-          }
-        }
-      }
-      if(INBAND(i+1, k)) {
-        if((cp9->flags & CPLAN9_EL) && (cp9->has_el[k]))
-          ec[kpcur] = cp9_chk_dlogsum(ec[kpcur], en[kpprv] + Scorify(cp9->el_selfsc));
-      }
       mc[kpcur] = mn[kpprv+1] + Scorify(CP9TSC(cp9O_MM,k));
       ic[kpcur] = mn[kpprv+1] + Scorify(CP9TSC(cp9O_IM,k));
       dc[kpcur] = mn[kpprv+1] + Scorify(CP9TSC(cp9O_DM,k));
@@ -598,10 +619,13 @@ cp9_chk_bwd_row0F(CP9_t *cp9, ESL_DSQ *dsq, int *kmin, int *kmax, int M,
   for (k = kx; k >= kn; k--, kpcur--, kpprv--)
     dc[kpcur]  = mn[kpprv+1] + Scorify(CP9TSC(cp9O_DM,k));
 
-  /* D_k(i==0) <- I_k(i==1) */
+  /* D_k(i==0) <- I_k(i==1), k < M: D_M was set from I_M above, and adding
+   * it again here counted that transition twice (+1 bit on D_M(0); brief
+   * 26_0821-207). */
   kn = ESL_MAX(kmin[i], kmin[i+1]);
   kn = ESL_MAX(kn, 1);
   kx = ESL_MIN(kmax[i], kmax[i+1]);
+  kx = ESL_MIN(kx, M-1);
   kpcur = kx - kmin[i];
   kpprv = kx - kmin[i+1];
   for (k = kx; k >= kn; k--, kpcur--, kpprv--)
