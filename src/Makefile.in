@@ -150,6 +150,7 @@ UTESTS =\
 	cm_tophits_utest\
 	cm_p7_modelmaker_utest\
 	cm_p7_band_utest\
+	cm_p7_band_chk_utest\
 	p7_ibv_utest\
 	hmmband_utest\
 
