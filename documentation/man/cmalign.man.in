@@ -232,8 +232,12 @@ the bit score of the alignment, "avg pp" the average posterior
 probability of all aligned nucleotides in the alignment; "band calc",
 "alignment" and "total": the time in seconds required for calculating
 HMM bands, computing the alignment, and complete processing of the
-sequence, respectively; "mem (Mb)": the size in Mb of all dynamic
-programming matrices required for aligning the sequence.  This tabular
+sequence, respectively; "mem (Mb)": the largest size in Mb of the
+dynamic programming matrices that one step of the sequence's alignment
+(band calculation or alignment, including any retry) needed. For the
+divide and conquer algorithm (method "cyk-dnc" with
+.B --verbose)
+it is that algorithm's worst-case estimate.  This tabular
 data can be saved to file
 .I <f>
 with the 
@@ -592,15 +596,25 @@ The limit will commonly be exceeded when the
 .B --nonbanded
 option is used without the
 .B --small 
-option. Note that if 
-.B cmalign
-is being run in 
-.I <n>
-multiple threads on a multicore machine then each thread may
-have an allocated
-matrix of up to size 
+option.
+
+.B --mxsize
+limits the matrices of one step (band calculation or alignment) of
+one sequence's alignment in one worker, a thread or an MPI worker
+process. It does not limit total memory. A worker keeps one sequence's
+alignment matrices, for reuse, while it calculates the next sequence's
+bands, so it can hold up to about twice
 .I <x>
-Mb at any given time.
+megabytes of matrices. The model, a copy of the model for each worker
+(a profile instead, with
+.B --hmm
+and threads), and the stored alignments come on top, so total memory
+can be higher than
+.I <x>
+alone suggests. Most sequences need far less than
+.I <x>
+megabytes; the "mem (Mb)" column of the scores output reports what
+each sequence needed.
 
 .TP
 .B --fixedtau
@@ -1070,7 +1084,36 @@ is used, or to
 .I <f>
 if 
 .BI --sfile " <f>" 
-is used). These are mainly useful for testing and debugging. 
+is used). These are mainly useful for testing and debugging:
+"tau", "thresh1" and "thresh2", the parameters of the HMM band
+calculation; "method", the algorithm that aligned the sequence: "oa"
+(optimal accuracy within HMM bands), "oa-ckpt" (its checkpointed,
+lower-memory version), "cyk" (CYK within HMM bands,
+.B --cyk),
+"sample"
+.RB ( --sample ),
+"cyk-dnc" (divide and conquer CYK, within bands or with
+.B --small),
+"oa-nb", "cyk-nb" and "sample-nb" (without bands,
+.B --nonbanded),
+and with
+.B --hmm
+"hmm-oa" (banded optimal accuracy), "hmm-oa-ckpt" (its
+lower-memory version), "hmm-oa-nb"
+.RB ( --hmmnoband )
+and "hmm-vit"
+.RB ( --hmmvit );
+and "bandretry", the band retries that ran for the sequence, "-" if
+none: "ibv" (a profile HMM band with no complete alignment, rebuilt
+with the IBV method), "vit" (bands rebuilt from a profile HMM Viterbi
+alignment after alignment within IBV bands failed), "hull" (end bands
+narrowed when no alignment algorithm fit
+.BR --mxsize ),
+and "el" (a local alignment in k-mer chain bands, see
+.B --p7kmerchain,
+whose local end the bands may have misplaced, realigned in edited or
+plan 9 HMM bands; the higher-scoring alignment is reported, and its
+times include every pass); several are joined with "+".
 
 .TP
 .BI --cpu " <n>"
