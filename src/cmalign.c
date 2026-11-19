@@ -3877,13 +3877,13 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *sqfile, CM_t
      *    allocates NO alignment DP matrix, and only the nworkers running
      *    mpi_worker() (one WORKER_INFO apiece) do.
      *
-     * The multiplier is printed INLINE on the aggregate line rather than on a
-     * line of its own: under threading a separate count would merely repeat
-     * the integer the "# number of worker threads" line below already prints,
-     * while under MPI the "# MPI:" line sets output_ncpu and suppresses that
-     * line entirely -- and reports nworkers+1, which is NOT this multiplier.
-     * A standalone count line would thus be redundant in one case and the
-     * sole source of the number in the other. */
+     * brief 26_0821-199: the multiplier only decides whether to qualify this
+     * line as "(per thread)" below -- the "maximum aggregate DP matrix size"
+     * line that used to print (multiplier x --mxsize) as a memory figure is
+     * removed (brief 26_0821-196/197/199): it left out the model, each
+     * worker's own copy of the model, and the stored alignments, and
+     * undercounted a worker that can hold up to 2 x --mxsize of matrices at
+     * once. See --mxsize in the man page for what else memory use includes. */
     int mxsize_mult;
 #ifdef HAVE_MPI
     if (esl_opt_IsUsed(go, "--mpi")) mxsize_mult = ESL_MAX(ncpus - 1, 1);
@@ -3899,8 +3899,6 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *sqfile, CM_t
        * is allocated in the master, not in a worker). The unqualified form
        * also matches cmsearch.c:2325 / cmscan.c:2616 for the same option. */
       fprintf(ofp, "# maximum DP matrix size (per thread):         %.2f Mb\n", esl_opt_GetReal(go, "--mxsize"));
-      fprintf(ofp, "# maximum aggregate DP matrix size:            %.2f Mb [%d x %.2f]\n",
-	      esl_opt_GetReal(go, "--mxsize") * mxsize_mult, mxsize_mult, esl_opt_GetReal(go, "--mxsize"));
     }
     else {
       fprintf(ofp, "# maximum DP matrix size:                      %.2f Mb\n", esl_opt_GetReal(go, "--mxsize"));
