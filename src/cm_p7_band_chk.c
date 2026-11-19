@@ -734,6 +734,35 @@ cp9chkF_Create(int L, int M, int *kmin, int *kmax, char *errbuf)
   return NULL;
 }
 
+/* Function: cp9_P7BChkMbNeeded()
+ * Incept:   EPN, Mon Nov 16 2026 (w/Claude)
+ *
+ * Purpose:  Return the Mb (10^6 bytes) of DP matrices that the
+ *           checkpointed p7-banded CP9 Forward/Backward band
+ *           calculation (cp9chkF_Create() and cp9segF_Create(), used by
+ *           cp9_IterateSeq2BandsP7B()) allocates for a target of length
+ *           <L> in p7 bands <kmin>/<kmax> [0..L]. For cmalign's per-sequence
+ *           memory report (brief 26_0821-197).
+ */
+double
+cp9_P7BChkMbNeeded(int L, int *kmin, int *kmax)
+{
+  int     blk = (int) sqrt((double) (L > 0 ? L : 1));
+  int64_t nckpt = 0, seg = 0, maxseg = 0;
+  int     r, maxw = 0;
+
+  if(blk < 1) blk = 1;
+  for(r = 0; r <= L; r++) {
+    int w = kmax[r] - kmin[r] + 1;
+    if(r % blk == 0 || r == L) nckpt += w;                     /* checkpoint rows, as cp9chkF_Create() */
+    seg += w;                                                  /* the segment between two checkpoints, as cp9segF_Create() */
+    if((r > 0 && r % blk == 0) || r == L) { if(seg > maxseg) maxseg = seg; seg = w; }
+    if(w > maxw) maxw = w;
+  }
+  return ((double) sizeof(double) * (8. * (double) nckpt + 8. * (double) maxseg + 3. * (double) maxw)
+          + (double) sizeof(double *) * 8. * (double) (blk + 2)) / 1000000.;
+}
+
 /* Forward-checkpointed fill (double): roll 2 rows over 1..L, store F planes at
  * each boundary. Buffers memset-0 (all-bytes-zero = double 0.0f) before each
  * kernel call, replicating GrowCP9FMatrix's memset-0 (recurrences read some

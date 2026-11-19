@@ -180,6 +180,7 @@ CreateCMShell(void)
   cm->hp7_is_active = FALSE;
   cm->p7_cm_nodepad   = NULL;
   cm->p7_cm_nodepad_M = 0;
+  cm->dp_peak_Mb      = 0.;
   cm->F1_pcutoff   = 0.0f;
   cm->F2_pcutoff   = 0.0f;
   cm->F3_pcutoff   = 0.0f;

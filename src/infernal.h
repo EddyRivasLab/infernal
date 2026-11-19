@@ -2022,6 +2022,11 @@ typedef struct cm_s {
   int          *p7_cm_nodepad;   /* [0..p7_cm_nodepad_M] per-node pad array; NULL if not set */
   int           p7_cm_nodepad_M; /* length of p7_cm_nodepad (= fp7->M); 0 if not set */
 
+  /* the largest DP memory (Mb) any one step of the current alignment
+   * allocated: see cm_dp_NoteMb(). Reset per sequence by DispatchSqAlignment(),
+   * whose CM_ALNDATA reports it as mb_peak (brief 26_0821-197). */
+  float         dp_peak_Mb;
+
   /* per-CM F1/F2/F3 P-value cutoffs (CMH_FILTER_PVAL_CUTOFFS). Computed by
    * cm_CalibrateFilterPvalCutoffs() at cmbuild time from N CM-emitted sequences.
    * The pipeline (cm_pli_NewModel) substitutes these for pli->F1/F2/F3 when the
@@ -2850,6 +2855,9 @@ typedef struct {
   float             secs_aln;   /* seconds elapsed during alignment calculation */
   float             secs_tot;   /* seconds elapsed for entire processing of this sequence */
   float             mb_tot;     /* total Mb required for all DP matrices for alignment */
+  float             mb_peak;    /* largest DP memory (Mb) one step of the alignment allocated, over all passes; cmalign's "mem (Mb)" */
+  int               method;     /* the engine that aligned the sequence, a CM_ALNMETHOD_* code */
+  int               bandretry;  /* the band retries that ran, CM_BANDRETRY_* flags, 0 if none */
   double            tau;        /* tau used for HMM band calculation, -1 if no hmm bands */
   /* thresh1 and thresh2 are only relevant if alignment is truncated */
   float             thresh1;    /* cp9b->thresh1 used for HMM band calculation */
@@ -3049,8 +3057,35 @@ typedef struct cm_p7_gmxbd_s {
   P7_GBANDS *bnd;   /* reference copy; caller frees the band */
 } CM_P7_GMXBD;
 
+/* CM_ALNDATA method codes: the engine that aligned a sequence, as
+ * cmalign --verbose names it in its "method" column (brief 26_0821-197) */
+enum cm_alnmethod_e {
+  CM_ALNMETHOD_UNKNOWN = 0,
+  CM_ALNMETHOD_OA,          /* "oa":          HMM-banded optimal accuracy */
+  CM_ALNMETHOD_CYK,         /* "cyk":         HMM-banded CYK */
+  CM_ALNMETHOD_SAMPLE,      /* "sample":      HMM-banded sampled parse */
+  CM_ALNMETHOD_OA_CKPT,     /* "oa-ckpt":     HMM-banded checkpointed optimal accuracy */
+  CM_ALNMETHOD_CYK_DNC,     /* "cyk-dnc":     divide and conquer CYK (banded, or --small) */
+  CM_ALNMETHOD_OA_NB,       /* "oa-nb":       non-banded optimal accuracy */
+  CM_ALNMETHOD_CYK_NB,      /* "cyk-nb":      non-banded CYK */
+  CM_ALNMETHOD_SAMPLE_NB,   /* "sample-nb":   non-banded sampled parse */
+  CM_ALNMETHOD_HMM_OA,      /* "hmm-oa":      HMM-only, banded optimal accuracy */
+  CM_ALNMETHOD_HMM_OA_CKPT, /* "hmm-oa-ckpt": HMM-only, banded optimal accuracy, posteriors checkpointed */
+  CM_ALNMETHOD_HMM_OA_NB,   /* "hmm-oa-nb":   HMM-only, non-banded optimal accuracy */
+  CM_ALNMETHOD_HMM_VIT      /* "hmm-vit":     HMM-only Viterbi */
+};
+/* CM_ALNDATA band retry flags, cmalign --verbose's "bandretry" column */
+#define CM_BANDRETRY_VIT  (1<<0) /* "vit":  bands rebuilt from a p7 Viterbi trace after alignment in IBV bands failed */
+#define CM_BANDRETRY_IBV  (1<<1) /* "ibv":  a p7 band with no complete parse, rebuilt with the IBV deriver */
+#define CM_BANDRETRY_HULL (1<<2) /* "hull": end bands widened (end hull) and the engine choice redone */
+#define CM_BANDRETRY_EL   (1<<3) /* "el":   local-end retry: realigned in edited or native CP9 bands */
+#define CM_BANDRETRY_STRLEN 32   /* enough for all four, '+'-joined */
+
 /* from cm_alndata.c */
 CM_ALNDATA * cm_alndata_Create(void);
+const char  *cm_alndata_MethodString(int method);
+char        *cm_alndata_BandRetryString(int bandretry, char *buf);
+void         cm_dp_NoteMb(CM_t *cm, double mb);
 void         cm_alndata_Destroy(CM_ALNDATA *data, int free_sq);
 int          DispatchSqBlockAlignment(CM_t *cm, char *errbuf, ESL_SQ_BLOCK *sq_block, float mxsize, ESL_STOPWATCH *w, ESL_STOPWATCH *w_tot, ESL_RANDOMNESS *r, CM_ALNDATA ***ret_dataA);
 int          DispatchSqAlignment     (CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsize, char mode, int pass_idx,
@@ -3621,6 +3656,7 @@ extern int          cp9_FBMatrices2BandsP7BF_chk(CM_t *cm, char *errbuf, CP9_t *
 /* brief 26_0430-167: tau-ratchet single-pass multi-threshold sibling + ckpt-trunc driver (cm_p7_band_chk.c) */
 extern int          cp9_FB2HMMBandsP7BF_chk_multi(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9Bands_t *cp9b, int L, int M, double *p_thresh, int NS, int *kmin, int *kmax, int debug_level, int do_pnmono, int do_pnmono_print, int **pn_min_m_out, int **pn_max_m_out, int **pn_min_i_out, int **pn_max_i_out, int **pn_min_d_out, int **pn_max_d_out, double **pocc_out);
 extern int          cp9_IterateSeq2BandsP7BF_chk_multi(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *dsq, int L, int *kmin, int *kmax, int i0, int j0, int pass_idx, float size_limit, int doing_search, int do_sample, int do_post, double maxtau, int do_pnmono, int do_pnmono_print, int *ret_nbump, float *ret_Mb);
+extern double       cp9_P7BChkMbNeeded(int L, int *kmin, int *kmax);                                                            /* brief 26_0821-197 */
 extern int          cm_p7_Seq2Bands(CM_t *cm, char *errbuf, P7_PROFILE *gm, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL_DSQ *dsq, int L,
 				 double **phi, float sc7, int len7, int end7, float mprob7, float mcprob7, float iprob7, float ilprob7, int pad7,
 				 int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
