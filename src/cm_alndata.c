@@ -384,6 +384,7 @@ plain_cp9_engine(CM_t *cm, char *errbuf, ESL_SQ *sq, float mxsize, int nmx, int 
   if(need_Mb > mxsize)
     ESL_FAIL(eslERANGE, errbuf, "HMM band calculation needs %.0f Mb > %.0f Mb limit.\nUse --mxsize %d.",
              need_Mb, mxsize, (int) (floor(need_Mb / 1024.) + 1.) * 1024);
+  cm_dp_NoteMb(cm, need_Mb); /* brief 26_0821-197 */
   return eslOK;
 }
 
@@ -427,12 +428,77 @@ cm_alndata_Create(void)
   data->secs_bands = 0.;
   data->secs_aln   = 0.;
   data->mb_tot     = 0.;
+  data->mb_peak    = 0.;
+  data->method     = CM_ALNMETHOD_UNKNOWN;
+  data->bandretry  = 0;
   data->tau        = -1.;
   
   return data;
 
  ERROR: 
   return NULL;
+}
+
+/* Function:  cm_alndata_MethodString()
+ * Incept:    EPN, Mon Nov 16 2026 (w/Claude)
+ *
+ * Purpose:   Return the name cmalign --verbose prints for alignment
+ *            method <method>, a CM_ALNMETHOD_* code (brief 26_0821-197).
+ */
+const char *
+cm_alndata_MethodString(int method)
+{
+  switch(method) {
+  case CM_ALNMETHOD_OA:          return "oa";
+  case CM_ALNMETHOD_CYK:         return "cyk";
+  case CM_ALNMETHOD_SAMPLE:      return "sample";
+  case CM_ALNMETHOD_OA_CKPT:     return "oa-ckpt";
+  case CM_ALNMETHOD_CYK_DNC:     return "cyk-dnc";
+  case CM_ALNMETHOD_OA_NB:       return "oa-nb";
+  case CM_ALNMETHOD_CYK_NB:      return "cyk-nb";
+  case CM_ALNMETHOD_SAMPLE_NB:   return "sample-nb";
+  case CM_ALNMETHOD_HMM_OA:      return "hmm-oa";
+  case CM_ALNMETHOD_HMM_OA_CKPT: return "hmm-oa-ckpt";
+  case CM_ALNMETHOD_HMM_OA_NB:   return "hmm-oa-nb";
+  case CM_ALNMETHOD_HMM_VIT:     return "hmm-vit";
+  }
+  return "-";
+}
+
+/* Function:  cm_alndata_BandRetryString()
+ * Incept:    EPN, Mon Nov 16 2026 (w/Claude)
+ *
+ * Purpose:   Write the names of the band retries in <bandretry>
+ *            (CM_BANDRETRY_* flags) to <buf>, joined by '+', or "-" if
+ *            none; <buf> holds at least CM_BANDRETRY_STRLEN chars.
+ *            Returns <buf>.
+ */
+char *
+cm_alndata_BandRetryString(int bandretry, char *buf)
+{
+  buf[0] = '\0';
+  if(bandretry & CM_BANDRETRY_IBV)  strcat(buf, "+ibv");
+  if(bandretry & CM_BANDRETRY_VIT)  strcat(buf, "+vit");
+  if(bandretry & CM_BANDRETRY_HULL) strcat(buf, "+hull");
+  if(bandretry & CM_BANDRETRY_EL)   strcat(buf, "+el");
+  if(buf[0] == '\0') strcpy(buf, "-");
+  else                memmove(buf, buf+1, strlen(buf)); /* drop the leading '+' */
+  return buf;
+}
+
+/* Function:  cm_dp_NoteMb()
+ * Incept:    EPN, Mon Nov 16 2026 (w/Claude)
+ *
+ * Purpose:   Note that one step of the current alignment (band
+ *            calculation or CM DP) allocates <mb> Mb of DP matrices:
+ *            raises cm->dp_peak_Mb to <mb> if it is larger.
+ *            DispatchSqAlignment() resets it for each sequence and
+ *            reports it as the CM_ALNDATA's mb_peak (brief 26_0821-197).
+ */
+void
+cm_dp_NoteMb(CM_t *cm, double mb)
+{
+  if(mb > cm->dp_peak_Mb) cm->dp_peak_Mb = (float) mb;
 }
 
 /* Function:  cm_alndata_Destroy()
@@ -901,6 +967,13 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
    * this sequence; prevents infinite retry.
    */
   int ibv_fallback_used = FALSE;
+  /* brief 26_0821-197: for cmalign --verbose and "mem (Mb)": the engine that
+   * aligned, the band retries that ran, and (in cm->dp_peak_Mb, see
+   * cm_dp_NoteMb()) the largest DP memory any one step allocated. */
+  int    method    = CM_ALNMETHOD_UNKNOWN;
+  int    bandretry = 0;
+  float  step_mb   = 0.;   /* one step's DP Mb, for cm_dp_NoteMb() */
+  double p7vit_mb  = 0.;   /* full p7 Viterbi matrix Mb, held while the p7-banded CP9 bands are calculated */
   /* local-mode EL retry with native CP9 bands (briefs 26_0821-128/26_0821-132) */
   if(elr != NULL && elr->mode == ELR_MODE_NATIVE) do_p7band = FALSE;
 
@@ -949,6 +1022,7 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
                    (do_trunc ? (cm_CheckptTrAlignHB_Qualifies(cm) || cm_CheckptTrOptAccAlignHB_Qualifies(cm))
                              : (cm_CheckptAlignHB_Qualifies(cm)   || cm_CheckptOptAccAlignHB_Qualifies(cm)))) ? TRUE : FALSE;
 
+  cm->dp_peak_Mb = 0.;
   if(w_tot != NULL) esl_stopwatch_Start(w_tot);
 
   if(w != NULL) esl_stopwatch_Start(w);
@@ -965,12 +1039,16 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 			       (do_qdb) ? cm->qdbinfo->dmax2 : NULL);
       mb_tot = CYKNonQDBSmallMbNeeded(cm, sq->L);
     }
+    method = CM_ALNMETHOD_CYK_DNC;
+    cm_dp_NoteMb(cm, mb_tot);
   }
   else { /* do_small is FALSE */
     if(do_nonbanded || do_qdb) { /* do not use HMM bands */
+      method = do_optacc ? CM_ALNMETHOD_OA_NB : (do_sample ? CM_ALNMETHOD_SAMPLE_NB : CM_ALNMETHOD_CYK_NB);
       if(do_trunc) { 
 	if((status = cm_TrAlignSizeNeeded(cm, errbuf, sq->L, mxsize, do_sample, do_post, 
 					  NULL, NULL, NULL, &mb_tot)) != eslOK) goto ERROR;
+	cm_dp_NoteMb(cm, mb_tot);
 	if((status = cm_TrAlign(cm, errbuf, sq->dsq, sq->L, mxsize, mode, pass_idx, 
 				do_optacc, do_sample, cm->trnb_mx, cm->trnb_shmx, cm->trnb_omx, 
 				cm->trnb_emx, r, do_post ? &ppstr : NULL, &tr, NULL, &pp, &sc)) != eslOK) goto ERROR;
@@ -978,6 +1056,7 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
       else {
 	if((status = cm_AlignSizeNeeded(cm, errbuf, sq->L, mxsize, do_sample, do_post, 
 					NULL, NULL, NULL, &mb_tot)) != eslOK) goto ERROR;
+	cm_dp_NoteMb(cm, mb_tot);
 	if((status = cm_Align(cm, errbuf, sq->dsq, sq->L, mxsize, do_optacc, do_sample, cm->nb_mx, cm->nb_shmx, 
 			      cm->nb_omx, cm->nb_emx, r, do_post ? &ppstr : NULL, &tr, &pp, &sc)) != eslOK) goto ERROR;
       }
@@ -1169,9 +1248,12 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 		    sq->name, (int)sq->L, cm->fp7->M, status, p7_ncells);
 	  }
 
+	  if(gx_p7b != NULL) p7vit_mb = cm_p7_ViterbiMxMb(cm->fp7->M, sq->L) * (1024. * 1024. / 1000000.); /* in 10^6 bytes, like the CM's */
+	  cm_dp_NoteMb(cm, p7vit_mb);
 	  if(status == eslOK && p7_ncells > 0) {
 	    /* Use p7 bands to derive CM bands via p7-banded CP9 F/B with tau-ratcheting */
 	    if(p7b_end_at_M) cm_p7_bands_ReachModelEnd(p7_kmax, sq->L, cm->cp9->M); /* brief 26_0821-100 */
+	    cm_dp_NoteMb(cm, p7vit_mb + cp9_P7BChkMbNeeded(sq->L, p7_kmin, p7_kmax)); /* the Viterbi matrix is still allocated */
 	    status = cp9_IterateSeq2BandsP7B(cm, errbuf, sq->dsq, sq->L, p7_kmin, p7_kmax,
 					     1, sq->L, pass_idx, mxsize,
 					     doing_search, do_sample, do_post,
@@ -1272,7 +1354,9 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 					       TRUE, do_trunc, cm->p7_ibv_mode, cm->p7_ibv_width,
 					       &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells)) != eslOK) goto ERROR;
 	      if(p7_ncells == 0) ESL_XFAIL(eslENORESULT, errbuf, "--p7ibv-mem no-parse retry produced no p7 band");
+	      bandretry |= CM_BANDRETRY_IBV;
 	      if(p7b_end_at_M) cm_p7_bands_ReachModelEnd(p7_kmax, sq->L, cm->cp9->M); /* brief 26_0821-100 */
+	      cm_dp_NoteMb(cm, cp9_P7BChkMbNeeded(sq->L, p7_kmin, p7_kmax));
 	      status = cp9_IterateSeq2BandsP7B(cm, errbuf, sq->dsq, sq->L, p7_kmin, p7_kmax,
 					       1, sq->L, pass_idx, mxsize,
 					       doing_search, do_sample, do_post,
@@ -1371,6 +1455,7 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 
 	/* brief 26_0821-116: band calculation is done; free its CP9 matrices before
 	 * the CM DP, so peak memory is the larger of the two stages, not their sum. */
+	if(cm->cp9_mx != NULL && cm->cp9_bmx != NULL) cm_dp_NoteMb(cm, cm->cp9_mx->size_Mb + cm->cp9_bmx->size_Mb);
 	shrink_cp9_matrices(cm);
       }
 
@@ -1430,6 +1515,7 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	  }
 	}
 
+	cm_dp_NoteMb(cm, _cykpp_use_dnc ? _cykpp_est_dnc : _cykpp_est_std); /* brief 26_0821-197 (0 if not estimated) */
 	if(_cykpp_use_dnc) {
 	  /* HMM-banded D&C-CYK floor: CYKDivideAndConquerHB()/TrCYKDivideAndConquerHB()
 	   * handle every CM type (bifurcated or bps=0), same engines/pattern as the main
@@ -1553,7 +1639,7 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	    else         status = cm_AlignSizeNeededHBELBanded  (cm, errbuf, sq->L, mxsize, do_sample, do_post,
 	                                                 NULL, NULL, NULL, NULL, &est_std_cm, &est_std_tot);
 	    if(status != eslOK && status != eslERANGE) goto ERROR;
-	    if(status == eslOK) { mxesc_tier = 'a'; eff_checkpt = FALSE; mb_tot = est_std_tot; }
+	    if(status == eslOK) { mxesc_tier = 'a'; eff_checkpt = FALSE; mb_tot = est_std_tot; cm_dp_NoteMb(cm, est_std_cm); }
 	    else {
 	      errbuf[0] = '\0'; /* clear the eslERANGE message; tier (a) simply doesn't fit */
 	      /* tier (b): checkpointed sqrt(M) pinned-OptAcc. CM-DP budget = ckptdpmb+emxmb
@@ -1565,7 +1651,7 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	                                                          &ck_dp, &ck_em, &ck_cp9, &ck_tot);
 	      if(status != eslOK) goto ERROR;
 	      ck_cmmb = ck_dp + ck_em;
-	      if(ckpt_avail && ck_cmmb <= mxsize) { mxesc_tier = 'b'; eff_checkpt = TRUE; mb_tot = ck_cmmb; }
+	      if(ckpt_avail && ck_cmmb <= mxsize) { mxesc_tier = 'b'; eff_checkpt = TRUE; mb_tot = ck_cmmb; cm_dp_NoteMb(cm, ck_cmmb); }
 	      else {
 	        /* tier (c): D&C-CYK floor (CYK parse, no PP). Real HMM-banded D&C peak is small
 	         * since brief 26_0430-227 (banded EL deck), and brief 26_0430-228's banded-EL estimator (cherry-
@@ -1597,6 +1683,7 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	        endhull_tried = TRUE;
 	        if((status = cp9_EndHullRetryBands(cm, errbuf, cm->cp9b, sq->L, pass_idx, &eh_changed)) != eslOK) goto ERROR;
 	        if(eh_changed) {
+	          bandretry |= CM_BANDRETRY_HULL;
 	          goto CM_ALIGN_HB_RETRY;
 	        }
 	      }
@@ -1606,6 +1693,8 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	                  "no alignment engine fits --mxsize %.0f Mb for %s (L=%d): free-OptAcc %.0f Mb, ckpt-OptAcc %.0f Mb, D&C-CYK floor %.0f Mb. Raise --mxsize (or use --small).",
 	                  (float)mxsize, sq->name, (int)sq->L, est_std_cm, ck_cmmb, dnc_tot);
 	      }
+	      method = CM_ALNMETHOD_CYK_DNC;
+	      cm_dp_NoteMb(cm, dnc_tot);
 	      /* Run the HMM-banded D&C-CYK floor -> CYK parsetree; ppstr stays NULL
 	       * (Parsetrees2Alignment() tolerates a per-seq NULL PP under global do_post,
 	       * cm_parsetree.c:1055). Truncated: pick the argmax over root-valid marginal modes
@@ -1645,8 +1734,14 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 		if(! do_mxesc && ! ckpt_will_run) {
 		  /* brief 26_0821-114: banded EL deck, as cm_tr_hb_mx_GrowTo() allocates it */
 		  status = cm_TrAlignSizeNeededHBELBanded(cm, errbuf, sq->L, mxsize, do_sample, do_post,
-					    NULL, NULL, NULL, NULL, NULL, &mb_tot);
+					    NULL, NULL, NULL, NULL, &step_mb, &mb_tot);
 		  if(status != eslOK) goto CM_ALIGN_HB_CHECK_FB;
+		  cm_dp_NoteMb(cm, step_mb);
+		}
+		else if(! do_mxesc) { /* --ckpt (brief 26_0821-197) */
+		  float ck_dp = 0., ck_em = 0.;
+		  if(cm_CheckptTrAlignSizeNeededHB(cm, errbuf, sq->L, ckpt_est_mode, NULL, NULL, &ck_dp, &ck_em, NULL, NULL) == eslOK) cm_dp_NoteMb(cm, ck_dp + ck_em);
+		  errbuf[0] = '\0';
 		}
 		/* checkpointed sqrt(M)-memory TRUNCATED OptAcc path: engaged by --ckpt
 		 * (CM_ALIGN_CHECKPT) for the pure-MATL-chain (bps=0) OptAcc case it
@@ -1665,6 +1760,8 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 		 * truncated WITHOUT --ckpt falls back to stock cm_TrAlignHB. */
 		int do_trckpt_r4 = (eff_checkpt && do_optacc && (! do_sample) &&
 				    (! do_trckpt) && cm_CheckptTrOptAccAlignHB_Qualifies(cm)) ? TRUE : FALSE;
+		method = (do_trckpt || do_trckpt_r4) ? CM_ALNMETHOD_OA_CKPT :
+		         (do_optacc ? CM_ALNMETHOD_OA : (do_sample ? CM_ALNMETHOD_SAMPLE : CM_ALNMETHOD_CYK));
 		if(do_trckpt) {
 		  status = cm_CheckptTrAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, mode, pass_idx,
 					       cm->trhb_emx, do_post ? &ppstr : NULL, &tr, NULL, &pp, &sc);
@@ -1728,7 +1825,13 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	if(! do_mxesc && ! ckpt_will_run) {
 	  /* brief 26_0821-114: banded EL deck, as cm_hb_mx_GrowTo() allocates it */
 	  if((status = cm_AlignSizeNeededHBELBanded(cm, errbuf, sq->L, mxsize, do_sample, do_post,
-					  NULL, NULL, NULL, NULL, NULL, &mb_tot)) != eslOK) goto CM_ALIGN_HB_CHECK_FB;
+					  NULL, NULL, NULL, NULL, &step_mb, &mb_tot)) != eslOK) goto CM_ALIGN_HB_CHECK_FB;
+	  cm_dp_NoteMb(cm, step_mb);
+	}
+	else if(! do_mxesc) { /* --ckpt (brief 26_0821-197) */
+	  float ck_dp = 0., ck_em = 0.;
+	  if(cm_CheckptAlignSizeNeededHB(cm, errbuf, sq->L, NULL, NULL, &ck_dp, &ck_em, NULL, NULL) == eslOK) cm_dp_NoteMb(cm, ck_dp + ck_em);
+	  errbuf[0] = '\0';
 	}
 	/* checkpointed sqrt(M)-memory OptAcc path: engaged by --ckpt (CM_ALIGN_CHECKPT)
 	 * only for the non-truncated, pure-MATL-chain OptAcc case it supports (local
@@ -1747,6 +1850,8 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	 * unchanged from ckpt-trcyk-impl. */
 	int do_checkpt_r3 = (eff_checkpt && do_optacc && (! do_sample) &&
 			     (! do_checkpt) && cm_CheckptOptAccAlignHB_Qualifies(cm)) ? TRUE : FALSE;
+	method = (do_checkpt || do_checkpt_r3) ? CM_ALNMETHOD_OA_CKPT :
+	         (do_optacc ? CM_ALNMETHOD_OA : (do_sample ? CM_ALNMETHOD_SAMPLE : CM_ALNMETHOD_CYK));
 	if(do_checkpt) {
 	  status = cm_CheckptAlignHB(cm, errbuf, sq->dsq, sq->L, mxsize, cm->hb_emx,
 				     do_post ? &ppstr : NULL, &tr, &pp, &sc);
@@ -1834,6 +1939,7 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 	  goto ERROR;
 	}
 	ibv_fallback_used = TRUE;
+	bandretry |= CM_BANDRETRY_VIT;
 	errbuf[0] = '\0';
 	status    = eslOK;
 
@@ -1867,8 +1973,10 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
 				   sq->dsq, sq->L, cm->p7bpad, fb_nodepad,
 				   0, 0,
 				   &fb_i2k, &fb_kmin, &fb_kmax, &fb_ncells);
+	  cm_dp_NoteMb(cm, fbvit_Mb * (1024. * 1024. / 1000000.));
 	  if (status == eslOK && fb_ncells > 0) {
 	    if (p7b_end_at_M) cm_p7_bands_ReachModelEnd(fb_kmax, sq->L, cm->cp9->M); /* brief 26_0821-100 */
+	    cm_dp_NoteMb(cm, fbvit_Mb * (1024. * 1024. / 1000000.) + cp9_P7BChkMbNeeded(sq->L, fb_kmin, fb_kmax));
 	    status = cp9_IterateSeq2BandsP7B(cm, errbuf, sq->dsq, sq->L,
 					     fb_kmin, fb_kmax,
 					     1, sq->L, pass_idx, mxsize,
@@ -1935,6 +2043,9 @@ dispatch_sq_alignment_core(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, floa
   data->secs_bands = (do_nonbanded) ? 0.     : secs_bands;
   data->secs_aln   = secs_aln;
   data->mb_tot     = mb_tot;
+  data->mb_peak    = cm->dp_peak_Mb;
+  data->method     = method;
+  data->bandretry  = bandretry;
   data->tau        = tau;
   data->thresh1    = thresh1;
   data->thresh2    = thresh2;
@@ -2440,6 +2551,8 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   double       sum[3]   = { 0., 0., 0. };   /* bands, alignment, total seconds over every pass */
   int          nel = 0, ntrig, k, ua, ub, a, b, nrow;
   int          ncand = 0, npos = 0, ncorr = 0, gate, nkept = 0, nretry = 0;
+  float        peak_mb   = 0.;  /* largest DP Mb of any pass, kept or not (brief 26_0821-197) */
+  int          bandretry = 0;   /* the band retries of every pass */
 
   /* Not for a sampled alignment (keeping the higher-scoring of two samples
    * would bias the sample). */
@@ -2452,6 +2565,8 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
   eb.capture = TRUE;
   status = dispatch_sq_alignment_core(cm, errbuf, sq, idx, mxsize, mode, pass_idx, cp9b_valid, w, w_tot, r, &eb, ret_data);
   if(eb.raw == NULL || eb.L != L) { elr_band_release(&eb); return status; }   /* the band did not come from kmerchain */
+  peak_mb = cm->dp_peak_Mb;
+  if(*ret_data != NULL) bandretry = (*ret_data)->bandretry;
 
   /* a refusal (eslERANGE): one retry with the tail rule T. It is not applied
    * before alignment, since it would change many bands that align fine. */
@@ -2466,7 +2581,10 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
     if(nrow > 0) {
       rq.mode = ELR_MODE_EDIT; rq.L = L; rq.i2k = eb.i2k; rq.kmin = eb.kmin; rq.kmax = eb.kmax; rq.klo = klo;
       status2 = dispatch_sq_alignment_core(cm, errbuf2, sq, idx, mxsize, mode, pass_idx, cp9b_valid, w, w_tot, r, &rq, &data2);
+      peak_mb    = ESL_MAX(peak_mb, cm->dp_peak_Mb);
+      bandretry |= CM_BANDRETRY_EL;   /* not nretry: its time sums would replace the first pass's */
       if(status2 == eslOK) {
+        bandretry |= data2->bandretry;
         data2->secs_tot += t_first;
         best = data2; data2 = NULL;
         status = eslOK; errbuf[0] = '\0';
@@ -2514,6 +2632,8 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
     rq.mode = ELR_MODE_EDIT; rq.L = L; rq.i2k = eb.i2k; rq.kmin = eb.kmin; rq.kmax = eb.kmax; rq.klo = klo;
     status2 = dispatch_sq_alignment_core(cm, errbuf2, sq, idx, mxsize, mode, pass_idx, cp9b_valid, w, w_tot, r, &rq, &data2);
     nretry++;
+    peak_mb = ESL_MAX(peak_mb, cm->dp_peak_Mb);
+    if(data2 != NULL) bandretry |= data2->bandretry;
     if(elr_consider(cm, sq, status2, &data2, &best, &best_psc, sum, &psc2)) nkept++;
   }
   /* R2: native CP9 bands, if R1 was not kept. Skipped when the estimate
@@ -2523,12 +2643,16 @@ DispatchSqAlignment(CM_t *cm, char *errbuf, ESL_SQ *sq, int64_t idx, float mxsiz
     rq.mode = ELR_MODE_NATIVE; rq.L = 0; rq.i2k = rq.kmin = rq.kmax = rq.klo = NULL;
     status2 = dispatch_sq_alignment_core(cm, errbuf2, sq, idx, mxsize, mode, pass_idx, cp9b_valid, w, w_tot, r, &rq, &data2);
     nretry++;
+    peak_mb = ESL_MAX(peak_mb, cm->dp_peak_Mb);
+    if(data2 != NULL) bandretry |= data2->bandretry;
     if(elr_consider(cm, sq, status2, &data2, &best, &best_psc, sum, &psc2)) nkept++;
   }
 
  DONE:
   if(best != NULL) {
     if(nretry > 0) { best->secs_bands = sum[0]; best->secs_aln = sum[1]; best->secs_tot = sum[2]; }
+    best->mb_peak   = ESL_MAX(best->mb_peak, peak_mb);
+    best->bandretry = bandretry | ((nretry > 0) ? CM_BANDRETRY_EL : 0);
     *ret_data = best;
   }
   elr_band_release(&eb);

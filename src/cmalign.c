@@ -1453,7 +1453,7 @@ output_hmm_insert_info(FILE *ifp, ESL_SQ **sqarr, P7_TRACE **tr, int nseq, int M
  * hmm_output_scores() turns them into CM_ALNDATA rows (with tr == NULL)
  * for output_scores(), so --hmm prints the same table as CM mode.
  */
-enum { HMMST_SC = 0, HMMST_BANDS, HMMST_ALN, HMMST_TOT, HMMST_MB, HMMST_N };
+enum { HMMST_SC = 0, HMMST_BANDS, HMMST_ALN, HMMST_TOT, HMMST_MB, HMMST_METHOD, HMMST_RETRY, HMMST_N }; /* METHOD, RETRY: brief 26_0821-197 */
 
 static double
 hmm_now(void)
@@ -1492,13 +1492,15 @@ hmm_score_bits(float rawsc, int do_trunc, P7_BG *bg, const ESL_DSQ *dsq, int L)
 }
 
 static void
-hmm_set_stats(float *st, float sc_bits, double t0, double t_aln0, double t1, double mb)
+hmm_set_stats(float *st, float sc_bits, double t0, double t_aln0, double t1, double mb, int method, int bandretry)
 {
-  st[HMMST_SC]    = sc_bits;
-  st[HMMST_BANDS] = (float) (t_aln0 - t0);
-  st[HMMST_ALN]   = (float) (t1 - t_aln0);
-  st[HMMST_TOT]   = (float) (t1 - t0);
-  st[HMMST_MB]    = (float) mb;
+  st[HMMST_SC]     = sc_bits;
+  st[HMMST_BANDS]  = (float) (t_aln0 - t0);
+  st[HMMST_ALN]    = (float) (t1 - t_aln0);
+  st[HMMST_TOT]    = (float) (t1 - t0);
+  st[HMMST_MB]     = (float) mb;
+  st[HMMST_METHOD] = (float) method;    /* small ints, exact as floats */
+  st[HMMST_RETRY]  = (float) bandretry;
 }
 
 /* hmm_output_scores()
@@ -1546,6 +1548,9 @@ hmm_output_scores(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, char *errb
     dataA[i]->secs_aln   = st[HMMST_ALN];
     dataA[i]->secs_tot   = st[HMMST_TOT];
     dataA[i]->mb_tot     = st[HMMST_MB];
+    dataA[i]->mb_peak    = st[HMMST_MB];
+    dataA[i]->method     = (int) st[HMMST_METHOD];
+    dataA[i]->bandretry  = (int) st[HMMST_RETRY];
     dataA[i]->tau        = -1.;
   }
 
@@ -1737,7 +1742,10 @@ hmm_align_one(HMM_ALIGNER *ha, const ESL_SQ *sq, P7_TRACE *tr, float *st, char *
   int         noparse_retried = FALSE;                /* brief 26_0821-096 */
   double      t0        = hmm_now();
   double      t_aln0    = t0;
-  double      mb        = 0.;                         /* score-table memory */
+  double      mb        = 0.;                         /* score-table memory: largest DP Mb allocated at once (brief 26_0821-197) */
+  double      vit_mb    = 0.;                         /* the full Viterbi matrix, if this sequence used one; kept during banded OA */
+  int         method;                                 /* CM_ALNMETHOD_HMM_*, for --verbose */
+  int         bandretry = 0;                          /* CM_BANDRETRY_IBV if the no-parse retry ran */
   float       sc, fwdsc, oasc, raw = 0.;
   char        derrbuf[eslERRBUFSIZE];                 /* the band derivers' messages */
   int         status;
@@ -1761,9 +1769,11 @@ hmm_align_one(HMM_ALIGNER *ha, const ESL_SQ *sq, P7_TRACE *tr, float *st, char *
    * deriver) -- the latter runs a full p7_GViterbi below. Only --p7ibv/--p7kmerchain
    * skip the full matrix (their derivers avoid it); they are covered by the post-band
    * preflight instead, and kmerchain's Viterbi safety net by its own check below. */
+  method = ha->do_hmmvit ? CM_ALNMETHOD_HMM_VIT : (ha->do_hmmnoband ? CM_ALNMETHOD_HMM_OA_NB : CM_ALNMETHOD_HMM_OA);
   if (ha->do_hmmvit || ha->do_hmmnoband || (! ha->do_p7ibv && ! cm->p7_use_kmerchain)) {
     mb = ha->do_hmmnoband ? hmm_unbanded_oa_mb(hmm->M, L) : cm_p7_ViterbiMxMb(hmm->M, L); /* brief 26_0821-163: double OA */
     if ((status = hmm_mxsize_check(mb, ha->mxsize, errbuf)) != eslOK) goto ERROR;
+    if (! ha->do_hmmnoband) vit_mb = mb;
   }
 
   if (ha->do_hmmvit) {
@@ -1848,6 +1858,7 @@ hmm_align_one(HMM_ALIGNER *ha, const ESL_SQ *sq, P7_TRACE *tr, float *st, char *
         int tpos, k;
         band_src = "default p7 Viterbi-trace"; band_is_ibv = FALSE;
         if (did_kmer && (status = hmm_mxsize_check(cm_p7_ViterbiMxMb(hmm->M, L), ha->mxsize, errbuf)) != eslOK) goto ERROR;
+        vit_mb = cm_p7_ViterbiMxMb(hmm->M, L);
         free(i2k);  i2k  = NULL;
         free(kmin); kmin = NULL;
         free(kmax); kmax = NULL;
@@ -1906,7 +1917,8 @@ hmm_align_one(HMM_ALIGNER *ha, const ESL_SQ *sq, P7_TRACE *tr, float *st, char *
       p7_CheckptBandedOAMemNeeded(bnd, P7B_OAMEM_CKPT, &ckpt_bytes);
       ckpt_mode = (ckpt_bytes / (1024.0 * 1024.0) <= ha->mxsize) ? P7B_OAMEM_CKPT : P7B_OAMEM_CKPTPP;
       p7_CheckptBandedOAMemNeeded(bnd, ckpt_mode, &needed_bytes);
-      mb = ESL_MAX(mb, needed_bytes / (1024.0 * 1024.0));
+      mb = ESL_MAX(mb, vit_mb + needed_bytes / (1024.0 * 1024.0)); /* brief 26_0821-197: plus the Viterbi matrix, still allocated */
+      method = (ckpt_mode == P7B_OAMEM_CKPTPP) ? CM_ALNMETHOD_HMM_OA_CKPT : CM_ALNMETHOD_HMM_OA;
       if ((status = hmm_mxsize_check(needed_bytes / (1024.0 * 1024.0), ha->mxsize, errbuf)) != eslOK) goto ERROR;
     }
 
@@ -1945,6 +1957,7 @@ hmm_align_one(HMM_ALIGNER *ha, const ESL_SQ *sq, P7_TRACE *tr, float *st, char *
                                          &i2k, &kmin, &kmax, &ncells, errbuf)) != eslOK) goto ERROR;
       p7_gbands_Destroy(bnd); bnd = NULL;
       if (bxb) { p7_gmxb_Destroy(bxb); bxb = NULL; }
+      bandretry |= CM_BANDRETRY_IBV;
       goto HMM_NOPARSE_RETRY;
     }
     if (hmm_decode_failed(&decst))
@@ -1952,7 +1965,7 @@ hmm_align_one(HMM_ALIGNER *ha, const ESL_SQ *sq, P7_TRACE *tr, float *st, char *
     raw = fwdsc;
   }
 
-  hmm_set_stats(st, hmm_score_bits(raw, ha->do_trunc, ha->bg, sq->dsq, L), t0, t_aln0, hmm_now(), mb);
+  hmm_set_stats(st, hmm_score_bits(raw, ha->do_trunc, ha->bg, sq->dsq, L), t0, t_aln0, hmm_now(), mb, method, bandretry);
   status = eslOK;
   goto CLEANUP;
 
@@ -3864,13 +3877,13 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *sqfile, CM_t
      *    allocates NO alignment DP matrix, and only the nworkers running
      *    mpi_worker() (one WORKER_INFO apiece) do.
      *
-     * The multiplier is printed INLINE on the aggregate line rather than on a
-     * line of its own: under threading a separate count would merely repeat
-     * the integer the "# number of worker threads" line below already prints,
-     * while under MPI the "# MPI:" line sets output_ncpu and suppresses that
-     * line entirely -- and reports nworkers+1, which is NOT this multiplier.
-     * A standalone count line would thus be redundant in one case and the
-     * sole source of the number in the other. */
+     * brief 26_0821-199: the multiplier only decides whether to qualify this
+     * line as "(per thread)" below -- the "maximum aggregate DP matrix size"
+     * line that used to print (multiplier x --mxsize) as a memory figure is
+     * removed (brief 26_0821-196/197/199): it left out the model, each
+     * worker's own copy of the model, and the stored alignments, and
+     * undercounted a worker that can hold up to 2 x --mxsize of matrices at
+     * once. See --mxsize in the man page for what else memory use includes. */
     int mxsize_mult;
 #ifdef HAVE_MPI
     if (esl_opt_IsUsed(go, "--mpi")) mxsize_mult = ESL_MAX(ncpus - 1, 1);
@@ -3886,8 +3899,6 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *sqfile, CM_t
        * is allocated in the master, not in a worker). The unqualified form
        * also matches cmsearch.c:2325 / cmscan.c:2616 for the same option. */
       fprintf(ofp, "# maximum DP matrix size (per thread):         %.2f Mb\n", esl_opt_GetReal(go, "--mxsize"));
-      fprintf(ofp, "# maximum aggregate DP matrix size:            %.2f Mb [%d x %.2f]\n",
-	      esl_opt_GetReal(go, "--mxsize") * mxsize_mult, mxsize_mult, esl_opt_GetReal(go, "--mxsize"));
     }
     else {
       fprintf(ofp, "# maximum DP matrix size:                      %.2f Mb\n", esl_opt_GetReal(go, "--mxsize"));
@@ -4527,19 +4538,19 @@ output_scores(FILE *ofp, CM_t *cm, char *errbuf, CM_ALNDATA **dataA, int ndata, 
   for(i = 0; i < idxwidth; i++) idxdashes[i] = '-';
 
   fprintf(ofp, "# %*s  %-*s  %6s  %7s  %7s  %5s  %8s  %6s  %-30s  %8s",    idxwidth, "",          namewidth,         "",      " ",        "",        "",      "",         "",       "", "       running time (s)",         "");
-  if(be_verbose) fprintf(ofp, "  %7s  %7s  %7s", "", "", "");
+  if(be_verbose) fprintf(ofp, "  %7s  %7s  %7s  %11s  %9s", "", "", "", "", "");
   fprintf(ofp, "\n");
 
   fprintf(ofp, "# %*s  %-*s  %6s  %7s  %7s  %5s  %8s  %6s  %30s  %8s",     idxwidth, "",          namewidth,         "",      " ",        "",        "",      "",         "",       "", "-------------------------------", "");
-  if(be_verbose) fprintf(ofp, "  %7s  %7s  %7s", "", "", "");
+  if(be_verbose) fprintf(ofp, "  %7s  %7s  %7s  %11s  %9s", "", "", "", "", "");
   fprintf(ofp, "\n");
 
   fprintf(ofp, "# %*s  %-*s  %6s  %7s  %7s  %5s  %8s  %6s  %9s  %9s  %9s  %8s", idxwidth, "idx",   namewidth, "seq name", "length", "cm from",   "cm to", "trunc",   "bit sc", "avg pp", "band calc", "alignment", "total", "mem (Mb)");
-  if(be_verbose) fprintf(ofp, "  %7s  %7s  %7s", "tau", "thresh1", "thresh2");
+  if(be_verbose) fprintf(ofp, "  %7s  %7s  %7s  %11s  %9s", "tau", "thresh1", "thresh2", "method", "bandretry");
   fprintf(ofp, "\n");
 
   fprintf(ofp, "# %*s  %-*s  %6s  %7s  %7s  %5s  %8s  %6s  %9s  %9s  %9s  %8s", idxwidth, idxdashes, namewidth, namedashes, "------", "-------", "-------", "-----", "--------", "------", "---------", "---------", "---------", "--------");
-  if(be_verbose) fprintf(ofp, "  %7s  %7s  %7s", "-------", "-------", "-------");
+  if(be_verbose) fprintf(ofp, "  %7s  %7s  %7s  %11s  %9s", "-------", "-------", "-------", "-----------", "---------");
   fprintf(ofp, "\n");
 
   for(i = first_idx; i < ndata; i++) { 
@@ -4567,12 +4578,14 @@ output_scores(FILE *ofp, CM_t *cm, char *errbuf, CM_ALNDATA **dataA, int ndata, 
     if(! do_nonbanded) fprintf(ofp, "  %9.2f", dataA[i]->secs_bands);
     else               fprintf(ofp, "  %9s",   "-");
     fprintf(ofp, "  %9.2f  %9.2f", dataA[i]->secs_aln, dataA[i]->secs_tot);
-    fprintf(ofp, "  %8.2f", dataA[i]->mb_tot);
+    fprintf(ofp, "  %8.2f", dataA[i]->mb_peak); /* brief 26_0821-197: was mb_tot, which counted matrices that never ran */
     if(be_verbose) { 
+      char retrybuf[CM_BANDRETRY_STRLEN];
       if(dataA[i]->tau > -0.5) fprintf(ofp, "  %7.2g", dataA[i]->tau); /* tau is -1. if aln did not use HMM bands */
       else                     fprintf(ofp, "  %7s", "-");
       if(do_trunc && dataA[i]->tr != NULL) fprintf(ofp, "  %7.2f  %7.2f", dataA[i]->thresh1, dataA[i]->thresh2); 
       else                     fprintf(ofp, "  %7s  %7s", "-", "-");
+      fprintf(ofp, "  %11s  %9s", cm_alndata_MethodString(dataA[i]->method), cm_alndata_BandRetryString(dataA[i]->bandretry, retrybuf));
     }
     fprintf(ofp, "\n");
   }
