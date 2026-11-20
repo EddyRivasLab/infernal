@@ -179,6 +179,17 @@
    `failover` column of `--verbose` output, which marked such
    sequences, is removed.
 
+ * **`cmalign` reports its memory use differently.** The header's
+   `maximum aggregate DP matrix size` line, with `--mxsize`, is
+   removed; `--mxsize` bounds the DP matrices per worker, but the
+   model, a copy of it per worker, and the stored alignments come on
+   top, so it was not a measure of total memory. The `mem (Mb)`
+   column now reports the largest matrices that one step of a
+   sequence's alignment needed; it used to add matrices that were
+   never allocated. `--verbose` adds the columns `method` (the
+   algorithm that aligned the sequence) and `bandretry` (band retries
+   that ran).
+
  * **Models with no basepairs are now built the same way as models
    with basepairs**, with the same prior and entropy weighting target,
    instead of as if they were profile HMMs, so adding or removing a
