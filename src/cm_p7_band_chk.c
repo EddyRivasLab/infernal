@@ -2436,6 +2436,155 @@ utest_full_band(ESL_RANDOMNESS *rng, CP9_t *cp9, char *cp9name, int abcK, int N,
   if(nfail) esl_fatal("utest_full_band: %s: %d of %d trials failed (run with -v)", cp9name, nfail, N);
 }
 
+/* Run the (a) legacy int banded CP9 Forward/Backward -- family
+ * cp9_ForwardP7B_OLD_WITH_EL()/cp9_BackwardP7B() (cm_p7_band.c), reached only
+ * via cmsearch/cmscan's experimental --msvband/--vitband (default-off) -- on
+ * <dsq>/<kmin>/<kmax>, and compare every in-band cell, both directions,
+ * against the exact reference <r>. These kernels always use the production
+ * ILogsum() table: no test-only exact-log-sum build exists for them (unlike
+ * the checkpointed family tested above via cp9_chk_dlogsum_exact), so
+ * <tol_cell> must absorb the table's per-call rounding accumulated over a
+ * row -- utest_narrow_band_int()/utest_full_band_int() (brief 26_0821-210)
+ * pick and report the tolerance actually needed. Returns the number of
+ * failed checks; *ret_maxd is the largest cell or total difference. */
+static int
+chk_vs_ref_int(CP9_t *cp9, ESL_DSQ *dsq, int L, int *kmin, int *kmax, refFB_t *r,
+               double tol_tot, double tol_cell,
+               double *ret_fsc, double *ret_bsc, double *ret_maxd, char *what, int be_verbose)
+{
+  char     errbuf[eslERRBUFSIZE];
+  int      M = cp9->M;
+  CP9_MX  *fmx = CreateCP9Matrix(L, M);
+  CP9_MX  *bmx = CreateCP9Matrix(L, M);
+  float    ffsc, fbsc;
+  double   fsc, bsc, d, maxd = 0.;
+  int      nfail = 0, i, k, kp;
+
+  if(cp9_ForwardP7B_OLD_WITH_EL(cp9, errbuf, fmx, dsq, L, kmin, kmax, &ffsc) != eslOK) esl_fatal("%s: cp9_ForwardP7B_OLD_WITH_EL failed: %s", what, errbuf);
+  if(cp9_BackwardP7B          (cp9, errbuf, bmx, dsq, L, kmin, kmax, &fbsc) != eslOK) esl_fatal("%s: cp9_BackwardP7B failed: %s", what, errbuf);
+  fsc = (double) ffsc; bsc = (double) fbsc;
+
+  if(! (isfinite(fsc) && NOT_IMPROBABLE(fsc))) nfail++;
+  if(! (isfinite(bsc) && NOT_IMPROBABLE(bsc))) nfail++;
+  d = fabs(fsc - r->fsc); if(! (d <= tol_tot)) nfail++; if(isfinite(d) && d > maxd) maxd = d; else if(! isfinite(d)) maxd = eslINFINITY;
+  d = fabs(bsc - r->bsc); if(! (d <= tol_tot)) nfail++; if(isfinite(d) && d > maxd) maxd = d; else if(! isfinite(d)) maxd = eslINFINITY;
+  if(be_verbose && nfail) printf("  %s: F %.6f B %.6f ref F %.6f B %.6f\n", what, fsc, bsc, r->fsc, r->bsc);
+
+  for(i = 0; i <= L; i++) {
+    for(kp = 0, k = kmin[i]; k <= kmax[i]; k++, kp++) {
+      double cv[8], rv8[8];
+      int p;
+      cv[0] = Scorify(fmx->mmx[i][kp]);  cv[1] = Scorify(fmx->imx[i][kp]);  cv[2] = Scorify(fmx->dmx[i][kp]);  cv[3] = Scorify(fmx->elmx[i][kp]);
+      cv[4] = Scorify(bmx->mmx[i][kp]);  cv[5] = Scorify(bmx->imx[i][kp]);  cv[6] = Scorify(bmx->dmx[i][kp]);  cv[7] = Scorify(bmx->elmx[i][kp]);
+      rv8[0] = RX(r->fm,i,k); rv8[1] = RX(r->fi,i,k); rv8[2] = RX(r->fd,i,k); rv8[3] = RX(r->fe,i,k);
+      rv8[4] = RX(r->bm,i,k); rv8[5] = RX(r->bi,i,k); rv8[6] = RX(r->bd,i,k); rv8[7] = RX(r->be,i,k);
+      for(p = 0; p < 8; p++)
+        if(! cells_agree(cv[p], rv8[p], tol_cell)) {
+          if(be_verbose && nfail < 5) printf("  %s: plane %d row %d col %d: kernel %.6f ref %.6f\n", what, p, i, k, cv[p], rv8[p]);
+          nfail++;
+          d = fabs(cv[p] - rv8[p]); maxd = isfinite(d) ? ESL_MAX(maxd, d) : eslINFINITY;
+        }
+    }
+  }
+  if(ret_fsc)  *ret_fsc  = fsc;
+  if(ret_bsc)  *ret_bsc  = bsc;
+  if(ret_maxd) *ret_maxd = maxd;
+  FreeCP9Matrix(fmx);
+  FreeCP9Matrix(bmx);
+  return nfail;
+}
+
+/* Per-trial cell/total tolerance for the (a) int kernels: the production
+ * ILogsum() table rounds every call, and the error accumulates roughly
+ * linearly in the number of cells touched, ~O(L+M) (the same scaling
+ * utest_full_band() already uses for the pre-existing, unrelated
+ * reference-vs-unbanded-int-cp9_Forward/Backward check, at a 2e-4
+ * coefficient). Measured worst case when this was written: 0.206 bits on
+ * srp-euk.c.cm (M 292) at L 521, i.e. ~2.5e-4 per (L+M) unit -- this uses
+ * 4e-4 for margin, floored at 0.05 so small narrow-band trials (L+M small)
+ * keep a sane minimum. */
+#define TOL_INT(L,M) ESL_MAX(0.05, 4e-4 * ((double)(L)+(double)(M)))
+
+/* utest_narrow_band_int(): same sampled parses/bands as utest_narrow_band(),
+ * but for the (a) int kernels (chk_vs_ref_int()). Only one comparison pass
+ * exists (no exact-log-sum test build for these kernels): cell by cell and
+ * in both totals against the exact reference, at TOL_INT(L,M) -- a
+ * tolerance sized for the production ILogsum() table's rounding, not an
+ * algorithmic defect (see TOL_INT's own comment). Every sampled parse is a
+ * valid parse of the model inside the band, so a total of -inf (no parse
+ * found) is a failure. */
+static void
+utest_narrow_band_int(ESL_RANDOMNESS *rng, CP9_t *cp9, char *cp9name, int abcK, int N, int be_verbose)
+{
+  int      Wv[5] = { 0, 1, 2, 3, 6 };
+  char     what[128];
+  ESL_DSQ *dsq;
+  int     *kmin, *kmax;
+  refFB_t *r;
+  double   fsc, bsc, maxd, tol, worst_cell = 0., worst_fb = 0., worst_tol = 0.;
+  int      n, L, nfail = 0, nskip = 0, nrun = 0;
+
+  for(n = 0; n < N; n++) {
+    int W = Wv[n % 5];
+    if((L = sample_el_band(rng, cp9, W, abcK, &dsq, &kmin, &kmax)) <= 0) esl_fatal("utest_narrow_band_int: %s has no local ends", cp9name);
+    r = ref_Create(cp9, dsq, L, kmin, kmax);
+    snprintf(what, 128, "utest_narrow_band_int %s trial %d (W %d, L %d)", cp9name, n, W, L);
+    if(! (isfinite(r->fsc) && NOT_IMPROBABLE(r->fsc))) { nskip++; goto NEXT; }
+    if(fabs(r->fsc - r->bsc) > 1e-6) esl_fatal("%s: reference F %.6f != B %.6f", what, r->fsc, r->bsc);
+    nrun++;
+
+    tol = TOL_INT(L, cp9->M);
+    worst_tol = ESL_MAX(worst_tol, tol);
+    if(chk_vs_ref_int(cp9, dsq, L, kmin, kmax, r, tol, tol, &fsc, &bsc, &maxd, what, be_verbose)) nfail++;
+    worst_cell = ESL_MAX(worst_cell, maxd);
+    worst_fb = isfinite(fsc - bsc) ? ESL_MAX(worst_fb, fabs(fsc - bsc)) : eslINFINITY;
+  NEXT:
+    ref_Destroy(r); free(dsq); free(kmin); free(kmax);
+  }
+  if(be_verbose) printf("utest_narrow_band_int: %s: %d trials run, %d skipped, %d failed; max cell/total diff %.3g bits, max |F-B| %.3g bits (worst tol %.3g)\n",
+                        cp9name, nrun, nskip, nfail, worst_cell, worst_fb, worst_tol);
+  if(nrun < N/2) esl_fatal("utest_narrow_band_int: %s: only %d of %d sampled parses are allowed by the model", cp9name, nrun, N);
+  if(nfail)      esl_fatal("utest_narrow_band_int: %s: %d of %d trials failed (run with -v)", cp9name, nfail, nrun);
+}
+
+/* utest_full_band_int(): with every cell in band, the (a) int kernels must
+ * equal the unbanded F/B: cell by cell and in both totals against the exact
+ * reference, at TOL_INT(L,M) (see its own comment). */
+static void
+utest_full_band_int(ESL_RANDOMNESS *rng, CP9_t *cp9, char *cp9name, int abcK, int N, int be_verbose)
+{
+  char     what[128];
+  int      M = cp9->M;
+  ESL_DSQ *dsq;
+  int     *kmin, *kmax;
+  refFB_t *r;
+  double   fsc, bsc, maxd, tol, worst = 0., worst_tol = 0.;
+  int      n, i, L, nfail = 0;
+
+  for(n = 0; n < N; n++) {
+    L    = M/2 + esl_rnd_Roll(rng, 2*M);
+    dsq  = malloc(sizeof(ESL_DSQ) * (L+2));
+    kmin = malloc(sizeof(int) * (L+1));
+    kmax = malloc(sizeof(int) * (L+1));
+    dsq[0] = dsq[L+1] = eslDSQ_SENTINEL;
+    for(i = 1; i <= L; i++) dsq[i] = esl_rnd_Roll(rng, abcK);
+    for(i = 0; i <= L; i++) { kmin[i] = 0; kmax[i] = M; }
+    r = ref_Create(cp9, dsq, L, kmin, kmax);
+    snprintf(what, 128, "utest_full_band_int %s trial %d (L %d)", cp9name, n, L);
+    if(! (isfinite(r->fsc) && NOT_IMPROBABLE(r->fsc))) esl_fatal("%s: reference has no parse", what);
+    if(fabs(r->fsc - r->bsc) > 1e-6)                    esl_fatal("%s: reference F %.6f != B %.6f", what, r->fsc, r->bsc);
+
+    tol = TOL_INT(L, M);
+    worst_tol = ESL_MAX(worst_tol, tol);
+    if(chk_vs_ref_int(cp9, dsq, L, kmin, kmax, r, tol, tol, &fsc, &bsc, &maxd, what, be_verbose)) nfail++;
+    worst = ESL_MAX(worst, maxd);
+    ref_Destroy(r); free(dsq); free(kmin); free(kmax);
+  }
+  if(be_verbose) printf("utest_full_band_int: %s: %d trials, %d failed; max cell/total diff %.3g bits (worst tol %.3g)\n",
+                        cp9name, N, nfail, worst, worst_tol);
+  if(nfail) esl_fatal("utest_full_band_int: %s: %d of %d trials failed (run with -v)", cp9name, nfail, N);
+}
+
 static ESL_OPTIONS options[] = {
   /* name     type          default  env  range toggles reqs incomp  help                                 docgroup*/
   { "-h",        eslARG_NONE, FALSE, NULL, NULL,  NULL,  NULL, NULL, "show brief help and exit",           0 },
@@ -2446,7 +2595,8 @@ static ESL_OPTIONS options[] = {
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 static char usage[]  = "[-options] <cmfile>";
-static char banner[] = "unit test driver for cm_p7_band_chk.c (checkpointed banded CP9 Forward/Backward)";
+static char banner[] = "unit test driver for the checkpointed (cm_p7_band_chk.c) and legacy int\n"
+                        "(cm_p7_band.c cp9_ForwardP7B_OLD_WITH_EL/cp9_BackwardP7B) banded CP9 Forward/Backward";
 
 int
 main(int argc, char **argv)
@@ -2475,6 +2625,12 @@ main(int argc, char **argv)
   utest_full_band  (rng, cm->cp9,  "cp9",  abc->K, 5, v);
   utest_full_band  (rng, cm->Tcp9, "Tcp9", abc->K, 5, v);
 
+  /* (a) cp9_ForwardP7B_OLD_WITH_EL()/cp9_BackwardP7B() (cm_p7_band.c; brief 26_0821-210) */
+  utest_narrow_band_int(rng, cm->cp9,  "cp9",  abc->K, N, v);
+  utest_narrow_band_int(rng, cm->Tcp9, "Tcp9", abc->K, N, v);
+  utest_full_band_int  (rng, cm->cp9,  "cp9",  abc->K, 5, v);
+  utest_full_band_int  (rng, cm->Tcp9, "Tcp9", abc->K, 5, v);
+
   FreeCM(cm);
   esl_alphabet_Destroy(abc);
   esl_randomness_Destroy(rng);
@@ -2486,4 +2642,5 @@ main(int argc, char **argv)
 #undef REF_MSC
 #undef REF_ISC
 #undef MASK
+#undef TOL_INT
 #endif /*CM_P7_BAND_CHK_TESTDRIVE*/
