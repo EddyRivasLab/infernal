@@ -2105,6 +2105,13 @@ typedef struct cm_p7_calopts_s {
 /* (code 1 was brief 26_0821-143's arm a1, no prior back-out; no longer
  * written or read. H3PRI was that brief's a2.) */
 
+/* glocal Forward lambda/tau predictor coefficient blocks, the <gfpred>
+ * argument of cm_p7_Calibrate() (see cm_p7_UseP7mlPredictor() and
+ * cm_p7_HMMOnlyPredictor()) */
+#define CM_P7_GFPRED_DEFAULT 0  /* default coefficients (zero-basepair models, and HMM filters built by p7_Builder()) */
+#define CM_P7_GFPRED_P7ML    1  /* the ML p7 HMM filter of a model with basepairs (brief 26_0824-085) */
+#define CM_P7_GFPRED_H3PRI   2  /* the HMM-only search HMM (CM_HP7_H3PRI) of a model with basepairs (brief 26_0824-093) */
+
 /* model configuration options, cm->config_opts */
 #define CM_CONFIG_LOCAL         (1<<0)  /* configure the model for local alignment */
 #define CM_CONFIG_HMMLOCAL      (1<<1)  /* configure the CP9 for local alignment   */
@@ -3734,7 +3741,7 @@ extern int cm_p7_ReconfigLength3PrimeTrunc(P7_PROFILE *gm, int L);
 /* from cm_p7_modelmaker.c */
 extern int          BuildP7HMM_MatchEmitsOnly(CM_t *cm, CP9_t *cp9, P7_HMM **ret_p7);
 extern int          cm_cp9_to_p7(CM_t *cm, CP9_t *cp9, char *errbuf);
-extern int          cm_p7_Calibrate(P7_HMM *hmm, char *errbuf, int ElmL, int ElvL, int ElfL, int EgfL, int ElmN, int ElvN, int ElfN, int EgfN, double ElfT, double EgfT, int seed, int ncpus, int use_p7ml_pred, int do_sim, double *ret_gfmu, double *ret_gflambda);
+extern int          cm_p7_Calibrate(P7_HMM *hmm, char *errbuf, int ElmL, int ElvL, int ElfL, int EgfL, int ElmN, int ElvN, int ElfN, int EgfN, double ElfT, double EgfT, int seed, int ncpus, int gfpred, int do_sim, double *ret_gfmu, double *ret_gflambda);
 extern int          cm_p7_UseP7mlPredictor(CM_t *cm, int filter_is_mlp7);
 extern int          cm_p7_GForwardScoreOnly(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, float *opt_sc);
 extern int          cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *bg, int L, int N, double lambda, double tailp, int ncpus, double *ret_tau);
