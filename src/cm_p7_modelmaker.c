@@ -677,6 +677,27 @@ cm_p7_UseP7mlPredictor(CM_t *cm, int filter_is_mlp7)
   return (CMCountNodetype(cm, MATP_nd) > 0) ? CM_P7_GFPRED_P7ML : CM_P7_GFPRED_DEFAULT;
 }
 
+/* Function: cm_p7_HMMOnlyPredictor()
+ * Incept:   EPN, Fri Nov 20 2026 (w/Claude)
+ *
+ * Purpose:  Return the glocal lambda/tau coefficient block
+ *           (CM_P7_GFPRED_*) that cm_p7_Calibrate() should use for
+ *           the HMM-only search HMM of <cm> (cm->hp7, a CM_HP7_H3PRI
+ *           transform of its ML p7 HMM): CM_P7_GFPRED_H3PRI if <cm>
+ *           has at least one base pair (brief 26_0824-093), else
+ *           CM_P7_GFPRED_DEFAULT, the block zero-basepair models
+ *           already use for both of their HMMs.
+ *
+ * Args:     cm - the CM whose HMM-only search HMM is being calibrated
+ *
+ * Returns:  CM_P7_GFPRED_H3PRI or CM_P7_GFPRED_DEFAULT.
+ */
+int
+cm_p7_HMMOnlyPredictor(CM_t *cm)
+{
+  return (CMCountNodetype(cm, MATP_nd) > 0) ? CM_P7_GFPRED_H3PRI : CM_P7_GFPRED_DEFAULT;
+}
+
 /* Function: cm_p7_Calibrate()
  * Incept:   EPN, Tue Nov  9 06:16:57 2010
  *
@@ -1812,7 +1833,7 @@ cm_p7_CalibrateDerivedFilterHMMs(CM_t *cm, const CM_P7_CALOPTS *co, int ncpus, c
                                  co->lftailp, co->gftailp,
                                  co->seed,
                                  ncpus,
-                                 cm_p7_UseP7mlPredictor(cm, TRUE),
+                                 cm_p7_HMMOnlyPredictor(cm),               /* h3pri lambda/tau coefficients if the CM has base pairs (brief 26_0824-093) */
                                  co->do_sim,
                                  &hgfmu, &hgflambda))
        != eslOK) { ESL_XFAIL(status, errbuf, "Error calibrating the HMM-only p7 HMM"); }
