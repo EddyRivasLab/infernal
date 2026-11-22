@@ -321,82 +321,95 @@ static const double gfcalib_shrink_coef[5] = {
   -0.5429849757828361    /* z3 */
 };
 
-/* --p7ml glocal-Forward lambda predictor and tau shrinkage (brief 26_0824-085).
+/* ML-HMM filter (--p7ml) glocal-Forward lambda predictor and tau shrinkage
+ * (brief 26_0824-085; coefficients refit by brief 26_0824-093, deployed by
+ * brief 26_0824-094).
  *
- * With cmbuild --p7ml, a model that has at least one base pair gets the CM's
- * maximum-likelihood p7 HMM as its filter instead of the default
- * entropy-weighted filter built by p7_Builder(). The coefficient blocks above
- * were trained on default filters only. On ML-HMM filters they overpredict
- * lambda by ~16% (median predicted/true 1.160 on 792 models), which is ~19x
- * permissive at P=1e-8. These blocks have the SAME functional forms and
- * features as the shipped ones; only the coefficients are refit. See
- * cm_p7_UseP7mlPredictor() for when they are used.
+ * A model that has at least one base pair gets the CM's maximum-likelihood
+ * p7 HMM as its filter (first with cmbuild --p7ml, now by default) instead of
+ * the entropy-weighted filter built by p7_Builder(). The default coefficient
+ * blocks above were trained on p7_Builder() filters only. On ML-HMM filters
+ * they overpredict lambda by ~16% (median predicted/true 1.160 on 792
+ * models), which is ~19x permissive at P=1e-8. These blocks have the SAME
+ * functional forms and features as the default ones; only the coefficients
+ * are refit. See cm_p7_UseP7mlPredictor() for when they are used.
  *
- * Training set: 792 real basepaired models, each rebuilt from its exact source
- * alignment with --p7ml (default entropy weighting) and with --p7ml --enone:
- * 1533 unique filter HMMs (792 + 741; the other 51 --enone filters are
- * byte-identical to their --p7ml filter and were fit once). clen 20..2987,
- * filter mean_H 0.12..1.77, filter eff_nseq 0.30..1178.
+ * The first fit (brief 26_0824-085) was on 1533 filters: 792 real
+ * basepaired models, each rebuilt from its exact source alignment with
+ * --p7ml and with --p7ml --enone. The coefficients below replace it. They
+ * are a refit of the same form and the same 4 features on fresh references
+ * for the ML-HMM filters of the 792 default (entropy-weighted) builds only.
+ * Clan-grouped 5-fold CV, deployed lambda and tau at P=1e-8: 6/792 models
+ * over 10x permissive, worst 309x (first fit on the same references: 13/792,
+ * worst 661x); on 13 held-out models, 0 over 10x permissive, worst 5.6x
+ * (first fit: 1, worst 32x).
+ *
+ * Training set: the ML-HMM filters of 792 real basepaired models, default
+ * cmbuild options: clen 20..2987, mean_H 0.12..1.59, eff_nseq 0.30..351.
+ * (These are the same models, alignments, match emissions and features as
+ * the h3pri training set below.) Builds with --enone, whose filter eff_nseq
+ * reaches nseq, are outside this range.
  * The eff_nseq feature is capped at GFCALIB_P7ML_EFFN_CAP (1000), not at the
  * default path's 20: an ML-HMM filter's eff_nseq is the CM's, which reaches
- * nseq under --enone, and capping at 20 discarded the information that
- * separates those models (with a cap of 20, CV over-10x-permissive count on
- * --p7ml --enone was 70/792; with 1000, 34/792). 1000 is about the training
- * maximum, and the fitted eff_nseq coefficient is negative, so a larger
- * eff_nseq that the cap clips would have predicted a smaller (more
- * conservative) lambda.
+ * nseq under --enone, and in the first fit capping at 20 discarded the
+ * information that separates those models (CV over-10x-permissive count on
+ * --p7ml --enone: 70/792 with a cap of 20, 34/792 with 1000). The fitted
+ * eff_nseq coefficient is negative, so a larger eff_nseq that the cap clips
+ * would have predicted a smaller (more conservative) lambda.
  * Reference lambda/tau: one glocal-Forward fit per filter to N=500,000 sampled
  * scores (L = max(100, 2*clen)), an exponential tail fit to the top 7,500
  * scores, i.e. tailp 0.015. tau is converted to the GFMU convention,
  * P(S >= x) = exp(-lambda (x - tau)), before fitting.
  * Lambda: plain OLS on ln(lambda_ref), same 4 z-scored features as
- * predict_glocal_lambda(). Clan-grouped 5-fold CV, median signed error at
- * P=1e-8: 1.07x for --p7ml, 1.15x for --p7ml --enone.
- * Tau shrinkage: same form as gfcalib_shrink_tau() and the same eff_nseq cap, target
- * d = lambda*(tau_ref - tau_raw), with lambda from the --p7ml lambda
- * predictor. tau_raw is cm_p7_Tau()'s N=4 all-order estimate, simulated by
- * 200 draws of 4 scores per filter from a separate 20,000-score sample.
+ * predict_glocal_lambda().
+ * Tau shrinkage: same form as gfcalib_shrink_tau() and the same eff_nseq
+ * cap, target d = lambda*(tau_ref - tau_raw), with lambda from the lambda
+ * block below. tau_raw is cm_p7_Tau()'s N=4 all-order estimate, simulated by
+ * 200 draws of 4 scores per filter from a separate 20,000-score sample. As
+ * for the h3pri block, the tau_raw*lambda coefficient is fixed at 0 (fit
+ * freely, it extrapolates badly to clen > 1000 models); the mu/sd entries
+ * for that slot are the training values and are unused.
  */
 #define GFCALIB_EFFN_CAP       20.0    /* eff_nseq feature cap, default coefficients */
 #define GFCALIB_P7ML_EFFN_CAP  1000.0   /* eff_nseq feature cap, --p7ml coefficients  */
 
 static const double gfcalib_p7ml_feat_mu[4] = {
-  4.776961104829981,     /* log(clen)                */
-  0.7777697695599595,    /* mean_H                   */
-  0.7309221772495036,    /* mean_H^2                 */
-  1.95512921883143       /* log(min(eff_nseq, 1000)) */
+  4.746173718523467,     /* log(clen)                */
+  0.5129225078282832,    /* mean_H                   */
+  0.30686184301261454,   /* mean_H^2                 */
+  0.9778077067982784     /* log(min(eff_nseq, 1000)) */
 };
 static const double gfcalib_p7ml_feat_sd[4] = {
-  0.6758328383065203,
-  0.3549596636353907,
-  0.6102263831828977,
-  1.5027685065912544
+  0.6949022174011115,
+  0.20921841213373146,
+  0.3097855321419003,
+  0.9161919637803846
 };
 static const double gfcalib_p7ml_coef[5] = {
-  -0.9668881313609853,   /* intercept */
-  -0.18483460571601934,  /* z0 */
-  -0.42773426668171655,  /* z1 */
-   0.2915341375472999,   /* z2 */
-  -0.06495529093506133   /* z3 */
+  -0.802848964804241,    /* intercept */
+  -0.20529312679726702,  /* z0 */
+  -0.2788312958639158,   /* z1 */
+   0.1517939489190182,   /* z2 */
+  -0.04042631739252816   /* z3 */
 };
 static const double gfcalib_p7ml_shrink_mu[4] = {
-   4.776961104832206,    /* log(clen)                */
-   0.7777697695597421,   /* mean_H                   */
-   1.9551292188318754,   /* log(min(eff_nseq, 1000)) */
- -13.935619798919456     /* tau_raw * lambda         */
+   4.746173718522384,    /* log(clen)                */
+   0.5129225078281033,   /* mean_H                   */
+   0.9778077067981225,   /* log(min(eff_nseq, 1000)) */
+  -7.9498393528252995    /* tau_raw * lambda (unused: coef 0) */
 };
 static const double gfcalib_p7ml_shrink_sd[4] = {
-   0.6758328383066262,
-   0.3549596636354067,
-   1.5027685065909826,
-  14.74498047181927
+   0.6949022174011434,
+   0.20921841213372397,
+   0.9161919637803163,
+   4.790158107614321
 };
 static const double gfcalib_p7ml_shrink_coef[5] = {
-   0.9688523825711184,   /* intercept */
-   0.03237942303124768,  /* z0 */
-  -0.1168584503605011,   /* z1 */
-   0.04784605245727269,  /* z2 */
-  -0.15225363920130952   /* z3 */
+   0.9514899803126972,   /* intercept */
+   0.1377075531998984,   /* z0 */
+  -0.004377423254517349, /* z1 */
+   0.028990444156758048, /* z2 */
+   0.0                   /* z3: fixed at 0, see above */
 };
 
 /* HMM-only search HMM (h3pri) glocal-Forward lambda predictor and tau
