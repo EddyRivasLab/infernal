@@ -2107,6 +2107,7 @@ typedef struct cm_p7_calopts_s {
   double gftailp;                    /* tail fraction fit for glocal Forward */
   int    seed;                       /* RNG seed (0: arbitrary) */
   int    do_sim;                     /* TRUE to simulate glocal Forward parameters, not predict them */
+  int    etarget_rule;               /* CM_ETARGET_RULE_* of the cmbuild that built the CM, for cm_IsEntropyModified() */
 } CM_P7_CALOPTS;
 
 /* transforms of the CM's ML p7 HMM (mlp7) that give the HMM-only
@@ -2122,6 +2123,7 @@ typedef struct cm_p7_calopts_s {
 #define CM_P7_GFPRED_DEFAULT 0  /* default coefficients (zero-basepair models, and HMM filters built by p7_Builder()) */
 #define CM_P7_GFPRED_P7ML    1  /* the ML p7 HMM filter of a model with basepairs (brief 26_0824-085) */
 #define CM_P7_GFPRED_H3PRI   2  /* the HMM-only search HMM (CM_HP7_H3PRI) of a model with basepairs (brief 26_0824-093) */
+#define CM_P7_GFPRED_P7MLEMOD 3 /* the ML p7 HMM filter of an entropy-modified model with basepairs (brief 26_0824-096) */
 
 /* model configuration options, cm->config_opts */
 #define CM_CONFIG_LOCAL         (1<<0)  /* configure the model for local alignment */
@@ -3753,7 +3755,7 @@ extern int cm_p7_ReconfigLength3PrimeTrunc(P7_PROFILE *gm, int L);
 extern int          BuildP7HMM_MatchEmitsOnly(CM_t *cm, CP9_t *cp9, P7_HMM **ret_p7);
 extern int          cm_cp9_to_p7(CM_t *cm, CP9_t *cp9, char *errbuf);
 extern int          cm_p7_Calibrate(P7_HMM *hmm, char *errbuf, int ElmL, int ElvL, int ElfL, int EgfL, int ElmN, int ElvN, int ElfN, int EgfN, double ElfT, double EgfT, int seed, int ncpus, int gfpred, int do_sim, double *ret_gfmu, double *ret_gflambda);
-extern int          cm_p7_UseP7mlPredictor(CM_t *cm, int filter_is_mlp7);
+extern int          cm_p7_UseP7mlPredictor(CM_t *cm, int filter_is_mlp7, int entropy_modified);
 extern int          cm_p7_HMMOnlyPredictor(CM_t *cm);
 extern int          cm_p7_GForwardScoreOnly(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, float *opt_sc);
 extern int          cm_p7_Tau(ESL_RANDOMNESS *r, char *errbuf, P7_OPROFILE *om, P7_PROFILE *gm, P7_BG *bg, int L, int N, double lambda, double tailp, int ncpus, double *ret_tau);
@@ -3766,7 +3768,7 @@ extern void         cm_p7_DefaultHMMOnlyAlpha(double *alpha);
 extern int          cm_p7_DeriveFilterHMMs(CM_t *cm, int xform, P7_HMM **ret_fp7, P7_HMM **ret_hp7, char *errbuf);
 extern int          cm_p7_AttachDerivedFilterHMMs(CM_t *cm, char *errbuf);
 extern void         cm_p7_CalOptsSetDefaults(CM_P7_CALOPTS *co, int clen, int do_sim);
-extern int          cm_p7_DeriveFilterHMMsAsWritten(CM_t *cm, P7_HMM **ret_fp7, P7_HMM **ret_hp7, char *errbuf);
+extern int          cm_p7_DeriveFilterHMMsAsWritten(CM_t *cm, int etarget_rule, P7_HMM **ret_fp7, P7_HMM **ret_hp7, int *ret_emod, char *errbuf);
 extern int          cm_p7_CalibrateDerivedFilterHMMs(CM_t *cm, const CM_P7_CALOPTS *co, int ncpus, char *errbuf);
 extern int          cm_p7_UseHMMOnlyFilter(CM_t *cm);
 extern const char  *cm_p7_HMMOnlyXformString(int xform);

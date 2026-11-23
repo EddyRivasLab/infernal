@@ -60,7 +60,8 @@ static ESL_OPTIONS options[] = {
 static char usage[]  = "[-options] <cmfile>";
 static char banner[] = "convert CM file to a different Infernal format";
 
-static int  configure_model(CM_t *cm, char *errbuf, int set_filter);
+static int  configure_model(CM_t *cm, char *errbuf, int set_filter, int format);
+static int  etarget_rule_of_format(int format);
 static int  upgrade_model(const ESL_GETOPTS *go, CM_t *cm, int format, const Prior_t *user_pri, char *errbuf);
 static int  comlog_cmbuild_option(const char *comlog, const char *opt, char **opt_arg);
 static int  comlog_cmbuild_number(const char *comlog, const char *opt, double *ret_x);
@@ -253,7 +254,7 @@ main(int argc, char **argv)
 	 * CM's filter isn't needed). With --upgrade, the filter HMMs are
 	 * derived and calibrated below instead.
 	 */
-	if ((status = configure_model(cm, errbuf, ! do_upgrade && ! esl_opt_GetBoolean(go, "--cp9ascm"))) != eslOK) cm_Fail(errbuf);
+	if ((status = configure_model(cm, errbuf, ! do_upgrade && ! esl_opt_GetBoolean(go, "--cp9ascm"), cmfp->format)) != eslOK) cm_Fail(errbuf);
       }
 
       /* --upgrade: replace the filter HMM stored in an older-format CM
@@ -361,10 +362,12 @@ main(int argc, char **argv)
  * Configure the model. This determines QDBs and W, which
  * the new file format includes, but v1.0-->v1.0.2 did not,
  * thus we have to calculate them for models read from
- * v1.0-->v1.0.2 cm files.
+ * v1.0-->v1.0.2 cm files. <format> is the format <cm> was
+ * read from, which says how its cmbuild weighted it
+ * (etarget_rule_of_format(), brief 26_0824-096).
  */
 static int
-configure_model(CM_t *cm, char *errbuf, int set_filter)
+configure_model(CM_t *cm, char *errbuf, int set_filter, int format)
 {
   int status;
   int lmsvL, lvitL, lfwdL, gfwdL;
@@ -400,7 +403,7 @@ configure_model(CM_t *cm, char *errbuf, int set_filter)
 			       gftailp,                    /* fraction of tail mass to fit for glocal Fwd */
 			       42,                         /* seed: default */
 			       0,                          /* ncpus: 0 = serial */
-			       cm_p7_UseP7mlPredictor(cm, TRUE), /* filter is the ML HMM (brief 26_0824-085) */
+			       cm_p7_UseP7mlPredictor(cm, TRUE, cm_IsEntropyModified(cm, etarget_rule_of_format(format), NULL, NULL)), /* filter is the ML HMM (briefs 26_0824-085/26_0824-096) */
 			       FALSE,                      /* do_sim: predict, don't simulate, glocal Fwd stats (brief 26_0824-087) */
 			       &fil_gfmu, &fil_gflambda))
      != eslOK) return status;
@@ -409,6 +412,24 @@ configure_model(CM_t *cm, char *errbuf, int set_filter)
   return eslOK;
 }
 
+
+/* etarget_rule_of_format()
+ * Incept:    EPN, Mon Nov 23 2026 (w/Claude)
+ *
+ * Purpose:   Return the default relative entropy target rule
+ *            (CM_ETARGET_RULE_*) of the cmbuild versions that write CM
+ *            file format <format>, for cm_IsEntropyModified() (brief
+ *            26_0824-096): Infernal 1.0-1.0.2 for the v1.0 format,
+ *            1.1.x for INFERNAL1/a (all 1.1 releases used 0.38 bits
+ *            for models with no basepairs), else this version's.
+ */
+static int
+etarget_rule_of_format(int format)
+{
+  if (format == CM_FILE_1)  return CM_ETARGET_RULE_V1P0;
+  if (format == CM_FILE_1a) return CM_ETARGET_RULE_V1P1;
+  return CM_ETARGET_RULE_CUR;
+}
 
 /* upgrade_model()
  * Incept:    EPN, Fri Oct 30 2026 (w/Claude)
@@ -454,6 +475,11 @@ configure_model(CM_t *cm, char *errbuf, int set_filter)
  *              simulated, not predicted, where cmbuild would simulate
  *              them: --Esim, a --prior build, --eset 0, or an EFFN at
  *              EFORCE_MAX_NEFF (a missed --eforce target).
+ *            - Whether the CM is entropy-modified, which picks the
+ *              filter HMM's glocal lambda/tau coefficients, is
+ *              decided from the CM alone, against the default
+ *              weighting of the cmbuild that wrote <format>
+ *              (etarget_rule_of_format(); brief 26_0824-096).
  *            - The calibration settings are cmbuild's defaults,
  *              changed by any of cmbuild's calibration options on its
  *              COM line (--ElL, --EgL, --Elcmult, --Egcmult, --EmN,
@@ -499,6 +525,7 @@ upgrade_model(const ESL_GETOPTS *go, CM_t *cm, int format, const Prior_t *user_p
 
   /* calibration settings: cmbuild's, as in its build_and_calibrate_p7_filter() */
   cm_p7_CalOptsSetDefaults(&co, cm->clen, do_sim);
+  co.etarget_rule = etarget_rule_of_format(format); /* how the cmbuild that wrote <format> weighted by default (brief 26_0824-096) */
   if      (comlog_cmbuild_number(cm->comlog, "--ElL",     &x)) co.lmsvL = co.lvitL = co.lfwdL = (int) x;
   else if (comlog_cmbuild_number(cm->comlog, "--Elcmult", &x)) co.lmsvL = co.lvitL = co.lfwdL = x * cm->clen;
   if      (comlog_cmbuild_number(cm->comlog, "--EgL",     &x)) co.gfwdL = (int) x;

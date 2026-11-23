@@ -412,6 +412,73 @@ static const double gfcalib_p7ml_shrink_coef[5] = {
    0.0                   /* z3: fixed at 0, see above */
 };
 
+/* ML-HMM filter glocal-Forward lambda predictor and tau shrinkage for an
+ * entropy-modified model (brief 26_0824-096).
+ *
+ * The --p7ml blocks above are fit on default (entropy-weighted) builds
+ * only. On --enone builds, whose filter eff_nseq is nseq, they are about
+ * 3x conservative at P=1e-8 (median -0.47 log10 on 792 models, brief
+ * 26_0824-095): fewer windows pass the filter than the threshold intends.
+ * These blocks have the same form, features, eff_nseq cap and fixed-0
+ * tau_raw*lambda coefficient, fit on --enone references only. They are
+ * used for a model with base pairs that cm_IsEntropyModified() calls
+ * entropy-modified: its eff_nseq differs from what default weighting
+ * would give it (--enone, --eset, --ere, --eforce), decided from the CM
+ * alone, so that cmbuild and cmconvert --upgrade agree.
+ *
+ * Training set: the ML-HMM filters of 741 real basepaired models built
+ * with --enone (brief 26_0824-084's references; the other 51 of the 792
+ * are identical to their default build's filter and were dropped): clen
+ * 35..2987, mean_H 0.37..1.77, eff_nseq 1..1178.
+ * Reference lambda/tau, the lambda fit and the tau shrinkage fit are as
+ * for the --p7ml blocks above (N=500,000 sampled scores, tailp 0.015,
+ * tau in the GFMU convention; 200 simulated N=4 draws per filter).
+ * Clan-grouped 5-fold CV on --enone builds, deployed lambda and tau at
+ * P=1e-8, median over models: +0.12 log10 (the default-build --p7ml
+ * block: -0.48), 49/741 models over 10x permissive (--p7ml block: 11),
+ * 56/741 over 10x conservative (--p7ml block: 151).
+ * Builds with a lower relative entropy than the default (--ere below
+ * 0.59) are entropy-modified too, but were in neither training set.
+ */
+static const double gfcalib_p7mlemod_feat_mu[4] = {
+   4.809867461044248,     /* log(clen) */
+   1.0608453531680004,    /* mean_H */
+   1.1841689218641316,    /* mean_H^2 */
+   2.9997157742028926     /* log(min(eff_nseq, 1000)) */
+};
+static const double gfcalib_p7mlemod_feat_sd[4] = {
+   0.6532350150450948,
+   0.2424377415461381,
+   0.519782322917501,
+   1.2895030563720502
+};
+static const double gfcalib_p7mlemod_coef[5] = {
+  -1.1412910373668284,    /* intercept */
+  -0.1791553110086717,    /* z0 */
+  -0.22911003146348066,   /* z1 */
+   0.18771245372493395,   /* z2 */
+  -0.058648689531253906   /* z3 */
+};
+static const double gfcalib_p7mlemod_shrink_mu[4] = {
+   4.809867461043248,     /* log(clen) */
+   1.0608453531680544,    /* mean_H */
+   2.9997157742053044,    /* log(min(eff_nseq, 1000)) */
+  -20.340470389065157     /* tau_raw * lambda */
+};
+static const double gfcalib_p7mlemod_shrink_sd[4] = {
+   0.6532350150451282,
+   0.24243774154613296,
+   1.2895030563721235,
+   18.658146975482538
+};
+static const double gfcalib_p7mlemod_shrink_coef[5] = {
+   0.9892299962822545,    /* intercept */
+   0.1311165933432739,    /* z0 */
+  -0.05584079030324559,   /* z1 */
+   0.038052970602297814,  /* z2 */
+   0.0                    /* z3: fixed at 0, as for the --p7ml block */
+};
+
 /* HMM-only search HMM (h3pri) glocal-Forward lambda predictor and tau
  * shrinkage (brief 26_0824-093).
  *
@@ -511,6 +578,7 @@ gfcalib_lambda_block(int gfpred)
   GFCALIB_BLOCK b;
   switch (gfpred) {
   case CM_P7_GFPRED_P7ML:  b.mu = gfcalib_p7ml_feat_mu;  b.sd = gfcalib_p7ml_feat_sd;  b.coef = gfcalib_p7ml_coef;  b.cap = GFCALIB_P7ML_EFFN_CAP; break;
+  case CM_P7_GFPRED_P7MLEMOD: b.mu = gfcalib_p7mlemod_feat_mu; b.sd = gfcalib_p7mlemod_feat_sd; b.coef = gfcalib_p7mlemod_coef; b.cap = GFCALIB_P7ML_EFFN_CAP; break;
   case CM_P7_GFPRED_H3PRI: b.mu = gfcalib_h3pri_feat_mu; b.sd = gfcalib_h3pri_feat_sd; b.coef = gfcalib_h3pri_coef; b.cap = GFCALIB_P7ML_EFFN_CAP; break;
   default:                 b.mu = gfcalib_feat_mu;       b.sd = gfcalib_feat_sd;       b.coef = gfcalib_coef;       b.cap = GFCALIB_EFFN_CAP;      break;
   }
@@ -523,6 +591,7 @@ gfcalib_shrink_block(int gfpred)
   GFCALIB_BLOCK b;
   switch (gfpred) {
   case CM_P7_GFPRED_P7ML:  b.mu = gfcalib_p7ml_shrink_mu;  b.sd = gfcalib_p7ml_shrink_sd;  b.coef = gfcalib_p7ml_shrink_coef;  b.cap = GFCALIB_P7ML_EFFN_CAP; break;
+  case CM_P7_GFPRED_P7MLEMOD: b.mu = gfcalib_p7mlemod_shrink_mu; b.sd = gfcalib_p7mlemod_shrink_sd; b.coef = gfcalib_p7mlemod_shrink_coef; b.cap = GFCALIB_P7ML_EFFN_CAP; break;
   case CM_P7_GFPRED_H3PRI: b.mu = gfcalib_h3pri_shrink_mu; b.sd = gfcalib_h3pri_shrink_sd; b.coef = gfcalib_h3pri_shrink_coef; b.cap = GFCALIB_P7ML_EFFN_CAP; break;
   default:                 b.mu = gfcalib_shrink_mu;       b.sd = gfcalib_shrink_sd;       b.coef = gfcalib_shrink_coef;       b.cap = GFCALIB_EFFN_CAP;      break;
   }
@@ -664,30 +733,37 @@ gfcalib_shrink_tau(double tau_raw, double lambda, int clen, double mean_H, doubl
 /* Function: cm_p7_UseP7mlPredictor()
  * Incept:   EPN, Fri Oct  2 2026 (w/Claude)
  *
- * Purpose:  Decide whether cm_p7_Calibrate() should use the --p7ml
- *           glocal lambda/tau coefficients (brief 26_0824-085) for the
- *           filter HMM of <cm>. That is TRUE iff the filter is the CM's
- *           ML p7 HMM (<filter_is_mlp7>) AND <cm> has at least one
- *           base pair. Zero-basepair models keep the default
- *           coefficients even when their filter is the ML HMM: the
- *           default predictor is already accurate for them.
+ * Purpose:  Decide which glocal lambda/tau coefficients
+ *           cm_p7_Calibrate() should use for the filter HMM of <cm>.
+ *           If the filter is the CM's ML p7 HMM (<filter_is_mlp7>)
+ *           AND <cm> has at least one base pair, that is the --p7ml
+ *           block (brief 26_0824-085, refit by brief 26_0824-093) for
+ *           a default-like <cm>, or the entropy-modified block
+ *           (brief 26_0824-096) if <entropy_modified>. Otherwise it
+ *           is the default block: zero-basepair models keep it even
+ *           when their filter is the ML HMM, because the default
+ *           predictor is already accurate for them.
  *
  *           Every caller of cm_p7_Calibrate() that is calibrating a
  *           CM's filter should get its <gfpred> argument from
  *           here, so that all of them make the same decision for the
  *           same model.
  *
- * Args:     cm             - the CM whose filter is being calibrated
- *           filter_is_mlp7 - TRUE if the filter HMM is cm->mlp7 (or a
- *                            copy of it)
+ * Args:     cm               - the CM whose filter is being calibrated
+ *           filter_is_mlp7   - TRUE if the filter HMM is cm->mlp7 (or a
+ *                              copy of it)
+ *           entropy_modified - TRUE if <cm> is entropy-modified, from
+ *                              cm_IsEntropyModified() (brief 26_0824-096)
  *
- * Returns:  CM_P7_GFPRED_P7ML (TRUE) or CM_P7_GFPRED_DEFAULT (FALSE).
+ * Returns:  CM_P7_GFPRED_P7ML, CM_P7_GFPRED_P7MLEMOD or
+ *           CM_P7_GFPRED_DEFAULT.
  */
 int
-cm_p7_UseP7mlPredictor(CM_t *cm, int filter_is_mlp7)
+cm_p7_UseP7mlPredictor(CM_t *cm, int filter_is_mlp7, int entropy_modified)
 {
-  if (! filter_is_mlp7) return CM_P7_GFPRED_DEFAULT;
-  return (CMCountNodetype(cm, MATP_nd) > 0) ? CM_P7_GFPRED_P7ML : CM_P7_GFPRED_DEFAULT;
+  if (! filter_is_mlp7)                     return CM_P7_GFPRED_DEFAULT;
+  if (CMCountNodetype(cm, MATP_nd) == 0)    return CM_P7_GFPRED_DEFAULT;
+  return entropy_modified ? CM_P7_GFPRED_P7MLEMOD : CM_P7_GFPRED_P7ML;
 }
 
 /* Function: cm_p7_HMMOnlyPredictor()
@@ -733,7 +809,7 @@ cm_p7_HMMOnlyPredictor(CM_t *cm)
  *           ncpus     - number of CPUs for threaded glocal Fwd calibration (0=serial)
  *           gfpred    - which glocal lambda/tau coefficients to use, CM_P7_GFPRED_*:
  *                       for a CM's filter HMM get it from cm_p7_UseP7mlPredictor()
- *                       (brief 26_0824-085), for its HMM-only search HMM from
+ *                       (briefs 26_0824-085/26_0824-096), for its HMM-only search HMM from
  *                       cm_p7_HMMOnlyPredictor() (brief 26_0824-093)
  *           do_sim    - TRUE to simulate glocal Forward stats instead of predicting
  *                       them: fit an exponential to the top <EgfT> fraction of
@@ -1736,6 +1812,7 @@ cm_p7_CalOptsSetDefaults(CM_P7_CALOPTS *co, int clen, int do_sim)
   co->gftailp = do_sim ? 0.05 : 0.065;
   co->seed    = 42;
   co->do_sim  = do_sim;
+  co->etarget_rule = CM_ETARGET_RULE_CUR;  /* a CM built by this version (brief 26_0824-096) */
 }
 
 /* Function: cm_p7_DeriveFilterHMMsAsWritten()
@@ -1754,10 +1831,17 @@ cm_p7_CalOptsSetDefaults(CM_P7_CALOPTS *co, int clen, int do_sim)
  *           written then). (brief 26_0821-162; moved here from
  *           cmbuild for cmconvert --upgrade, brief 26_0821-165)
  *
- * Returns:  eslOK on success, errbuf filled on failure.
+ *           Also decide, from the same copy, whether <cm> is
+ *           entropy-modified (cm_IsEntropyModified() under rule
+ *           <etarget_rule>), so that cmbuild and cmconvert --upgrade
+ *           decide from the same rounded parameters (brief
+ *           26_0824-096).
+ *
+ * Returns:  eslOK on success, errbuf filled on failure. <*ret_emod> is
+ *           TRUE if <cm> is entropy-modified, else FALSE.
  */
 int
-cm_p7_DeriveFilterHMMsAsWritten(CM_t *cm, P7_HMM **ret_fp7, P7_HMM **ret_hp7, char *errbuf)
+cm_p7_DeriveFilterHMMsAsWritten(CM_t *cm, int etarget_rule, P7_HMM **ret_fp7, P7_HMM **ret_hp7, int *ret_emod, char *errbuf)
 {
   int           status;
   char         *buf  = NULL;
@@ -1776,6 +1860,7 @@ cm_p7_DeriveFilterHMMsAsWritten(CM_t *cm, P7_HMM **ret_fp7, P7_HMM **ret_hp7, ch
   if ((status = cm_file_OpenBuffer(buf, (int) size, FALSE, &cmfp)) != eslOK) ESL_XFAIL(status, errbuf, "cm_p7_DeriveFilterHMMsAsWritten(): failed to open CM buffer");
   if ((status = cm_file_Read(cmfp, FALSE, &abc, &rcm)) != eslOK)              ESL_XFAIL(status, errbuf, "cm_p7_DeriveFilterHMMsAsWritten(): failed to read CM %s back:\n%s", cm->name, cmfp->errbuf);
   if ((status = cm_p7_DeriveFilterHMMs(rcm, cm->hp7_xform, ret_fp7, ret_hp7, errbuf)) != eslOK) goto ERROR;
+  *ret_emod = cm_IsEntropyModified(rcm, etarget_rule, NULL, NULL);
 
   FreeCM(rcm);
   cm_file_Close(cmfp);
@@ -1802,7 +1887,10 @@ cm_p7_DeriveFilterHMMsAsWritten(CM_t *cm, P7_HMM **ret_fp7, P7_HMM **ret_hp7, ch
  *           CMH_FP7_DERIVED. This is how cmbuild gives a CM its
  *           filter HMMs (brief 26_0821-162), and how cmconvert
  *           --upgrade replaces the filter HMM stored in an older CM
- *           file (brief 26_0821-165).
+ *           file (brief 26_0821-165). The filter HMM's glocal
+ *           lambda/tau coefficients depend on whether <cm> is
+ *           entropy-modified (cm_IsEntropyModified() under
+ *           co->etarget_rule; brief 26_0824-096).
  *
  *           Any filter HMM <cm> carries (and its E-value parameters)
  *           is discarded first.
@@ -1817,6 +1905,7 @@ cm_p7_CalibrateDerivedFilterHMMs(CM_t *cm, const CM_P7_CALOPTS *co, int ncpus, c
   P7_HMM *hhmm = NULL;
   double  fgfmu, fgflambda;
   double  hgfmu, hgflambda;
+  int     emod;
 
   if(cm->fp7 != NULL) { p7_hmm_Destroy(cm->fp7); cm->fp7 = NULL; }
   if(cm->hp7 != NULL) { p7_hmm_Destroy(cm->hp7); cm->hp7 = NULL; }
@@ -1824,7 +1913,7 @@ cm_p7_CalibrateDerivedFilterHMMs(CM_t *cm, const CM_P7_CALOPTS *co, int ncpus, c
   esl_vec_FSet(cm->fp7_evparam, CM_p7_NEVPARAM, CM_p7_EVPARAM_UNSET);
   esl_vec_FSet(cm->hp7_evparam, CM_p7_NEVPARAM, CM_p7_EVPARAM_UNSET);
 
-  if((status = cm_p7_DeriveFilterHMMsAsWritten(cm, &fhmm, &hhmm, errbuf)) != eslOK) return status;
+  if((status = cm_p7_DeriveFilterHMMsAsWritten(cm, co->etarget_rule, &fhmm, &hhmm, &emod, errbuf)) != eslOK) return status;
 
   /* calibrate the filter HMM, then the HMM-only HMM the same way (as
    * the prototype measured in brief 26_0821-143) */
@@ -1835,7 +1924,7 @@ cm_p7_CalibrateDerivedFilterHMMs(CM_t *cm, const CM_P7_CALOPTS *co, int ncpus, c
                                co->gftailp,                                /* fraction of tail mass to fit for glocal Fwd */
                                co->seed,                                   /* RNG seed for calibration */
                                ncpus,
-                               cm_p7_UseP7mlPredictor(cm, TRUE),           /* the filter is the ML HMM: --p7ml lambda/tau coefficients (brief 26_0824-085) */
+                               cm_p7_UseP7mlPredictor(cm, TRUE, emod),     /* the filter is the ML HMM: --p7ml lambda/tau coefficients, by weighting (briefs 26_0824-085/26_0824-096) */
                                co->do_sim,                                 /* simulate, don't predict, glocal Fwd stats? (brief 26_0824-087) */
                                &fgfmu, &fgflambda))
      != eslOK) { ESL_XFAIL(status, errbuf, "Error calibrating the filter p7 HMM"); }
