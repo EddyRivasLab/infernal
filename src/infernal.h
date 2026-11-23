@@ -85,6 +85,17 @@
 #define DEFAULT_PBEGIN              0.05           /* EPN 06.29.07 (formerly 0.5) */
 #define DEFAULT_PEND                0.05           /* EPN 06.29.07 (formerly 0.5) */
 #define DEFAULT_ETARGET             0.59           /* EPN 07.10.07 (formerly (v0.7->v0.8)= 2.-0.54 = 1.46 */
+#define V1P1_ETARGET_NOBP           0.38           /* Infernal 1.1.x default relative entropy target for a model with no basepairs (brief 26_0824-096) */
+#define DEFAULT_ESIGMA              45.0           /* cmbuild --esigma default */
+#define DEFAULT_EMINSEQ             0.1            /* cmbuild --eminseq default */
+
+/* rules for the default relative entropy target, cm_DefaultTargetRelEntropy() (brief 26_0824-096) */
+#define CM_ETARGET_RULE_CUR   0  /* this version: DEFAULT_ETARGET or the length minimum */
+#define CM_ETARGET_RULE_V1P1  1  /* Infernal 1.1.x: V1P1_ETARGET_NOBP for a model with no basepairs */
+#define CM_ETARGET_RULE_V1P0  2  /* Infernal 1.0-1.0.2 (cmbuild --v1p0) */
+/* tolerances of cm_IsEntropyModified() (brief 26_0824-096) */
+#define CM_EMOD_RELENT_TOL    0.005  /* bits */
+#define CM_EMOD_EFFN_TOL      0.01   /* cm_EntropyWeight()'s bisection tolerance */
 #define DEFAULT_NULL2_OMEGA         0.000015258791 /* 1/(2^16), the hard-coded prior probability of the null2 model */
 #define DEFAULT_NULL3_OMEGA         0.000015258791 /* 1/(2^16), the hard-coded prior probability of the null3 model */
 #define V1P0_NULL2_OMEGA            0.03125        /* 1/(2^5),  the prior probability of the null2 model for v0.56->v1.0.2 */
@@ -3898,6 +3909,9 @@ extern double cm_MeanMatchEntropy(const CM_t *cm);
 extern double cm_MatchStateRelEntropy(const CM_t *cm, int v, const float *pair_null);
 extern double cm_MatchStateRelEntropyHMM(const CM_t *cm, int v, double *opt_ret_left_KL, double *opt_ret_right_KL);
 extern double cm_MeanMatchRelativeEntropy(const CM_t *cm);
+extern double cm_TargetRelEntropy(int clen, double re_min, double esigma);
+extern double cm_DefaultTargetRelEntropy(int clen, int nbps, int rule);
+extern int    cm_IsEntropyModified(const CM_t *cm, int rule, double *opt_ret_relent, double *opt_ret_target);
 extern double cm_MeanMatchInfoHMM(const CM_t *cm);
 extern double cm_MeanMatchEntropyHMM(const CM_t *cm);
 extern double cm_MeanMatchRelativeEntropyHMM(const CM_t *cm);

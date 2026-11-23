@@ -232,6 +232,142 @@ cm_EntropyWeight(CM_t *cm, const Prior_t *pri, double etarget, double min_Neff, 
   return status;
 }
 
+/* Function:  cm_TargetRelEntropy()
+ * Incept:    EPN, Mon Nov 23 2026 (w/Claude)
+ *
+ * Purpose:   Return the mean match relative entropy target (bits per
+ *            consensus position) that cmbuild's entropy weighting
+ *            aims for: <re_min>, or a length-dependent minimum for a
+ *            model of consensus length <clen> if that is larger. The
+ *            length-dependent minimum is HMMER3's (hmmer/src/
+ *            p7_builder.c as of svn rev 3986 (04.16.12); xref J5/36)
+ *            with sigma <esigma> (cmbuild --esigma, default
+ *            DEFAULT_ESIGMA). Moved here from cmbuild's
+ *            set_target_relent() so that cm_DefaultTargetRelEntropy()
+ *            shares it (brief 26_0824-096).
+ *
+ * Args:      clen   - consensus length (2*MATP + MATL + MATR)
+ *            re_min - target if the length minimum is smaller
+ *            esigma - sigma of the length minimum
+ *
+ * Returns:   the target, in bits.
+ */
+double
+cm_TargetRelEntropy(int clen, double re_min, double esigma)
+{
+  double etarget = (esigma - eslCONST_LOG2R * log( 2.0 / ((double) clen * (double) (clen+1)))) / (double) clen;
+  return ESL_MAX(etarget, re_min);
+}
+
+/* Function:  cm_DefaultTargetRelEntropy()
+ * Incept:    EPN, Mon Nov 23 2026 (w/Claude)
+ *
+ * Purpose:   Return the relative entropy target that default entropy
+ *            weighting (cmbuild with no --ere, --enone, --eset or
+ *            --esigma) aims for, for an RNA model of consensus length
+ *            <clen> with <nbps> base pairs, under rule <rule>:
+ *
+ *            CM_ETARGET_RULE_CUR:  this version's: DEFAULT_ETARGET
+ *               (0.59 bits) or the length minimum, with or without
+ *               base pairs (brief 26_0821-182).
+ *            CM_ETARGET_RULE_V1P1: Infernal 1.1.x's: the same, except
+ *               V1P1_ETARGET_NOBP (0.38 bits) instead of 0.59 for a
+ *               model with no base pairs.
+ *            CM_ETARGET_RULE_V1P0: Infernal 1.0-1.0.2's (cmbuild
+ *               --v1p0): a different length-dependent target, at
+ *               least DEFAULT_ETARGET.
+ *
+ * Args:      clen - consensus length (2*MATP + MATL + MATR)
+ *            nbps - number of base pairs (MATP nodes)
+ *            rule - CM_ETARGET_RULE_*
+ *
+ * Returns:   the target, in bits.
+ */
+double
+cm_DefaultTargetRelEntropy(int clen, int nbps, int rule)
+{
+  double etarget;
+
+  switch (rule) {
+  case CM_ETARGET_RULE_V1P1:
+    return cm_TargetRelEntropy(clen, (nbps > 0) ? DEFAULT_ETARGET : V1P1_ETARGET_NOBP, DEFAULT_ESIGMA);
+  case CM_ETARGET_RULE_V1P0:
+    /* HMMER3's default as of Tue Jul 10 2007, with eX = 6.0 (formerly cmbuild's version_1p0_default_target_relent()) */
+    etarget = 6.* (6.0 + log(((double) clen * (double) (clen+1)) / 2.) / log(2.)) / (double)(2*clen + 4);
+    return ESL_MAX(etarget, DEFAULT_ETARGET);
+  default:
+    return cm_TargetRelEntropy(clen, DEFAULT_ETARGET, DEFAULT_ESIGMA);
+  }
+}
+
+/* Function:  cm_IsEntropyModified()
+ * Incept:    EPN, Mon Nov 23 2026 (w/Claude)
+ *
+ * Purpose:   Decide from <cm> alone (no alignment) whether its
+ *            effective sequence number differs from the one default
+ *            entropy weighting would have given it ("entropy-
+ *            modified", e.g. by --enone, --eset, --ere or --eforce),
+ *            or not ("default-like"), so that cmbuild and cmconvert
+ *            --upgrade make the same decision for the same model
+ *            (brief 26_0824-096).
+ *
+ *            cm_EntropyWeight() leaves a default build in one of
+ *            three states, and <cm> is default-like iff it is in one
+ *            of them, with mean match relative entropy <re>
+ *            (cm_MeanMatchRelativeEntropy(), as cm_EntropyWeight()
+ *            measures it) and default target <t>
+ *            (cm_DefaultTargetRelEntropy() under <rule>):
+ *            1. target reached: |re - t| <= CM_EMOD_RELENT_TOL and
+ *               eff_nseq <= nseq (+CM_EMOD_EFFN_TOL). Default
+ *               weighting never raises eff_nseq above nseq; --eforce
+ *               can, at the default target.
+ *            2. target missed at the maximum: eff_nseq = nseq
+ *               (within CM_EMOD_EFFN_TOL) and re <= t (+tol).
+ *            3. target exceeded at the minimum: eff_nseq =
+ *               DEFAULT_EMINSEQ and re >= t (-tol).
+ *            A build whose options didn't change its eff_nseq (e.g.
+ *            --ere below the length minimum, or --enone when default
+ *            weighting already ends at nseq) is default-like, as it
+ *            should be.
+ *
+ *            CM_EMOD_RELENT_TOL (0.005 bits) sits between the largest
+ *            |re - t| of a default build (0.0031 bits; a CM file
+ *            stores probabilities to 3-5 digits and the bisection
+ *            stops within 0.01 of the root) and the smallest of a
+ *            build with a different eff_nseq (0.0062 bits), measured
+ *            on builds of 98 models under 13 weighting settings
+ *            (brief 26_0824-096).
+ *
+ * Args:      cm             - the CM (parameterized)
+ *            rule           - CM_ETARGET_RULE_* of the cmbuild that built <cm>
+ *            opt_ret_relent - optRETURN: <cm>'s mean match relative entropy
+ *            opt_ret_target - optRETURN: the default target
+ *
+ * Returns:   TRUE if <cm> is entropy-modified, FALSE if default-like.
+ */
+int
+cm_IsEntropyModified(const CM_t *cm, int rule, double *opt_ret_relent, double *opt_ret_target)
+{
+  int    nd;
+  int    nbps = 0;
+  double re   = cm_MeanMatchRelativeEntropy(cm);
+  double effn = (double) cm->eff_nseq;
+  double nseq = (double) cm->nseq;
+  double t;
+  int    default_like;
+
+  for (nd = 0; nd < cm->nodes; nd++) if (cm->ndtype[nd] == MATP_nd) nbps++;
+  t = cm_DefaultTargetRelEntropy(cm->clen, nbps, rule);
+
+  default_like = ((fabs(re - t) <= CM_EMOD_RELENT_TOL && effn <= nseq + CM_EMOD_EFFN_TOL) ||   /* 1. target reached       */
+                  (fabs(effn - nseq) <= CM_EMOD_EFFN_TOL && re <= t + CM_EMOD_RELENT_TOL)  ||   /* 2. missed at eff_nseq = nseq */
+                  (fabs(effn - DEFAULT_EMINSEQ) <= 1e-6 && re >= t - CM_EMOD_RELENT_TOL)) ? TRUE : FALSE; /* 3. exceeded at the minimum */
+
+  if (opt_ret_relent != NULL) *opt_ret_relent = re;
+  if (opt_ret_target != NULL) *opt_ret_target = t;
+  return default_like ? FALSE : TRUE;
+}
+
 /* Function:  cm_Rescale() 
  *            
  * Incept:    EPN 11.07.05

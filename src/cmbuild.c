@@ -313,7 +313,6 @@ static int    determine_hp7_xform(const struct cfg_s *cfg, double *alpha);
 static char  *esim_forced_by(const ESL_GETOPTS *go, int filter_is_mlp7);
 static int    set_msa_name(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
 static double set_target_relent(const ESL_GETOPTS *go, const ESL_ALPHABET *abc, int clen);
-static double version_1p0_default_target_relent(const ESL_ALPHABET *abc, int M, double eX);
 static int    refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *orig_cm, ESL_MSA *input_msa, Parsetree_t **input_msa_tr, CM_t **ret_cm, ESL_MSA **ret_msa, Parsetree_t **ret_mtr, Parsetree_t ***ret_trA, int *ret_niter);
 static int    convert_parsetrees_to_unaln_coords(Parsetree_t **tr, ESL_MSA *msa);
 /* static void   model_trace_info_dump(FILE *ofp, CM_t *cm, Parsetree_t *tr, char *aseq); */
@@ -2381,7 +2380,8 @@ set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg,
       }
       if(esl_opt_GetBoolean(go, "--v1p0")) { 
         /* determine etarget with default method used by Infernal version 1.0-->1.0.2 */
-        etarget = version_1p0_default_target_relent(cm->abc, clen, 6.0);
+        if(cm->abc->type != eslRNA) cm_Fail("ERROR in default_target_relent(), alphabet not RNA!\n");
+        etarget = cm_DefaultTargetRelEntropy(clen, 0, CM_ETARGET_RULE_V1P0); /* nbps unused by this rule */
       }
       else { 
         etarget = set_target_relent(go, cm->abc, clen);
@@ -2873,6 +2873,11 @@ esim_forced_by(const ESL_GETOPTS *go, int filter_is_mlp7)
  *            per position, attempting to ensure that the information content of
  *            the model is high enough to find local alignments; but don't set it
  *            below a hard limit for RNA (DEFAULT_ETARGET).
+ *            The calculation is cm_TargetRelEntropy(), shared with
+ *            cm_DefaultTargetRelEntropy(), which cm_IsEntropyModified()
+ *            uses to recognize a default-weighted CM (brief 26_0824-096);
+ *            with no --ere and --esigma, this returns
+ *            cm_DefaultTargetRelEntropy(clen, nbps, CM_ETARGET_RULE_CUR).
  *            
  * Args:      clen - consensus length (2*MATP + MATL + MATR)
  *
@@ -2880,9 +2885,8 @@ esim_forced_by(const ESL_GETOPTS *go, int filter_is_mlp7)
 static double
 set_target_relent(const ESL_GETOPTS *go, const ESL_ALPHABET *abc, int clen)
 {
-  double etarget;
   double re_target;
-  double esigma = esl_opt_GetReal(go, "--esigma"); /* default Infernal/HMMER3 sigma is 45.0 */
+  double esigma = esl_opt_GetReal(go, "--esigma"); /* default Infernal/HMMER3 sigma is 45.0 (DEFAULT_ESIGMA) */
 
   if(esl_opt_IsOn(go, "--ere")) { 
     re_target = esl_opt_GetReal(go, "--ere");
@@ -2894,45 +2898,8 @@ set_target_relent(const ESL_GETOPTS *go, const ESL_ALPHABET *abc, int clen)
      * (brief 26_0821-182) */
     re_target = DEFAULT_ETARGET;
   }
-  /* the defn of etarget below is identical to how hmmer3 does it in hmmer/src/p7_builder.c as of svn rev 3986 (04.16.12) */
-  etarget = (esigma - eslCONST_LOG2R * log( 2.0 / ((double) clen * (double) (clen+1)))) / (double) clen; /* HMMER3.0 default, xref J5/36. */
-  etarget = ESL_MAX(etarget, re_target);
-  
-  return etarget;
-}
-
-/* version_1p0_default_target_relent()
- * Incept:    EPN, Tue Jul 10 10:13:43 2007
- *            based on HMMER3's hmmbuild.c:default_target_relent()
- *            SRE, Fri May 25 15:14:16 2007 [Janelia]
- *
- * Purpose:   Calculate default target relative entropy using the 
- *            method in Infernal version 1.0 --> 1.0.2.
- *
- *            Implements a length-dependent calculation of the target relative entropy
- *            per position, attempting to ensure that the information content of
- *            the model is high enough to find local alignments; but don't set it
- *            below a hard alphabet-dependent limit (CM_ETARGET).
- *            notes.
- *            
- * Args:      clen - consensus length (2*MATP + MATL + MATR)
- *            eX - X parameter: minimum total rel entropy target
- *
- */
-static double
-version_1p0_default_target_relent(const ESL_ALPHABET *abc, int clen, double eX)
-{
-  double etarget;
-
-  /* HMMER3 default eX = 6.0 as of Tue Jul 10 2007
-   */
-  etarget = 6.* (eX + log(((double) clen * (double) (clen+1)) / 2.) / log(2.))    / (double)(2*clen + 4);
-
-  switch (abc->type) {
-  case eslRNA:    if (etarget < DEFAULT_ETARGET)   etarget = DEFAULT_ETARGET;   break;
-  default:        cm_Fail("ERROR in default_target_relent(), alphabet not RNA!\n");
-  }
-  return etarget;
+  /* the defn of etarget is identical to how hmmer3 does it in hmmer/src/p7_builder.c as of svn rev 3986 (04.16.12) */
+  return cm_TargetRelEntropy(clen, re_target, esigma);
 }
 
 /* set_msa_name() 
