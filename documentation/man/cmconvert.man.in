@@ -247,7 +247,13 @@ is used, in which case its HMM-only search HMM is its filter HMM.
 Calibration takes about as long as it does in
 .B cmbuild:
 seconds for most CMs, and minutes for CMs of tens of thousands of
-positions or more.
+positions or more. A CM with basepairs that was built with a relative
+entropy below the default target (for example with
+.BR "cmbuild --ere 0.4" )
+has its filter HMM statistics simulated, as
+.B cmbuild
+does, with a NOTE on standard error; this takes minutes, or hours
+for CMs of more than a thousand positions.
 
 .TP
 .BI --prior " <f>"

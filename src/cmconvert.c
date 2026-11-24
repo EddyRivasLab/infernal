@@ -473,8 +473,16 @@ etarget_rule_of_format(int format)
  *              old format can't say which cmbuild built it.)
  *            - The filter HMMs' glocal Forward E-value parameters are
  *              simulated, not predicted, where cmbuild would simulate
- *              them: --Esim, a --prior build, --eset 0, or an EFFN at
- *              EFORCE_MAX_NEFF (a missed --eforce target).
+ *              them: --Esim, a --prior build, --eset 0, an EFFN at
+ *              EFORCE_MAX_NEFF (a missed --eforce target), or an
+ *              entropy-modified CM with base pairs whose relative
+ *              entropy is below the default target, which
+ *              cm_p7_CalibrateDerivedFilterHMMs() decides from the CM
+ *              (brief 26_0824-099). That last case is reported with a
+ *              NOTE on stderr (stdout may be the CM file), as cmbuild
+ *              reports it, after the simulation; with the same seed
+ *              (cmbuild's default, or --Eseed on the COM line) the
+ *              values are cmbuild's.
  *            - Whether the CM is entropy-modified, which picks the
  *              filter HMM's glocal lambda/tau coefficients, is
  *              decided from the CM alone, against the default
@@ -505,6 +513,8 @@ upgrade_model(const ESL_GETOPTS *go, CM_t *cm, int format, const Prior_t *user_p
   int            ncpus     = 0;
   double         x;
   CM_P7_CALOPTS  co;
+  int            lowre_sim;
+  double         relent, target;
 
   built_as_hmm = (CMCountNodetype(cm, MATP_nd) == 0 && user_pri == NULL && ! com_prior && ! is_v1p0 &&
                   ! comlog_cmbuild_option(cm->comlog, "--noh3pri", NULL)) ? TRUE : FALSE;
@@ -538,14 +548,17 @@ upgrade_model(const ESL_GETOPTS *go, CM_t *cm, int format, const Prior_t *user_p
   if (comlog_cmbuild_number(cm->comlog, "--EmN",   &x)) co.lmsvN   = (int) x;
   if (comlog_cmbuild_number(cm->comlog, "--EvN",   &x)) co.lvitN   = (int) x;
   if (comlog_cmbuild_number(cm->comlog, "--ElfN",  &x)) co.lfwdN   = (int) x;
-  if (comlog_cmbuild_number(cm->comlog, "--EgfN",  &x)) co.gfwdN   = (int) x;
+  if (comlog_cmbuild_number(cm->comlog, "--EgfN",  &x)) co.gfwdN   = co.sim_gfwdN   = (int) x;
   if (comlog_cmbuild_number(cm->comlog, "--Elftp", &x)) co.lftailp = x;
-  if (comlog_cmbuild_number(cm->comlog, "--Egftp", &x)) co.gftailp = x;
+  if (comlog_cmbuild_number(cm->comlog, "--Egftp", &x)) co.gftailp = co.sim_gftailp = x;
   if (comlog_cmbuild_number(cm->comlog, "--Eseed", &x)) co.seed    = (int) x;
 #ifdef HMMER_THREADS
   ncpus = ESL_MIN(esl_opt_GetInteger(go, "--cpu"), esl_threads_GetCPUCount());
 #endif
-  if ((status = cm_p7_CalibrateDerivedFilterHMMs(cm, &co, ncpus, NULL, NULL, NULL, errbuf)) != eslOK) goto ERROR;
+  if ((status = cm_p7_CalibrateDerivedFilterHMMs(cm, &co, ncpus, &lowre_sim, &relent, &target, errbuf)) != eslOK) goto ERROR;
+  if (lowre_sim) /* as cmbuild's output_lowre_note() (brief 26_0824-099) */
+    fprintf(stderr, "# NOTE: %s: relative entropy %.3f bits is below the default target %.3f bits; glocal Fwd filter stats simulated (as cmbuild --Esim).\n",
+            cm->name, relent, target);
 
   if (pri != NULL) Prior_Destroy(pri);
   return eslOK;
