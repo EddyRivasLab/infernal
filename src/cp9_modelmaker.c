@@ -2909,7 +2909,7 @@ CP9_2_CM(CM_t *cm, char *errbuf, CM_t **ret_cm)
   {
     CM_P7_CALOPTS co;
     cm_p7_CalOptsSetDefaults(&co, newcm->clen, FALSE); /* FALSE: predict glocal Forward stats, as cmbuild does by default */
-    if ((status = cm_p7_CalibrateDerivedFilterHMMs(newcm, &co, 0, errbuf)) != eslOK) { FreeCM(newcm); return status; }
+    if ((status = cm_p7_CalibrateDerivedFilterHMMs(newcm, &co, 0, NULL, NULL, NULL, errbuf)) != eslOK) { FreeCM(newcm); return status; }
   }
 
   *ret_cm = newcm;

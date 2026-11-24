@@ -589,7 +589,16 @@ output header, when
 .B --prior
 is used, and when
 .B --eset 0
-is used.
+is used. It is also turned on for each model with basepairs whose
+entropy weighting options (for example
+.BR "--ere 0.4" ,
+or
+.B --eset
+below the effective sequence number that default weighting would
+choose) leave its relative entropy below the default target, with a
+NOTE line in the per-model output: the predictor is often more than
+10-fold conservative for such models. For models of more than a
+thousand positions this can take an hour or more.
 
 .PP
 Use 

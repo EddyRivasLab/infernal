@@ -545,7 +545,7 @@ upgrade_model(const ESL_GETOPTS *go, CM_t *cm, int format, const Prior_t *user_p
 #ifdef HMMER_THREADS
   ncpus = ESL_MIN(esl_opt_GetInteger(go, "--cpu"), esl_threads_GetCPUCount());
 #endif
-  if ((status = cm_p7_CalibrateDerivedFilterHMMs(cm, &co, ncpus, errbuf)) != eslOK) goto ERROR;
+  if ((status = cm_p7_CalibrateDerivedFilterHMMs(cm, &co, ncpus, NULL, NULL, NULL, errbuf)) != eslOK) goto ERROR;
 
   if (pri != NULL) Prior_Destroy(pri);
   return eslOK;

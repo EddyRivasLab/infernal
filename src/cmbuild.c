@@ -286,6 +286,18 @@ static struct {
   int                esim_forced; /* TRUE if ERE_UNREACHABLE made this model's filter stats simulated (--Esim) */
 } g_ere;
 
+/* Whether the CM most recently passed through
+ * build_and_calibrate_p7_filter() had its glocal Fwd filter stats
+ * simulated because its relative entropy is below the default target
+ * (cm_p7_CalibrateDerivedFilterHMMs()), for output_lowre_note()
+ * (brief 26_0824-099).
+ */
+static struct {
+  int    esim_forced; /* TRUE if simulated for that reason */
+  double relent;      /* the CM's mean match relative entropy, as cm_IsEntropyModified() measured it */
+  double target;      /* the default target it was compared to */
+} g_lowre;
+
 static char usage[]  = "[-options] <cmfile_out> <msafile>";
 static char banner[] = "covariance model construction from multiple sequence alignments";
 
@@ -296,6 +308,7 @@ static int    init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static int    process_build_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t **ret_mtr, Parsetree_t ***ret_msa_tr);
 static int    output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int msaidx, int cmidx, ESL_MSA *msa, CM_t *cm, Parsetree_t *mtr, Parsetree_t **tr);
 static int    output_ere_outcome(const ESL_GETOPTS *go, const struct cfg_s *cfg, ESL_MSA *msa, CM_t *cm);
+static int    output_lowre_note(const struct cfg_s *cfg, CM_t *cm);
 static int    check_and_clean_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, char **ret_pknot_ss);
 static int    set_relative_weights(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
 static int    check_fragments(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
@@ -1489,6 +1502,7 @@ output_header(FILE *ofp, const ESL_GETOPTS *go, char *cmfile, char *alifile)
    if ((status = cm_file_WriteASCII(cfg->cmoutfp, -1, cm)) != eslOK) ESL_FAIL(status, errbuf, "CM save failed");
 
    if ((status = output_ere_outcome(go, cfg, msa, cm)) != eslOK) return status;
+   if ((status = output_lowre_note(cfg, cm))            != eslOK) return status;
 
    if (avgpad >= 0.0) {
      fprintf(cfg->ofp, "%8d %-20s %8d %8.2f %6" PRId64 " %5d %4d %4d %5.3f %5.3f %6.1f %s\n",
@@ -2346,6 +2360,7 @@ set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg,
   g_ere.etarget     = 0.;
   g_ere.max_neff    = 0.;
   g_ere.esim_forced = FALSE;
+  g_lowre.esim_forced = FALSE; /* set by build_and_calibrate_p7_filter() (brief 26_0824-099) */
 
   if(cfg->be_verbose) { 
     w = esl_stopwatch_Create();
@@ -2685,7 +2700,10 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
 
   /* --Esim: simulate glocal Fwd stats instead of predicting them, either
    * because the user asked, or because the build is outside the
-   * predictor's trained domain (esim_forced_by()). The glocal Fwd sample
+   * predictor's trained domain (esim_forced_by(), ERE_UNREACHABLE
+   * below, and a relative entropy below the default target, which
+   * cm_p7_CalibrateDerivedFilterHMMs() decides from the CM as written
+   * (brief 26_0824-099)). The glocal Fwd sample
    * size and tail fraction default to 5000 and 0.05 (brief 26_0824-086),
    * overriding both the option-table defaults and --Efitlam's, unless
    * --EgfN/--Egftp were typed (brief 26_0824-087).
@@ -2734,16 +2752,16 @@ build_and_calibrate_p7_filter(const ESL_GETOPTS *go, const struct cfg_s *cfg, ch
   if(esl_opt_IsUsed(go, "--EmN"))   co.lmsvN   = esl_opt_GetInteger(go, "--EmN");
   if(esl_opt_IsUsed(go, "--EvN"))   co.lvitN   = esl_opt_GetInteger(go, "--EvN");
   if(esl_opt_IsUsed(go, "--ElfN"))  co.lfwdN   = esl_opt_GetInteger(go, "--ElfN");
-  if(esl_opt_IsUsed(go, "--EgfN"))  co.gfwdN   = esl_opt_GetInteger(go, "--EgfN");
+  if(esl_opt_IsUsed(go, "--EgfN"))  co.gfwdN   = co.sim_gfwdN   = esl_opt_GetInteger(go, "--EgfN");
   if(esl_opt_IsUsed(go, "--Elftp")) co.lftailp = esl_opt_GetReal(go, "--Elftp");
-  if(esl_opt_IsUsed(go, "--Egftp")) co.gftailp = esl_opt_GetReal(go, "--Egftp");
+  if(esl_opt_IsUsed(go, "--Egftp")) co.gftailp = co.sim_gftailp = esl_opt_GetReal(go, "--Egftp");
   co.seed = esl_opt_GetInteger(go, "--Eseed");
 
 #ifdef HMMER_THREADS
   ncpus = ESL_MIN(esl_opt_GetInteger(go, "--cpu"), esl_threads_GetCPUCount());
 #endif
   cm->hp7_xform = hp7_xform;
-  if ((status = cm_p7_CalibrateDerivedFilterHMMs(cm, &co, ncpus, errbuf)) != eslOK) return status;
+  if ((status = cm_p7_CalibrateDerivedFilterHMMs(cm, &co, ncpus, &g_lowre.esim_forced, &g_lowre.relent, &g_lowre.target, errbuf)) != eslOK) return status;
 
   if (cfg->be_verbose) { 
     fprintf(cfg->ofp, "done.  ");
@@ -2831,6 +2849,28 @@ output_ere_outcome(const ESL_GETOPTS *go, const struct cfg_s *cfg, ESL_MSA *msa,
   else return eslOK;
 
   fputs(line, cfg->ofp);
+  fflush(cfg->ofp);
+  return eslOK;
+}
+
+/* output_lowre_note()
+ * Incept:    EPN, Tue Nov 24 2026 (w/Claude)
+ *
+ * Purpose:   If <cm>'s glocal Fwd filter stats were simulated because
+ *            its relative entropy is below the default target (g_lowre,
+ *            set by build_and_calibrate_p7_filter()), say so in the
+ *            per-model output, just before the model's tabular line,
+ *            after any output_ere_outcome() line (brief 26_0824-099).
+ *            Like that function's lines, this goes to cfg->ofp only.
+ *
+ * Returns:   eslOK.
+ */
+static int
+output_lowre_note(const struct cfg_s *cfg, CM_t *cm)
+{
+  if(! g_lowre.esim_forced) return eslOK;
+  fprintf(cfg->ofp, "# NOTE: %s: relative entropy %.3f bits is below the default target %.3f bits; glocal Fwd filter stats simulated (--Esim).\n",
+          cm->name, g_lowre.relent, g_lowre.target);
   fflush(cfg->ofp);
   return eslOK;
 }

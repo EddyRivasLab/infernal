@@ -438,7 +438,10 @@ static const double gfcalib_p7ml_shrink_coef[5] = {
  * block: -0.48), 49/741 models over 10x permissive (--p7ml block: 11),
  * 56/741 over 10x conservative (--p7ml block: 151).
  * Builds with a lower relative entropy than the default (--ere below
- * 0.59) are entropy-modified too, but were in neither training set.
+ * 0.59) are entropy-modified too, but were in neither training set;
+ * this block is up to 56,000x conservative on them (brief 26_0824-097),
+ * so their glocal Forward stats are simulated instead
+ * (cm_p7_CalibrateDerivedFilterHMMs(); brief 26_0824-099).
  */
 static const double gfcalib_p7mlemod_feat_mu[4] = {
    4.809867461044248,     /* log(clen) */
@@ -1798,7 +1801,12 @@ cm_p7_AttachDerivedFilterHMMs(CM_t *cm, char *errbuf)
  *           CM of consensus length <clen>. If <do_sim>, the glocal
  *           Forward parameters are simulated, not predicted, with
  *           5000 sequences and a 5% tail (brief 26_0824-086).
- *           (brief 26_0821-165)
+ *           (brief 26_0821-165) The same two settings are kept in
+ *           co->sim_gfwdN and co->sim_gftailp for a CM whose
+ *           simulation cm_p7_CalibrateDerivedFilterHMMs() forces
+ *           (brief 26_0824-099); a caller that changes the glocal
+ *           Forward sample size or tail for simulation (cmbuild
+ *           --EgfN, --Egftp) changes those too.
  */
 void
 cm_p7_CalOptsSetDefaults(CM_P7_CALOPTS *co, int clen, int do_sim)
@@ -1807,9 +1815,11 @@ cm_p7_CalOptsSetDefaults(CM_P7_CALOPTS *co, int clen, int do_sim)
   co->lfwdL   = 100;
   co->gfwdL   = ESL_MAX(100, 2.*clen);
   co->lmsvN   = co->lvitN = co->lfwdN = 200;
-  co->gfwdN   = do_sim ? 5000 : 4;
+  co->sim_gfwdN   = 5000;
+  co->sim_gftailp = 0.05;
+  co->gfwdN   = do_sim ? co->sim_gfwdN   : 4;
   co->lftailp = 0.055;
-  co->gftailp = do_sim ? 0.05 : 0.065;
+  co->gftailp = do_sim ? co->sim_gftailp : 0.065;
   co->seed    = 42;
   co->do_sim  = do_sim;
   co->etarget_rule = CM_ETARGET_RULE_CUR;  /* a CM built by this version (brief 26_0824-096) */
@@ -1835,13 +1845,16 @@ cm_p7_CalOptsSetDefaults(CM_P7_CALOPTS *co, int clen, int do_sim)
  *           entropy-modified (cm_IsEntropyModified() under rule
  *           <etarget_rule>), so that cmbuild and cmconvert --upgrade
  *           decide from the same rounded parameters (brief
- *           26_0824-096).
+ *           26_0824-096), and return the copy's relative entropy and
+ *           default target that it used (brief 26_0824-099).
  *
  * Returns:  eslOK on success, errbuf filled on failure. <*ret_emod> is
- *           TRUE if <cm> is entropy-modified, else FALSE.
+ *           TRUE if <cm> is entropy-modified, else FALSE;
+ *           <*opt_ret_relent> and <*opt_ret_target>, if non-NULL, are
+ *           cm_IsEntropyModified()'s relative entropy and target.
  */
 int
-cm_p7_DeriveFilterHMMsAsWritten(CM_t *cm, int etarget_rule, P7_HMM **ret_fp7, P7_HMM **ret_hp7, int *ret_emod, char *errbuf)
+cm_p7_DeriveFilterHMMsAsWritten(CM_t *cm, int etarget_rule, P7_HMM **ret_fp7, P7_HMM **ret_hp7, int *ret_emod, double *opt_ret_relent, double *opt_ret_target, char *errbuf)
 {
   int           status;
   char         *buf  = NULL;
@@ -1860,7 +1873,7 @@ cm_p7_DeriveFilterHMMsAsWritten(CM_t *cm, int etarget_rule, P7_HMM **ret_fp7, P7
   if ((status = cm_file_OpenBuffer(buf, (int) size, FALSE, &cmfp)) != eslOK) ESL_XFAIL(status, errbuf, "cm_p7_DeriveFilterHMMsAsWritten(): failed to open CM buffer");
   if ((status = cm_file_Read(cmfp, FALSE, &abc, &rcm)) != eslOK)              ESL_XFAIL(status, errbuf, "cm_p7_DeriveFilterHMMsAsWritten(): failed to read CM %s back:\n%s", cm->name, cmfp->errbuf);
   if ((status = cm_p7_DeriveFilterHMMs(rcm, cm->hp7_xform, ret_fp7, ret_hp7, errbuf)) != eslOK) goto ERROR;
-  *ret_emod = cm_IsEntropyModified(rcm, etarget_rule, NULL, NULL);
+  *ret_emod = cm_IsEntropyModified(rcm, etarget_rule, opt_ret_relent, opt_ret_target);
 
   FreeCM(rcm);
   cm_file_Close(cmfp);
@@ -1892,13 +1905,38 @@ cm_p7_DeriveFilterHMMsAsWritten(CM_t *cm, int etarget_rule, P7_HMM **ret_fp7, P7
  *           entropy-modified (cm_IsEntropyModified() under
  *           co->etarget_rule; brief 26_0824-096).
  *
+ *           Unless co->do_sim already says to simulate, an entropy-
+ *           modified <cm> with base pairs whose relative entropy is
+ *           below the default target (e.g. cmbuild --ere 0.4, or
+ *           --eset 1) has the glocal Forward parameters of both HMMs
+ *           simulated, as with co->do_sim, with co->sim_gfwdN
+ *           sequences and tail co->sim_gftailp: neither glocal
+ *           lambda/tau block was trained on such filters, and both
+ *           are often over 10x conservative on them, up to 56,000x
+ *           at P=1e-8 (brief 26_0824-097). <*opt_ret_lowre_sim> says
+ *           whether this happened, so the caller can say so. The
+ *           decision is made from <cm> as written, so cmbuild and
+ *           cmconvert --upgrade make the same one, and with the same
+ *           co->seed they write the same parameters. (brief
+ *           26_0824-099)
+ *
  *           Any filter HMM <cm> carries (and its E-value parameters)
  *           is discarded first.
+ *
+ * Args:     cm                - the CM
+ *           co                - calibration settings
+ *           ncpus             - number of worker threads (0: serial)
+ *           opt_ret_lowre_sim - optRETURN: TRUE if simulation was forced
+ *                               for a lower-entropy <cm>, else FALSE
+ *           opt_ret_relent    - optRETURN: <cm>'s mean match relative entropy
+ *                               (cm_IsEntropyModified(), as written)
+ *           opt_ret_target    - optRETURN: the default target it was compared to
+ *           errbuf            - for error messages
  *
  * Returns:  eslOK on success, errbuf filled on failure.
  */
 int
-cm_p7_CalibrateDerivedFilterHMMs(CM_t *cm, const CM_P7_CALOPTS *co, int ncpus, char *errbuf)
+cm_p7_CalibrateDerivedFilterHMMs(CM_t *cm, const CM_P7_CALOPTS *co, int ncpus, int *opt_ret_lowre_sim, double *opt_ret_relent, double *opt_ret_target, char *errbuf)
 {
   int     status;
   P7_HMM *fhmm = NULL;
@@ -1906,6 +1944,14 @@ cm_p7_CalibrateDerivedFilterHMMs(CM_t *cm, const CM_P7_CALOPTS *co, int ncpus, c
   double  fgfmu, fgflambda;
   double  hgfmu, hgflambda;
   int     emod;
+  double  relent, target;
+  int     gfpred;
+  int     lowre_sim = FALSE;
+  int     do_sim    = co->do_sim;
+  int     gfwdN     = co->gfwdN;
+  double  gftailp   = co->gftailp;
+
+  if(opt_ret_lowre_sim != NULL) *opt_ret_lowre_sim = FALSE;
 
   if(cm->fp7 != NULL) { p7_hmm_Destroy(cm->fp7); cm->fp7 = NULL; }
   if(cm->hp7 != NULL) { p7_hmm_Destroy(cm->hp7); cm->hp7 = NULL; }
@@ -1913,30 +1959,39 @@ cm_p7_CalibrateDerivedFilterHMMs(CM_t *cm, const CM_P7_CALOPTS *co, int ncpus, c
   esl_vec_FSet(cm->fp7_evparam, CM_p7_NEVPARAM, CM_p7_EVPARAM_UNSET);
   esl_vec_FSet(cm->hp7_evparam, CM_p7_NEVPARAM, CM_p7_EVPARAM_UNSET);
 
-  if((status = cm_p7_DeriveFilterHMMsAsWritten(cm, co->etarget_rule, &fhmm, &hhmm, &emod, errbuf)) != eslOK) return status;
+  if((status = cm_p7_DeriveFilterHMMsAsWritten(cm, co->etarget_rule, &fhmm, &hhmm, &emod, &relent, &target, errbuf)) != eslOK) return status;
+  gfpred = cm_p7_UseP7mlPredictor(cm, TRUE, emod);
+
+  /* a lower-entropy CM: simulate, don't predict (brief 26_0824-099) */
+  if(! do_sim && gfpred == CM_P7_GFPRED_P7MLEMOD && relent < target) {
+    lowre_sim = TRUE;
+    do_sim    = TRUE;
+    gfwdN     = co->sim_gfwdN;
+    gftailp   = co->sim_gftailp;
+  }
 
   /* calibrate the filter HMM, then the HMM-only HMM the same way (as
    * the prototype measured in brief 26_0821-143) */
   if((status = cm_p7_Calibrate(fhmm, errbuf,
                                co->lmsvL, co->lvitL, co->lfwdL, co->gfwdL, /* length of sequences to search for local (lL) and glocal (gL) modes */
-                               co->lmsvN, co->lvitN, co->lfwdN, co->gfwdN, /* number of seqs to search for each alg */
+                               co->lmsvN, co->lvitN, co->lfwdN, gfwdN,     /* number of seqs to search for each alg */
                                co->lftailp,                                /* fraction of tail mass to fit for local Fwd */
-                               co->gftailp,                                /* fraction of tail mass to fit for glocal Fwd */
+                               gftailp,                                    /* fraction of tail mass to fit for glocal Fwd */
                                co->seed,                                   /* RNG seed for calibration */
                                ncpus,
-                               cm_p7_UseP7mlPredictor(cm, TRUE, emod),     /* the filter is the ML HMM: --p7ml lambda/tau coefficients, by weighting (briefs 26_0824-085/26_0824-096) */
-                               co->do_sim,                                 /* simulate, don't predict, glocal Fwd stats? (brief 26_0824-087) */
+                               gfpred,                                     /* the filter is the ML HMM: --p7ml lambda/tau coefficients, by weighting (briefs 26_0824-085/26_0824-096) */
+                               do_sim,                                     /* simulate, don't predict, glocal Fwd stats? (briefs 26_0824-087/26_0824-099) */
                                &fgfmu, &fgflambda))
      != eslOK) { ESL_XFAIL(status, errbuf, "Error calibrating the filter p7 HMM"); }
   if(hhmm != NULL) {
     if((status = cm_p7_Calibrate(hhmm, errbuf,
                                  co->lmsvL, co->lvitL, co->lfwdL, co->gfwdL,
-                                 co->lmsvN, co->lvitN, co->lfwdN, co->gfwdN,
-                                 co->lftailp, co->gftailp,
+                                 co->lmsvN, co->lvitN, co->lfwdN, gfwdN,
+                                 co->lftailp, gftailp,
                                  co->seed,
                                  ncpus,
                                  cm_p7_HMMOnlyPredictor(cm),               /* h3pri lambda/tau coefficients if the CM has base pairs (brief 26_0824-093) */
-                                 co->do_sim,
+                                 do_sim,
                                  &hgfmu, &hgflambda))
        != eslOK) { ESL_XFAIL(status, errbuf, "Error calibrating the HMM-only p7 HMM"); }
   }
@@ -1948,6 +2003,9 @@ cm_p7_CalibrateDerivedFilterHMMs(CM_t *cm, const CM_P7_CALOPTS *co, int ncpus, c
     if((status = cm_SetHMMOnlyHMM(cm, hhmm, hgfmu, hgflambda)) != eslOK) ESL_XFAIL(status, errbuf, "Unable to set the HMM-only HMM for the CM");
     hhmm = NULL;
   }
+  if(opt_ret_lowre_sim != NULL) *opt_ret_lowre_sim = lowre_sim;
+  if(opt_ret_relent    != NULL) *opt_ret_relent    = relent;
+  if(opt_ret_target    != NULL) *opt_ret_target    = target;
   return eslOK;
 
  ERROR:

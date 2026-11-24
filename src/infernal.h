@@ -2108,6 +2108,8 @@ typedef struct cm_p7_calopts_s {
   int    seed;                       /* RNG seed (0: arbitrary) */
   int    do_sim;                     /* TRUE to simulate glocal Forward parameters, not predict them */
   int    etarget_rule;               /* CM_ETARGET_RULE_* of the cmbuild that built the CM, for cm_IsEntropyModified() */
+  int    sim_gfwdN;                  /* gfwdN and gftailp if simulation is forced for a lower-entropy */
+  double sim_gftailp;                /*   CM (cm_p7_CalibrateDerivedFilterHMMs(); brief 26_0824-099) */
 } CM_P7_CALOPTS;
 
 /* transforms of the CM's ML p7 HMM (mlp7) that give the HMM-only
@@ -3768,8 +3770,8 @@ extern void         cm_p7_DefaultHMMOnlyAlpha(double *alpha);
 extern int          cm_p7_DeriveFilterHMMs(CM_t *cm, int xform, P7_HMM **ret_fp7, P7_HMM **ret_hp7, char *errbuf);
 extern int          cm_p7_AttachDerivedFilterHMMs(CM_t *cm, char *errbuf);
 extern void         cm_p7_CalOptsSetDefaults(CM_P7_CALOPTS *co, int clen, int do_sim);
-extern int          cm_p7_DeriveFilterHMMsAsWritten(CM_t *cm, int etarget_rule, P7_HMM **ret_fp7, P7_HMM **ret_hp7, int *ret_emod, char *errbuf);
-extern int          cm_p7_CalibrateDerivedFilterHMMs(CM_t *cm, const CM_P7_CALOPTS *co, int ncpus, char *errbuf);
+extern int          cm_p7_DeriveFilterHMMsAsWritten(CM_t *cm, int etarget_rule, P7_HMM **ret_fp7, P7_HMM **ret_hp7, int *ret_emod, double *opt_ret_relent, double *opt_ret_target, char *errbuf);
+extern int          cm_p7_CalibrateDerivedFilterHMMs(CM_t *cm, const CM_P7_CALOPTS *co, int ncpus, int *opt_ret_lowre_sim, double *opt_ret_relent, double *opt_ret_target, char *errbuf);
 extern int          cm_p7_UseHMMOnlyFilter(CM_t *cm);
 extern const char  *cm_p7_HMMOnlyXformString(int xform);
 extern int          cm_p7_HMMOnlyXformCode(const char *s);
