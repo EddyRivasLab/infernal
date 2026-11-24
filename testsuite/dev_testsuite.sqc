@@ -79,6 +79,7 @@
 1 exercise  itest/no-basepair-chasm !testsuite/itest24-no-basepair-chasm.pl! @@ !! %OUTFILES%
 1 exercise  itest/removed-formats   !testsuite/itest25-removed-formats.pl!   @@ !! %OUTFILES%
 1 exercise  itest/format1a-refused  !testsuite/itest26-format1a-refused.pl!  @@ !! %OUTFILES%
+1 exercise  itest/lowre-esim      !testsuite/itest27-lowre-esim.pl!       @@ !! %OUTFILES%
 1 exercise  itest/brute             @src/itest_brute@
 
 ################################################################
@@ -611,6 +612,7 @@
 1  exercise  build:se/eent       @src/cmbuild@ --eent -F %SE.CM% !testsuite/se.sto! 
 1  exercise  build:vault/enon    @src/cmbuild@ --enone -F %V.CM% !testsuite/Vault.sto! 
 1  exercise  build:vault/ere     @src/cmbuild@ --ere 0.8 -F %V.CM% !testsuite/Vault.sto! 
+1  exercise  build:vault/erelo   @src/cmbuild@ --ere 0.3 -F %V.CM% !testsuite/Vault.sto! 
 1  exercise  build:vault/eset    @src/cmbuild@ --eset 10.0 -F %V.CM% !testsuite/Vault.sto! 
 1  exercise  build:vault/ems     @src/cmbuild@ --eminseq 8.0 -F %V.CM% !testsuite/Vault.sto! 
 1  exercise  build:trna/esig     @src/cmbuild@ --esigma 3.0 -F %TRNA.CM% !testsuite/tRNA.sto! 
