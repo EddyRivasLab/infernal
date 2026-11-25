@@ -17,10 +17,6 @@
 #include <stdint.h>
 #include <assert.h>
 
-#include <xmmintrin.h>
-#include <emmintrin.h>
-#include <smmintrin.h>
-
 #include "easel.h"
 #include "esl_random.h"
 #include "esl_sq.h"
