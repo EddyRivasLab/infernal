@@ -3935,6 +3935,10 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
    * statistics for the truncated passes.
    */
   int              hmmonly_glocal  = pli->do_hmmonly_glocal_cur;
+  /* glocal HMM only mode always uses the glocal Forward score (that's its
+   * whole purpose) and --noF4 is incompatible with --hmmonly, so there is
+   * no hmmonly-specific gate here; see brief 26_0822-031 / GitHub #84. */
+  int              cur_do_gfwd     = hmmonly_glocal ? TRUE                 : pli->do_gfwd;
   double           cur_F4          = hmmonly_glocal ? pli->F4_hmmonly      : pli->F4;
   double           cur_F4b         = hmmonly_glocal ? pli->F4b_hmmonly     : pli->F4b;
   double           cur_F5          = hmmonly_glocal ? pli->F5_hmmonly      : pli->F5;
@@ -4496,12 +4500,20 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
       }
 
 #if eslDEBUGLEVEL >= 2
-      if(P > cur_F4) {
+      if(cur_do_gfwd && P > cur_F4) {
 	printf("#DEBUG: KILLED   window %5d [%10" PRId64 "..%10" PRId64 "]          gFwd      %6.2f bits  P %g\n", i, ws[i], we[i], sc_for_pvalue, P);
       }
 #endif
-      /* Does this score exceed our glocal forward filter threshold? If not, move on to next seq */
-      if(P > cur_F4) continue;
+      /* Does this score exceed our glocal forward filter threshold? If not,
+       * move on to next seq. The glocal Forward score itself (fwdsc, above)
+       * is always computed because it feeds the F4b bias test and the
+       * downstream glocal envelope definition regardless of whether the F4
+       * filter decision is applied; only the filtering decision is gated on
+       * cur_do_gfwd (--noF4 previously left this test unconditional, GitHub
+       * #84 / brief 26_0822-031). --noF4 requires --noF4b (option table),
+       * so cur_do_gfwdbias below is already FALSE whenever cur_do_gfwd is
+       * FALSE outside hmmonly_glocal mode. */
+      if(cur_do_gfwd && P > cur_F4) continue;
 
       pli->acct[pli->cur_pass_idx].n_past_gfwd++;
       pli->acct[pli->cur_pass_idx].pos_past_gfwd += wlen;
