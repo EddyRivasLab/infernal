@@ -73,6 +73,14 @@
  *   (b) the erow EL-from-M+1 accumulation is NOT gated on INBAND(i,M).
  *       (erow is dead for band derivation, but reproduced for fidelity.)
  *
+ * BRIEF 26_0821-207: the row kernels no longer follow the originals for the
+ * local-end (EL) transitions. The originals' Forward and Backward used
+ * different EL transition sets under a narrow band (see cp9_chk_fwd_rowF()'s
+ * supplementary pass and the EL block at the top of cp9_chk_bwd_rowF()), so
+ * their totals disagreed; both directions now use every EL transition whose
+ * two cells are in band. The non-checkpointed float originals in cm_p7_band.c
+ * have no live caller and are left as they were.
+ *
  * Function/struct suffix F. Substitutions vs the originals:
  *   mmx[i]->mc, mmx[i-1]->mp, mmx[i+1]->mn (and i/d/el likewise).
  *
@@ -133,6 +141,11 @@ cp9_chk_dlogsum_lut_init(void)
  * with ILogsum -> p7_FLogsum, which silently changed the base while the values
  * stayed in bits; it under-added every sum by up to 1-ln2 = 0.307 bits,
  * one-directionally, compounding row by row. */
+#ifdef CM_P7_BAND_CHK_TESTDRIVE
+/* unit tests only: TRUE makes cp9_chk_dlogsum() exact, so the kernels can be
+ * compared cell by cell with an exact reference (brief 26_0821-207). */
+static int cp9_chk_dlogsum_exact = FALSE;
+#endif
 static inline double
 cp9_chk_dlogsum(double a, double b)
 {
@@ -140,6 +153,9 @@ cp9_chk_dlogsum(double a, double b)
   if(b == -eslINFINITY) return a;
   const double max = (a > b) ? a : b;
   const double min = (a > b) ? b : a;
+#ifdef CM_P7_BAND_CHK_TESTDRIVE
+  if(cp9_chk_dlogsum_exact) return max + log2(1. + exp2(min - max));
+#endif
   return ((max - min) >= CP9_DLOGSUM_CUTOFF) ? max
          : max + cp9_dlogsum_tbl[(int)((max - min) * CP9_DLOGSUM_SCALE)];
 }
@@ -254,17 +270,29 @@ cp9_chk_fwd_rowF(CP9_t *cp9, ESL_DSQ *dsq, int i, int *kmin, int *kmax, int M,
     }
   }
 
-  /* brief 26_0430-134 BM-coverage supplementary pass (double-only; absent in int kernel).
-   * Full row band [max(1,kmin[i]),kmax[i]] MINUS the [kn,kx] match range, adding
-   * begin + EL-from-into-M (no in-band diagonal predecessor here). */
-  if(INBAND(i-1, 0) && mp[0] != -eslINFINITY) {
-    int k_lo = ESL_MAX(1, kmin[i]);
-    int k_hi = kmax[i];
+  /* Supplementary pass over the rest of the row band: [max(1,kmin[i]),kmax[i]]
+   * MINUS the [kn,kx] match range. These cells have no in-band diagonal
+   * predecessor, but M_k(i) can still be reached by a begin (B -> M_k, only
+   * when row i-1 holds column 0) or by an EL return (EL_c(i-1) -> M_k), and
+   * EL_k(i) by M_k(i) -> EL_k(i) or by the self-loop EL_k(i-1) -> EL_k(i).
+   *
+   * brief 26_0430-134 added this pass for the begin term and ran it only when
+   * row i-1 holds column 0, so on every other row the EL transitions into
+   * these cells were dropped while the Backward kept them. The Forward total
+   * then fell short of the Backward total, posteriors (normalized by the
+   * Backward total) lost occupancy after a local end, and the band predictor
+   * opened the truncation window and blew up the CM bands (brief
+   * 26_0821-206). The pass now runs on every row; only its begin term is
+   * gated (brief 26_0821-207). */
+  {
+    int k_lo   = ESL_MAX(1, kmin[i]);
+    int k_hi   = kmax[i];
+    int do_beg = (INBAND(i-1, 0) && mp[0] != -eslINFINITY) ? TRUE : FALSE;
     for (k = k_lo; k <= k_hi; k++) {
       if(k >= kn && k <= kx) continue;   /* already filled by the match loop */
       kpcur = k - kmin[i];
 
-      sc = mp[0] + Scorify(CP9TSC(cp9O_BM,k));  /* begin; diagonal predecessor out of band here */
+      sc = do_beg ? mp[0] + Scorify(CP9TSC(cp9O_BM,k)) : -eslINFINITY;  /* begin; diagonal predecessor out of band here */
 
       if (cp9->flags & CPLAN9_EL) {
         int c_el, kpprv_el;
@@ -423,14 +451,40 @@ cp9_chk_bwd_rowF(CP9_t *cp9, ESL_DSQ *dsq, int i, int *kmin, int *kmax, int M,
   int const *tsc = cp9->otsc;
   int k, c, kpcur, kpprv, kpcur_el, kn, kx, kprv, kprvn, kprvx;
 
+  /* EL_c(i), complete, before any cell of row i reads it. EL cells depend
+   * only on row i+1, so they are filled here in one pass over every EL
+   * transition whose two cells are in band, the mirror of the Forward's
+   * transition set:
+   *   EL_k(i) -> EL_k(i+1)  self-loop, k in the bands of rows i and i+1;
+   *   EL_c(i) -> M_k(i+1)   return (no transition score), every k in row
+   *                         i+1's band whose source c is in row i's band.
+   * They used to be accumulated inside the match loop below, over its window
+   * [max(kmin[i],kmin[i+1]-1), min(kmax[i],kmax[i+1]-1)], plus a separate
+   * k == M block; that dropped the self-loop at in-band k outside the window
+   * and the returns into M_k(i+1) for k outside it, a different set from the
+   * Forward's, so the Forward and Backward totals disagreed (brief
+   * 26_0821-206). Row i's M_k(i) reads EL_k(i) in the DELETIONS loops below
+   * (brief 26_0821-207). */
   kpcur = 0;
   for (k = kmin[i]; k <= kmax[i]; k++, kpcur++) ec[kpcur] = -eslINFINITY;
+  if(cp9->flags & CPLAN9_EL) {
+    kn = ESL_MAX(1, ESL_MAX(kmin[i], kmin[i+1]));
+    kx = ESL_MIN(kmax[i], kmax[i+1]);
+    for (k = kn; k <= kx; k++)
+      if(cp9->has_el[k]) ec[k-kmin[i]] = en[k-kmin[i+1]] + Scorify(cp9->el_selfsc);
+    for (k = ESL_MAX(1, kmin[i+1]); k <= kmax[i+1]; k++) {
+      kpprv = k - kmin[i+1];
+      if(mn[kpprv] == -eslINFINITY) continue;
+      for(c = 0; c < cp9->el_from_ct[k]; c++)
+        if(INBAND(i, cp9->el_from_idx[k][c])) {
+          kpcur_el = cp9->el_from_idx[k][c] - kmin[i];
+          ec[kpcur_el] = cp9_chk_dlogsum(ec[kpcur_el], mn[kpprv]);
+        }
+    }
+  }
 
   if(INBAND(i, M)) {
     kpcur = M-kmin[i];
-    if((cp9->flags & CPLAN9_EL) && (cp9->has_el[M]))
-      ec[kpcur] = ec[kpcur] + Scorify(cp9->el_selfsc);
-
     if(INBAND(i+1, M)) {
       kpprv = M-kmin[i+1];
       mc[kpcur]  = in[kpprv] + Scorify(CP9TSC(cp9O_MI,M));
@@ -442,19 +496,6 @@ cp9_chk_bwd_rowF(CP9_t *cp9, ESL_DSQ *dsq, int i, int *kmin, int *kmax, int M,
     else {
       mc[kpcur] = ic[kpcur] = dc[kpcur] = -eslINFINITY;
     }
-
-    if((cp9->flags & CPLAN9_EL) && (cp9->has_el[M]))
-      mc[kpcur] = cp9_chk_dlogsum(mc[kpcur], ec[kpcur] + Scorify(CP9TSC(cp9O_MEL,M)));
-
-    if(INBAND(i+1, M)) {
-      if(cp9->flags & CPLAN9_EL) {
-        for(c = 0; c < cp9->el_from_ct[M]; c++)
-          if(INBAND(i, cp9->el_from_idx[M][c])) {
-            kpcur_el = cp9->el_from_idx[M][c] - kmin[i];
-            ec[kpcur_el] = cp9_chk_dlogsum(ec[kpcur_el], mn[kpprv]);
-          }
-      }
-    }
   }
 
   /* MATCH: *_k <- M_k+1 */
@@ -462,25 +503,13 @@ cp9_chk_bwd_rowF(CP9_t *cp9, ESL_DSQ *dsq, int i, int *kmin, int *kmax, int M,
   kn = ESL_MAX(kn, 1);
   kx = ESL_MIN(kmax[i], kmax[i+1]-1);
 
-  for (kpcur = 0; kpcur < ESL_MIN(kn-kmin[i], kmax[i]-kmin[i]+1); kpcur++) mc[kpcur] = ic[kpcur] = dc[kpcur] = ec[kpcur] = -eslINFINITY;
-  for (kpcur = ESL_MAX(0,kx-kmin[i]+1); kpcur <= kmax[i]-kmin[i]; kpcur++) mc[kpcur] = ic[kpcur] = dc[kpcur] = ec[kpcur] = -eslINFINITY;
+  for (kpcur = 0; kpcur < ESL_MIN(kn-kmin[i], kmax[i]-kmin[i]+1); kpcur++) mc[kpcur] = ic[kpcur] = dc[kpcur] = -eslINFINITY;
+  for (kpcur = ESL_MAX(0,kx-kmin[i]+1); kpcur <= kmax[i]-kmin[i]; kpcur++) mc[kpcur] = ic[kpcur] = dc[kpcur] = -eslINFINITY;
 
   kpcur = kx - kmin[i];
   kpprv = kx - kmin[i+1];
   for (k = kx; k >= kn; k--, kpcur--, kpprv--)
     {
-      if((cp9->flags & CPLAN9_EL) && INBAND(i+1, k)) { /* M_k at i+1 must be in band (k can be kmin[i+1]-1, giving kpprv = -1) */
-        for(c = 0; c < cp9->el_from_ct[k]; c++) {
-          if(INBAND(i, cp9->el_from_idx[k][c])) {
-            kpcur_el = cp9->el_from_idx[k][c] - kmin[i];
-            ec[kpcur_el] = cp9_chk_dlogsum(ec[kpcur_el], mn[kpprv]);
-          }
-        }
-      }
-      if(INBAND(i+1, k)) {
-        if((cp9->flags & CPLAN9_EL) && (cp9->has_el[k]))
-          ec[kpcur] = cp9_chk_dlogsum(ec[kpcur], en[kpprv] + Scorify(cp9->el_selfsc));
-      }
       mc[kpcur] = mn[kpprv+1] + Scorify(CP9TSC(cp9O_MM,k));
       ic[kpcur] = mn[kpprv+1] + Scorify(CP9TSC(cp9O_IM,k));
       dc[kpcur] = mn[kpprv+1] + Scorify(CP9TSC(cp9O_DM,k));
@@ -598,10 +627,13 @@ cp9_chk_bwd_row0F(CP9_t *cp9, ESL_DSQ *dsq, int *kmin, int *kmax, int M,
   for (k = kx; k >= kn; k--, kpcur--, kpprv--)
     dc[kpcur]  = mn[kpprv+1] + Scorify(CP9TSC(cp9O_DM,k));
 
-  /* D_k(i==0) <- I_k(i==1) */
+  /* D_k(i==0) <- I_k(i==1), k < M: D_M was set from I_M above, and adding
+   * it again here counted that transition twice (+1 bit on D_M(0); brief
+   * 26_0821-207). */
   kn = ESL_MAX(kmin[i], kmin[i+1]);
   kn = ESL_MAX(kn, 1);
   kx = ESL_MIN(kmax[i], kmax[i+1]);
+  kx = ESL_MIN(kx, M-1);
   kpcur = kx - kmin[i];
   kpprv = kx - kmin[i+1];
   for (k = kx; k >= kn; k--, kpcur--, kpprv--)
@@ -2055,3 +2087,589 @@ cp9_IterateSeq2BandsP7BF_chk_multi(CM_t *cm, char *errbuf, CP9_t *cp9, ESL_DSQ *
   if(pocc) { for(t=0;t<NS;t++) if(pocc[t]) free(pocc[t]); free(pocc); }
   return status;
 }
+
+
+/*****************************************************************
+ * Unit tests (brief 26_0821-207)
+ *   make cm_p7_band_chk_utest; ./cm_p7_band_chk_utest <cmfile>
+ *
+ * The CP9 is built from a real CM (with local ends), so the tests
+ * need a CM file; the testsuite passes one.
+ *****************************************************************/
+#ifdef CM_P7_BAND_CHK_TESTDRIVE
+
+#include "esl_getopts.h"
+#include "esl_random.h"
+
+/* Exact reference: the unbanded CP9 Forward and Backward recursions of
+ * cp9_Forward()/cp9_Backward() (cp9_dp.c; alignment mode, no scanning) in
+ * double with an exact log-sum, with every cell outside kmin[i]..kmax[i] set
+ * to -inf as soon as it is computed. Its in-band cells therefore sum exactly
+ * the parses that stay inside the band, which is what the banded kernels must
+ * compute. With a full band it is the unbanded F/B. One deliberate departure
+ * from cp9_Backward(): EL_M keeps its self-loop there too (cp9_Backward()
+ * adds el_selfsc to a cell it has just set to -INFTY), so that Forward and
+ * Backward use the same transitions. */
+typedef struct {
+  int     L, M;
+  double *fm, *fi, *fd, *fe;
+  double *bm, *bi, *bd, *be;
+  double  fsc, bsc;
+} refFB_t;
+
+#define RX(a,i,k)   ((a)[(int64_t)(i) * (M+1) + (k)])
+#define T(s,k)      ((double) Scorify(CP9TSC((s),(k))))
+#define REF_MSC(i,k)    ((double) Scorify(cp9->msc[dsq[(i)]][(k)]))
+#define REF_ISC(i,k)    ((double) Scorify(cp9->isc[dsq[(i)]][(k)]))
+#define MASK(i,k,v) (INBAND((i),(k)) ? (v) : -eslINFINITY)
+
+static double
+ref_ls(double a, double b)
+{
+  if(a == -eslINFINITY) return b;
+  if(b == -eslINFINITY) return a;
+  return (a > b) ? a + log2(1. + exp2(b - a)) : b + log2(1. + exp2(a - b));
+}
+static double ref_ls3(double a, double b, double c) { return ref_ls(ref_ls(a, b), c); }
+
+static void
+ref_Destroy(refFB_t *r)
+{
+  if(r == NULL) return;
+  free(r->fm); free(r->fi); free(r->fd); free(r->fe);
+  free(r->bm); free(r->bi); free(r->bd); free(r->be);
+  free(r);
+}
+
+static refFB_t *
+ref_Create(CP9_t *cp9, ESL_DSQ *dsq, int L, int *kmin, int *kmax)
+{
+  int const *tsc = cp9->otsc;
+  int        M   = cp9->M;
+  int        el  = (cp9->flags & CPLAN9_EL) ? TRUE : FALSE;
+  int64_t    n   = (int64_t) (L+1) * (M+1);
+  refFB_t   *r   = malloc(sizeof(refFB_t));
+  double     sc;
+  int        i, k, c;
+
+  r->L = L; r->M = M;
+  r->fm = malloc(sizeof(double) * n); r->fi = malloc(sizeof(double) * n);
+  r->fd = malloc(sizeof(double) * n); r->fe = malloc(sizeof(double) * n);
+  r->bm = malloc(sizeof(double) * n); r->bi = malloc(sizeof(double) * n);
+  r->bd = malloc(sizeof(double) * n); r->be = malloc(sizeof(double) * n);
+
+  /* Forward */
+  RX(r->fm,0,0) = MASK(0, 0, 0.);
+  RX(r->fi,0,0) = RX(r->fd,0,0) = RX(r->fe,0,0) = -eslINFINITY;
+  for(k = 1; k <= M; k++) {
+    RX(r->fm,0,k) = RX(r->fi,0,k) = RX(r->fe,0,k) = -eslINFINITY;
+    RX(r->fd,0,k) = MASK(0, k, ref_ls3(RX(r->fm,0,k-1) + T(cp9O_MD,k-1), RX(r->fi,0,k-1) + T(cp9O_ID,k-1), RX(r->fd,0,k-1) + T(cp9O_DD,k-1)));
+  }
+  for(i = 1; i <= L; i++) {
+    RX(r->fm,i,0) = RX(r->fd,i,0) = RX(r->fe,i,0) = -eslINFINITY;
+    RX(r->fi,i,0) = MASK(i, 0, ref_ls3(RX(r->fm,i-1,0) + T(cp9O_MI,0), RX(r->fi,i-1,0) + T(cp9O_II,0), RX(r->fd,i-1,0) + T(cp9O_DI,0)) + REF_ISC(i,0));
+    for(k = 1; k <= M; k++) {
+      sc = ref_ls(ref_ls3(RX(r->fm,i-1,k-1) + T(cp9O_MM,k-1), RX(r->fi,i-1,k-1) + T(cp9O_IM,k-1), RX(r->fd,i-1,k-1) + T(cp9O_DM,k-1)),
+                  RX(r->fm,i-1,0) + T(cp9O_BM,k));
+      if(el) for(c = 0; c < cp9->el_from_ct[k]; c++) sc = ref_ls(sc, RX(r->fe,i-1,cp9->el_from_idx[k][c]));
+      RX(r->fm,i,k) = MASK(i, k, sc + REF_MSC(i,k));
+      RX(r->fi,i,k) = MASK(i, k, ref_ls3(RX(r->fm,i-1,k) + T(cp9O_MI,k), RX(r->fi,i-1,k) + T(cp9O_II,k), RX(r->fd,i-1,k) + T(cp9O_DI,k)) + REF_ISC(i,k));
+      RX(r->fd,i,k) = MASK(i, k, ref_ls3(RX(r->fm,i,k-1) + T(cp9O_MD,k-1), RX(r->fi,i,k-1) + T(cp9O_ID,k-1), RX(r->fd,i,k-1) + T(cp9O_DD,k-1)));
+      RX(r->fe,i,k) = (el && cp9->has_el[k]) ? MASK(i, k, ref_ls(RX(r->fm,i,k) + T(cp9O_MEL,k), RX(r->fe,i-1,k) + Scorify(cp9->el_selfsc))) : -eslINFINITY;
+    }
+  }
+  r->fsc = ref_ls(RX(r->fd,L,M) + T(cp9O_DM,M), RX(r->fi,L,M) + T(cp9O_IM,M));
+  for(k = 1; k <= M; k++) r->fsc = ref_ls(r->fsc, RX(r->fm,L,k) + T(cp9O_ME,k));
+  if(el) for(c = 0; c < cp9->el_from_ct[M+1]; c++) r->fsc = ref_ls(r->fsc, RX(r->fe,L,cp9->el_from_idx[M+1][c]));
+
+  /* Backward, row L */
+  for(k = 0; k <= M; k++) RX(r->be,L,k) = -eslINFINITY;
+  if(el) for(c = 0; c < cp9->el_from_ct[M+1]; c++) { k = cp9->el_from_idx[M+1][c]; RX(r->be,L,k) = MASK(L, k, 0.); }
+  RX(r->bm,L,M) = MASK(L, M, ref_ls(RX(r->be,L,M) + T(cp9O_MEL,M), T(cp9O_ME,M)) + REF_MSC(L,M));
+  RX(r->bi,L,M) = MASK(L, M, T(cp9O_IM,M) + REF_ISC(L,M));
+  RX(r->bd,L,M) = MASK(L, M, T(cp9O_DM,M));
+  for(k = M-1; k >= 1; k--) {
+    sc = ref_ls(T(cp9O_ME,k), RX(r->bd,L,k+1) + T(cp9O_MD,k));
+    if(el) sc = ref_ls(sc, RX(r->be,L,k) + T(cp9O_MEL,k));
+    RX(r->bm,L,k) = MASK(L, k, sc + REF_MSC(L,k));
+    RX(r->bi,L,k) = MASK(L, k, RX(r->bd,L,k+1) + T(cp9O_ID,k) + REF_ISC(L,k));
+    RX(r->bd,L,k) = MASK(L, k, RX(r->bd,L,k+1) + T(cp9O_DD,k));
+  }
+  RX(r->bm,L,0) = MASK(L, 0, RX(r->bd,L,1) + T(cp9O_MD,0));
+  RX(r->bi,L,0) = MASK(L, 0, RX(r->bd,L,1) + T(cp9O_ID,0) + REF_ISC(L,0));
+  RX(r->bd,L,0) = RX(r->be,L,0) = -eslINFINITY;
+
+  /* Backward, rows L-1..1 */
+  for(i = L-1; i >= 1; i--) {
+    for(k = 0; k <= M; k++) RX(r->be,i,k) = -eslINFINITY;
+    if(el) {
+      for(k = 1; k <= M; k++) if(cp9->has_el[k]) RX(r->be,i,k) = RX(r->be,i+1,k) + Scorify(cp9->el_selfsc);
+      for(k = 1; k <= M; k++)
+        for(c = 0; c < cp9->el_from_ct[k]; c++) RX(r->be,i,cp9->el_from_idx[k][c]) = ref_ls(RX(r->be,i,cp9->el_from_idx[k][c]), RX(r->bm,i+1,k));
+      for(k = 1; k <= M; k++) RX(r->be,i,k) = MASK(i, k, RX(r->be,i,k));
+    }
+    sc = RX(r->bi,i+1,M) + T(cp9O_MI,M);
+    if(el && cp9->has_el[M]) sc = ref_ls(sc, RX(r->be,i,M) + T(cp9O_MEL,M));
+    RX(r->bm,i,M) = MASK(i, M, sc + REF_MSC(i,M));
+    RX(r->bi,i,M) = MASK(i, M, RX(r->bi,i+1,M) + T(cp9O_II,M) + REF_ISC(i,M));
+    RX(r->bd,i,M) = MASK(i, M, RX(r->bi,i+1,M) + T(cp9O_DI,M));
+    for(k = M-1; k >= 1; k--) {
+      sc = ref_ls3(RX(r->bm,i+1,k+1) + T(cp9O_MM,k), RX(r->bi,i+1,k) + T(cp9O_MI,k), RX(r->bd,i,k+1) + T(cp9O_MD,k));
+      if(el && cp9->has_el[k]) sc = ref_ls(sc, RX(r->be,i,k) + T(cp9O_MEL,k));
+      RX(r->bm,i,k) = MASK(i, k, sc + REF_MSC(i,k));
+      RX(r->bi,i,k) = MASK(i, k, ref_ls3(RX(r->bm,i+1,k+1) + T(cp9O_IM,k), RX(r->bi,i+1,k) + T(cp9O_II,k), RX(r->bd,i,k+1) + T(cp9O_ID,k)) + REF_ISC(i,k));
+      RX(r->bd,i,k) = MASK(i, k, ref_ls3(RX(r->bm,i+1,k+1) + T(cp9O_DM,k), RX(r->bi,i+1,k) + T(cp9O_DI,k), RX(r->bd,i,k+1) + T(cp9O_DD,k)));
+    }
+    RX(r->bi,i,0) = MASK(i, 0, ref_ls3(RX(r->bm,i+1,1) + T(cp9O_IM,0), RX(r->bi,i+1,0) + T(cp9O_II,0), RX(r->bd,i,1) + T(cp9O_ID,0)) + REF_ISC(i,0));
+    RX(r->bd,i,0) = RX(r->be,i,0) = -eslINFINITY;
+    sc = ref_ls(RX(r->bi,i+1,0) + T(cp9O_MI,0), RX(r->bd,i,1) + T(cp9O_MD,0));
+    for(k = M; k >= 1; k--) sc = ref_ls(sc, RX(r->bm,i+1,k) + T(cp9O_BM,k));
+    RX(r->bm,i,0) = MASK(i, 0, sc);
+  }
+
+  /* Backward, row 0 */
+  for(k = 0; k <= M; k++) RX(r->bm,0,k) = RX(r->bi,0,k) = RX(r->be,0,k) = -eslINFINITY;
+  RX(r->bd,0,M) = MASK(0, M, RX(r->bi,1,M) + T(cp9O_DI,M));
+  for(k = M-1; k >= 1; k--)
+    RX(r->bd,0,k) = MASK(0, k, ref_ls3(RX(r->bm,1,k+1) + T(cp9O_DM,k), RX(r->bi,1,k) + T(cp9O_DI,k), RX(r->bd,0,k+1) + T(cp9O_DD,k)));
+  RX(r->bd,0,0) = -eslINFINITY;
+  sc = ref_ls(RX(r->bi,1,0) + T(cp9O_MI,0), RX(r->bd,0,1) + T(cp9O_MD,0));
+  for(k = M; k >= 1; k--) sc = ref_ls(sc, RX(r->bm,1,k) + T(cp9O_BM,k));
+  RX(r->bm,0,0) = MASK(0, 0, sc);
+  r->bsc = RX(r->bm,0,0);
+  return r;
+}
+
+/* Two cell values agree: both impossible (-inf, or below -1e5 bits, i.e.
+ * reached only through an -INFTY score), or within tol. */
+static int
+cells_agree(double a, double b, double tol)
+{
+  if(a < -1e5 && b < -1e5) return TRUE;
+  return (fabs(a - b) <= tol) ? TRUE : FALSE;
+}
+
+/* Run the checkpointed banded F/B on <dsq>, <kmin>/<kmax> and compare it with
+ * the reference <r>: totals within <tol_tot>; with <do_cells>, every in-band
+ * cell of all eight planes (rebuilt segment by segment from the checkpoints,
+ * as the band derivation does) within <tol_cell>. Returns the number of
+ * failed checks; *ret_maxd is the largest cell or total difference. */
+static int
+chk_vs_ref(CP9_t *cp9, ESL_DSQ *dsq, int L, int *kmin, int *kmax, refFB_t *r,
+           int do_cells, double tol_tot, double tol_cell,
+           double *ret_fsc, double *ret_bsc, double *ret_maxd, char *what, int be_verbose)
+{
+  char        errbuf[eslERRBUFSIZE];
+  int         M = cp9->M;
+  cp9chkF_t  *s = cp9chkF_Create(L, M, kmin, kmax, errbuf);
+  cp9segF_t  *g = NULL;
+  double      bsc, d, maxd = 0.;
+  double     *kv[8], *rv[8];
+  int         nfail = 0, j, rr, kp, k, p, a;
+
+  if(s == NULL) esl_fatal("%s: cp9chkF_Create failed", what);
+  if(cp9chkF_FwdFill(s, cp9, dsq, kmin, kmax, errbuf)       != eslOK) esl_fatal("%s: FwdFill failed", what);
+  if(cp9chkF_BwdFill(s, cp9, dsq, kmin, kmax, &bsc, errbuf) != eslOK) esl_fatal("%s: BwdFill failed", what);
+  if(! (isfinite(s->fsc) && NOT_IMPROBABLE(s->fsc))) nfail++;
+  if(! (isfinite(bsc)    && NOT_IMPROBABLE(bsc)))    nfail++;
+  d = fabs(s->fsc - r->fsc); if(! (d <= tol_tot)) nfail++; if(isfinite(d) && d > maxd) maxd = d; else if(! isfinite(d)) maxd = eslINFINITY;
+  d = fabs(bsc    - r->bsc); if(! (d <= tol_tot)) nfail++; if(isfinite(d) && d > maxd) maxd = d; else if(! isfinite(d)) maxd = eslINFINITY;
+  if(be_verbose && nfail) printf("  %s: F %.6f B %.6f ref F %.6f B %.6f\n", what, s->fsc, bsc, r->fsc, r->bsc);
+
+  if(do_cells) {
+    if((g = cp9segF_Create(s, kmin, kmax, errbuf)) == NULL) esl_fatal("%s: cp9segF_Create failed", what);
+    for(j = 1; j < s->nbnd; j++) {
+      cp9segF_Fill(g, s, j, cp9, dsq, kmin, kmax);
+      a = s->bnd[j-1];
+      for(rr = a; rr <= s->bnd[j]; rr++) {
+        kv[0] = g->fmr[rr-a]; kv[1] = g->fir[rr-a]; kv[2] = g->fdr[rr-a]; kv[3] = g->fer[rr-a];
+        kv[4] = g->bmr[rr-a]; kv[5] = g->bir[rr-a]; kv[6] = g->bdr[rr-a]; kv[7] = g->ber[rr-a];
+        rv[0] = r->fm; rv[1] = r->fi; rv[2] = r->fd; rv[3] = r->fe;
+        rv[4] = r->bm; rv[5] = r->bi; rv[6] = r->bd; rv[7] = r->be;
+        for(kp = 0, k = kmin[rr]; k <= kmax[rr]; k++, kp++)
+          for(p = 0; p < 8; p++)
+            if(! cells_agree(kv[p][kp], RX(rv[p],rr,k), tol_cell)) {
+              if(be_verbose && nfail < 5) printf("  %s: plane %d row %d col %d: kernel %.6f ref %.6f\n", what, p, rr, k, kv[p][kp], RX(rv[p],rr,k));
+              nfail++;
+              d = fabs(kv[p][kp] - RX(rv[p],rr,k)); maxd = isfinite(d) ? ESL_MAX(maxd, d) : eslINFINITY;
+            }
+      }
+    }
+    cp9segF_Destroy(g);
+  }
+  if(ret_fsc)  *ret_fsc  = s->fsc;
+  if(ret_bsc)  *ret_bsc  = bsc;
+  if(ret_maxd) *ret_maxd = maxd;
+  cp9chkF_Destroy(s);
+  return nfail;
+}
+
+/* A random parse with a local end, and a band around it.
+ * The parse: begin into M_s, matches M_s..M_a, a local end EL_a for <r>
+ * residues, then either EL_a -> E, or EL_a -> M_b and matches M_b..M_e
+ * followed by a local exit. (a,b) is drawn from the CP9's EL table, so the
+ * parse exists in the model. The band is the parse's column on each row,
+ * widened by a random 0..W cells on each side (row 0 always starts at
+ * column 0). W = 0 is the parse itself: the EL rows then hold one column,
+ * the case where the band kernels' diagonal match window misses the EL
+ * self-loop on every row. */
+static int
+sample_el_band(ESL_RANDOMNESS *rng, CP9_t *cp9, int W, int abcK, ESL_DSQ **ret_dsq, int **ret_kmin, int **ret_kmax)
+{
+  int      M = cp9->M;
+  int      npair = 0, pick, a = -1, b = -1, s, e, r, L, i, k, c, nrow;
+  int     *col;
+  int     *kmin, *kmax;
+  ESL_DSQ *dsq;
+
+  /* (a,b) pairs with an EL state at a >= 1 */
+  for(k = 1; k <= M+1; k++)
+    for(c = 0; c < cp9->el_from_ct[k]; c++)
+      if(cp9->el_from_idx[k][c] >= 1 && cp9->has_el[cp9->el_from_idx[k][c]]) npair++;
+  if(npair == 0) return -1;
+  pick = esl_rnd_Roll(rng, npair);
+  for(k = 1; k <= M+1 && a < 0; k++)
+    for(c = 0; c < cp9->el_from_ct[k]; c++)
+      if(cp9->el_from_idx[k][c] >= 1 && cp9->has_el[cp9->el_from_idx[k][c]] && pick-- == 0) { a = cp9->el_from_idx[k][c]; b = k; break; }
+
+  s = 1 + esl_rnd_Roll(rng, a);                   /* begin node, 1..a */
+  r = 1 + esl_rnd_Roll(rng, 30);                  /* EL residues      */
+  e = (b > M) ? -1 : (esl_rnd_Roll(rng, 2) ? M : b + esl_rnd_Roll(rng, M-b+1));
+  L = (a-s+1) + r + ((e < 0) ? 0 : (e-b+1));
+
+  col  = malloc(sizeof(int) * (L+1));
+  kmin = malloc(sizeof(int) * (L+1));
+  kmax = malloc(sizeof(int) * (L+1));
+  dsq  = malloc(sizeof(ESL_DSQ) * (L+2));
+  nrow = 0;
+  col[nrow++] = 0;
+  for(k = s; k <= a; k++)        col[nrow++] = k;
+  for(i = 0; i < r; i++)         col[nrow++] = a;
+  if(e > 0) for(k = b; k <= e; k++) col[nrow++] = k;
+  ESL_DASSERT1((nrow == L+1));
+
+  for(i = 0; i <= L; i++) {
+    int wl = esl_rnd_Roll(rng, W+1);   /* drawn once: ESL_MIN/ESL_MAX evaluate an argument twice */
+    int wr = esl_rnd_Roll(rng, W+1);
+    kmin[i] = (i == 0) ? 0 : ESL_MAX(0, col[i] - wl);
+    kmax[i] = ESL_MIN(M, col[i] + wr);
+  }
+  dsq[0] = dsq[L+1] = eslDSQ_SENTINEL;
+  for(i = 1; i <= L; i++) dsq[i] = esl_rnd_Roll(rng, abcK);
+
+  free(col);
+  *ret_dsq = dsq; *ret_kmin = kmin; *ret_kmax = kmax;
+  return L;
+}
+
+/* utest_narrow_band(): on random narrow bands around a parse with a local
+ * end (sample_el_band()), the checkpointed banded F/B must
+ *  (1) with an exact log-sum: match the exact banded reference cell by cell
+ *      and in both totals, to 1e-6 bits (so Forward total = Backward total);
+ *  (2) with the production log-sum table: give Forward and Backward totals
+ *      that agree to 0.01 bits, and lie within 0.01 bits of the exact ones.
+ * Every sampled parse is a valid parse of the model inside the band, so a
+ * total of -inf (no parse found) is a failure. */
+static void
+utest_narrow_band(ESL_RANDOMNESS *rng, CP9_t *cp9, char *cp9name, int abcK, int N, int be_verbose)
+{
+  int      Wv[5] = { 0, 1, 2, 3, 6 };
+  char     what[128];
+  ESL_DSQ *dsq;
+  int     *kmin, *kmax;
+  refFB_t *r;
+  double   fsc, bsc, maxd, worst_cell = 0., worst_fb = 0.;
+  int      n, L, nfail = 0, nskip = 0, nrun = 0;
+
+  for(n = 0; n < N; n++) {
+    int W = Wv[n % 5];
+    if((L = sample_el_band(rng, cp9, W, abcK, &dsq, &kmin, &kmax)) <= 0) esl_fatal("utest_narrow_band: %s has no local ends", cp9name);
+    r = ref_Create(cp9, dsq, L, kmin, kmax);
+    snprintf(what, 128, "utest_narrow_band %s trial %d (W %d, L %d)", cp9name, n, W, L);
+    if(! (isfinite(r->fsc) && NOT_IMPROBABLE(r->fsc))) { nskip++; goto NEXT; }   /* parse not allowed by this configuration */
+    if(fabs(r->fsc - r->bsc) > 1e-6) esl_fatal("%s: reference F %.6f != B %.6f", what, r->fsc, r->bsc);
+    nrun++;
+
+    cp9_chk_dlogsum_exact = TRUE;
+    if(chk_vs_ref(cp9, dsq, L, kmin, kmax, r, TRUE, 1e-6, 1e-6, NULL, NULL, &maxd, what, be_verbose)) nfail++;
+    worst_cell = ESL_MAX(worst_cell, maxd);
+    cp9_chk_dlogsum_exact = FALSE;
+    chk_vs_ref(cp9, dsq, L, kmin, kmax, r, FALSE, 0.01, 0., &fsc, &bsc, &maxd, what, FALSE);
+    if(! (fabs(fsc - bsc) <= 0.01 && fabs(fsc - r->fsc) <= 0.01)) {
+      if(be_verbose) printf("  %s: table log-sum F %.6f B %.6f exact %.6f\n", what, fsc, bsc, r->fsc);
+      nfail++;
+    }
+    worst_fb = isfinite(fsc - bsc) ? ESL_MAX(worst_fb, fabs(fsc - bsc)) : eslINFINITY;
+  NEXT:
+    ref_Destroy(r); free(dsq); free(kmin); free(kmax);
+  }
+  if(be_verbose) printf("utest_narrow_band: %s: %d trials run, %d skipped, %d failed; max exact cell/total diff %.3g bits, max table-logsum |F-B| %.3g bits\n",
+                        cp9name, nrun, nskip, nfail, worst_cell, worst_fb);
+  if(nrun < N/2) esl_fatal("utest_narrow_band: %s: only %d of %d sampled parses are allowed by the model", cp9name, nrun, N);
+  if(nfail)      esl_fatal("utest_narrow_band: %s: %d of %d trials failed (run with -v)", cp9name, nfail, nrun);
+}
+
+/* utest_full_band(): with every cell in band, the checkpointed banded F/B
+ * must equal the unbanded F/B: cell by cell and in both totals to 1e-6 bits
+ * against the exact reference (exact log-sum), and in both totals to 0.01
+ * bits with the production log-sum table. The reference itself is checked
+ * against the production unbanded int cp9_Forward()/cp9_Backward() totals,
+ * to 2e-4 bits per row and column (those accumulate integer log-sum error,
+ * ~5e-5 bits per row and column observed). */
+static void
+utest_full_band(ESL_RANDOMNESS *rng, CP9_t *cp9, char *cp9name, int abcK, int N, int be_verbose)
+{
+  char     errbuf[eslERRBUFSIZE], what[128];
+  int      M = cp9->M;
+  CP9_MX  *mx = CreateCP9Matrix(1, M);
+  ESL_DSQ *dsq;
+  int     *kmin, *kmax;
+  refFB_t *r;
+  float    ifsc, ibsc;
+  double   fsc, bsc, maxd, worst = 0., worst_int = 0.;
+  int      n, i, L, nfail = 0;
+
+  for(n = 0; n < N; n++) {
+    L    = M/2 + esl_rnd_Roll(rng, 2*M);
+    dsq  = malloc(sizeof(ESL_DSQ) * (L+2));
+    kmin = malloc(sizeof(int) * (L+1));
+    kmax = malloc(sizeof(int) * (L+1));
+    dsq[0] = dsq[L+1] = eslDSQ_SENTINEL;
+    for(i = 1; i <= L; i++) dsq[i] = esl_rnd_Roll(rng, abcK);
+    for(i = 0; i <= L; i++) { kmin[i] = 0; kmax[i] = M; }
+    r = ref_Create(cp9, dsq, L, kmin, kmax);
+    snprintf(what, 128, "utest_full_band %s trial %d (L %d)", cp9name, n, L);
+    if(! (isfinite(r->fsc) && NOT_IMPROBABLE(r->fsc))) esl_fatal("%s: reference has no parse", what);
+    if(fabs(r->fsc - r->bsc) > 1e-6)                    esl_fatal("%s: reference F %.6f != B %.6f", what, r->fsc, r->bsc);
+
+    if(cp9_Forward (cp9, errbuf, mx, dsq, 1, L, FALSE, TRUE, FALSE, NULL, NULL, &ifsc) != eslOK) esl_fatal("%s: cp9_Forward failed", what);
+    if(cp9_Backward(cp9, errbuf, mx, dsq, 1, L, FALSE, TRUE, FALSE, NULL, NULL, &ibsc) != eslOK) esl_fatal("%s: cp9_Backward failed", what);
+    worst_int = ESL_MAX(worst_int, ESL_MAX(fabs(ifsc - r->fsc), fabs(ibsc - r->bsc)));
+    if(fabs(ifsc - r->fsc) > 2e-4 * (L+M)) esl_fatal("%s: int cp9_Forward %.4f vs reference %.4f", what, ifsc, r->fsc);
+    if(! cp9->has_el[M] && fabs(ibsc - r->bsc) > 2e-4 * (L+M)) esl_fatal("%s: int cp9_Backward %.4f vs reference %.4f", what, ibsc, r->bsc);
+
+    cp9_chk_dlogsum_exact = TRUE;
+    if(chk_vs_ref(cp9, dsq, L, kmin, kmax, r, TRUE, 1e-6, 1e-6, NULL, NULL, &maxd, what, be_verbose)) nfail++;
+    worst = ESL_MAX(worst, maxd);
+    cp9_chk_dlogsum_exact = FALSE;
+    chk_vs_ref(cp9, dsq, L, kmin, kmax, r, FALSE, 0.01, 0., &fsc, &bsc, &maxd, what, FALSE);
+    if(! (fabs(fsc - bsc) <= 0.01 && fabs(fsc - r->fsc) <= 0.01)) {
+      if(be_verbose) printf("  %s: table log-sum F %.6f B %.6f exact %.6f\n", what, fsc, bsc, r->fsc);
+      nfail++;
+    }
+    ref_Destroy(r); free(dsq); free(kmin); free(kmax);
+  }
+  FreeCP9Matrix(mx);
+  if(be_verbose) printf("utest_full_band: %s: %d trials, %d failed; max exact cell/total diff %.3g bits; reference vs int unbanded totals %.3g bits\n",
+                        cp9name, N, nfail, worst, worst_int);
+  if(nfail) esl_fatal("utest_full_band: %s: %d of %d trials failed (run with -v)", cp9name, nfail, N);
+}
+
+/* Run the (a) legacy int banded CP9 Forward/Backward -- family
+ * cp9_ForwardP7B_OLD_WITH_EL()/cp9_BackwardP7B() (cm_p7_band.c), reached only
+ * via cmsearch/cmscan's experimental --msvband/--vitband (default-off) -- on
+ * <dsq>/<kmin>/<kmax>, and compare every in-band cell, both directions,
+ * against the exact reference <r>. These kernels always use the production
+ * ILogsum() table: no test-only exact-log-sum build exists for them (unlike
+ * the checkpointed family tested above via cp9_chk_dlogsum_exact), so
+ * <tol_cell> must absorb the table's per-call rounding accumulated over a
+ * row -- utest_narrow_band_int()/utest_full_band_int() (brief 26_0821-210)
+ * pick and report the tolerance actually needed. Returns the number of
+ * failed checks; *ret_maxd is the largest cell or total difference. */
+static int
+chk_vs_ref_int(CP9_t *cp9, ESL_DSQ *dsq, int L, int *kmin, int *kmax, refFB_t *r,
+               double tol_tot, double tol_cell,
+               double *ret_fsc, double *ret_bsc, double *ret_maxd, char *what, int be_verbose)
+{
+  char     errbuf[eslERRBUFSIZE];
+  int      M = cp9->M;
+  CP9_MX  *fmx = CreateCP9Matrix(L, M);
+  CP9_MX  *bmx = CreateCP9Matrix(L, M);
+  float    ffsc, fbsc;
+  double   fsc, bsc, d, maxd = 0.;
+  int      nfail = 0, i, k, kp;
+
+  if(cp9_ForwardP7B_OLD_WITH_EL(cp9, errbuf, fmx, dsq, L, kmin, kmax, &ffsc) != eslOK) esl_fatal("%s: cp9_ForwardP7B_OLD_WITH_EL failed: %s", what, errbuf);
+  if(cp9_BackwardP7B          (cp9, errbuf, bmx, dsq, L, kmin, kmax, &fbsc) != eslOK) esl_fatal("%s: cp9_BackwardP7B failed: %s", what, errbuf);
+  fsc = (double) ffsc; bsc = (double) fbsc;
+
+  if(! (isfinite(fsc) && NOT_IMPROBABLE(fsc))) nfail++;
+  if(! (isfinite(bsc) && NOT_IMPROBABLE(bsc))) nfail++;
+  d = fabs(fsc - r->fsc); if(! (d <= tol_tot)) nfail++; if(isfinite(d) && d > maxd) maxd = d; else if(! isfinite(d)) maxd = eslINFINITY;
+  d = fabs(bsc - r->bsc); if(! (d <= tol_tot)) nfail++; if(isfinite(d) && d > maxd) maxd = d; else if(! isfinite(d)) maxd = eslINFINITY;
+  if(be_verbose && nfail) printf("  %s: F %.6f B %.6f ref F %.6f B %.6f\n", what, fsc, bsc, r->fsc, r->bsc);
+
+  for(i = 0; i <= L; i++) {
+    for(kp = 0, k = kmin[i]; k <= kmax[i]; k++, kp++) {
+      double cv[8], rv8[8];
+      int p;
+      cv[0] = Scorify(fmx->mmx[i][kp]);  cv[1] = Scorify(fmx->imx[i][kp]);  cv[2] = Scorify(fmx->dmx[i][kp]);  cv[3] = Scorify(fmx->elmx[i][kp]);
+      cv[4] = Scorify(bmx->mmx[i][kp]);  cv[5] = Scorify(bmx->imx[i][kp]);  cv[6] = Scorify(bmx->dmx[i][kp]);  cv[7] = Scorify(bmx->elmx[i][kp]);
+      rv8[0] = RX(r->fm,i,k); rv8[1] = RX(r->fi,i,k); rv8[2] = RX(r->fd,i,k); rv8[3] = RX(r->fe,i,k);
+      rv8[4] = RX(r->bm,i,k); rv8[5] = RX(r->bi,i,k); rv8[6] = RX(r->bd,i,k); rv8[7] = RX(r->be,i,k);
+      for(p = 0; p < 8; p++)
+        if(! cells_agree(cv[p], rv8[p], tol_cell)) {
+          if(be_verbose && nfail < 5) printf("  %s: plane %d row %d col %d: kernel %.6f ref %.6f\n", what, p, i, k, cv[p], rv8[p]);
+          nfail++;
+          d = fabs(cv[p] - rv8[p]); maxd = isfinite(d) ? ESL_MAX(maxd, d) : eslINFINITY;
+        }
+    }
+  }
+  if(ret_fsc)  *ret_fsc  = fsc;
+  if(ret_bsc)  *ret_bsc  = bsc;
+  if(ret_maxd) *ret_maxd = maxd;
+  FreeCP9Matrix(fmx);
+  FreeCP9Matrix(bmx);
+  return nfail;
+}
+
+/* Per-trial cell/total tolerance for the (a) int kernels: the production
+ * ILogsum() table rounds every call, and the error accumulates roughly
+ * linearly in the number of cells touched, ~O(L+M) (the same scaling
+ * utest_full_band() already uses for the pre-existing, unrelated
+ * reference-vs-unbanded-int-cp9_Forward/Backward check, at a 2e-4
+ * coefficient). Measured worst case when this was written: 0.206 bits on
+ * srp-euk.c.cm (M 292) at L 521, i.e. ~2.5e-4 per (L+M) unit -- this uses
+ * 4e-4 for margin, floored at 0.05 so small narrow-band trials (L+M small)
+ * keep a sane minimum. */
+#define TOL_INT(L,M) ESL_MAX(0.05, 4e-4 * ((double)(L)+(double)(M)))
+
+/* utest_narrow_band_int(): same sampled parses/bands as utest_narrow_band(),
+ * but for the (a) int kernels (chk_vs_ref_int()). Only one comparison pass
+ * exists (no exact-log-sum test build for these kernels): cell by cell and
+ * in both totals against the exact reference, at TOL_INT(L,M) -- a
+ * tolerance sized for the production ILogsum() table's rounding, not an
+ * algorithmic defect (see TOL_INT's own comment). Every sampled parse is a
+ * valid parse of the model inside the band, so a total of -inf (no parse
+ * found) is a failure. */
+static void
+utest_narrow_band_int(ESL_RANDOMNESS *rng, CP9_t *cp9, char *cp9name, int abcK, int N, int be_verbose)
+{
+  int      Wv[5] = { 0, 1, 2, 3, 6 };
+  char     what[128];
+  ESL_DSQ *dsq;
+  int     *kmin, *kmax;
+  refFB_t *r;
+  double   fsc, bsc, maxd, tol, worst_cell = 0., worst_fb = 0., worst_tol = 0.;
+  int      n, L, nfail = 0, nskip = 0, nrun = 0;
+
+  for(n = 0; n < N; n++) {
+    int W = Wv[n % 5];
+    if((L = sample_el_band(rng, cp9, W, abcK, &dsq, &kmin, &kmax)) <= 0) esl_fatal("utest_narrow_band_int: %s has no local ends", cp9name);
+    r = ref_Create(cp9, dsq, L, kmin, kmax);
+    snprintf(what, 128, "utest_narrow_band_int %s trial %d (W %d, L %d)", cp9name, n, W, L);
+    if(! (isfinite(r->fsc) && NOT_IMPROBABLE(r->fsc))) { nskip++; goto NEXT; }
+    if(fabs(r->fsc - r->bsc) > 1e-6) esl_fatal("%s: reference F %.6f != B %.6f", what, r->fsc, r->bsc);
+    nrun++;
+
+    tol = TOL_INT(L, cp9->M);
+    worst_tol = ESL_MAX(worst_tol, tol);
+    if(chk_vs_ref_int(cp9, dsq, L, kmin, kmax, r, tol, tol, &fsc, &bsc, &maxd, what, be_verbose)) nfail++;
+    worst_cell = ESL_MAX(worst_cell, maxd);
+    worst_fb = isfinite(fsc - bsc) ? ESL_MAX(worst_fb, fabs(fsc - bsc)) : eslINFINITY;
+  NEXT:
+    ref_Destroy(r); free(dsq); free(kmin); free(kmax);
+  }
+  if(be_verbose) printf("utest_narrow_band_int: %s: %d trials run, %d skipped, %d failed; max cell/total diff %.3g bits, max |F-B| %.3g bits (worst tol %.3g)\n",
+                        cp9name, nrun, nskip, nfail, worst_cell, worst_fb, worst_tol);
+  if(nrun < N/2) esl_fatal("utest_narrow_band_int: %s: only %d of %d sampled parses are allowed by the model", cp9name, nrun, N);
+  if(nfail)      esl_fatal("utest_narrow_band_int: %s: %d of %d trials failed (run with -v)", cp9name, nfail, nrun);
+}
+
+/* utest_full_band_int(): with every cell in band, the (a) int kernels must
+ * equal the unbanded F/B: cell by cell and in both totals against the exact
+ * reference, at TOL_INT(L,M) (see its own comment). */
+static void
+utest_full_band_int(ESL_RANDOMNESS *rng, CP9_t *cp9, char *cp9name, int abcK, int N, int be_verbose)
+{
+  char     what[128];
+  int      M = cp9->M;
+  ESL_DSQ *dsq;
+  int     *kmin, *kmax;
+  refFB_t *r;
+  double   fsc, bsc, maxd, tol, worst = 0., worst_tol = 0.;
+  int      n, i, L, nfail = 0;
+
+  for(n = 0; n < N; n++) {
+    L    = M/2 + esl_rnd_Roll(rng, 2*M);
+    dsq  = malloc(sizeof(ESL_DSQ) * (L+2));
+    kmin = malloc(sizeof(int) * (L+1));
+    kmax = malloc(sizeof(int) * (L+1));
+    dsq[0] = dsq[L+1] = eslDSQ_SENTINEL;
+    for(i = 1; i <= L; i++) dsq[i] = esl_rnd_Roll(rng, abcK);
+    for(i = 0; i <= L; i++) { kmin[i] = 0; kmax[i] = M; }
+    r = ref_Create(cp9, dsq, L, kmin, kmax);
+    snprintf(what, 128, "utest_full_band_int %s trial %d (L %d)", cp9name, n, L);
+    if(! (isfinite(r->fsc) && NOT_IMPROBABLE(r->fsc))) esl_fatal("%s: reference has no parse", what);
+    if(fabs(r->fsc - r->bsc) > 1e-6)                    esl_fatal("%s: reference F %.6f != B %.6f", what, r->fsc, r->bsc);
+
+    tol = TOL_INT(L, M);
+    worst_tol = ESL_MAX(worst_tol, tol);
+    if(chk_vs_ref_int(cp9, dsq, L, kmin, kmax, r, tol, tol, &fsc, &bsc, &maxd, what, be_verbose)) nfail++;
+    worst = ESL_MAX(worst, maxd);
+    ref_Destroy(r); free(dsq); free(kmin); free(kmax);
+  }
+  if(be_verbose) printf("utest_full_band_int: %s: %d trials, %d failed; max cell/total diff %.3g bits (worst tol %.3g)\n",
+                        cp9name, N, nfail, worst, worst_tol);
+  if(nfail) esl_fatal("utest_full_band_int: %s: %d of %d trials failed (run with -v)", cp9name, nfail, N);
+}
+
+static ESL_OPTIONS options[] = {
+  /* name     type          default  env  range toggles reqs incomp  help                                 docgroup*/
+  { "-h",        eslARG_NONE, FALSE, NULL, NULL,  NULL,  NULL, NULL, "show brief help and exit",           0 },
+  { "--version", eslARG_NONE, FALSE, NULL, NULL,  NULL,  NULL, NULL, "show version info and exit",         0 },
+  { "-s",        eslARG_INT,    "0", NULL, NULL,  NULL,  NULL, NULL, "set random number seed to <n>",      0 },
+  { "-N",        eslARG_INT,  "100", NULL, "n>0", NULL,  NULL, NULL, "number of random narrow bands",      0 },
+  { "-v",        eslARG_NONE, FALSE, NULL, NULL,  NULL,  NULL, NULL, "be verbose",                         0 },
+  {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+};
+static char usage[]  = "[-options] <cmfile>";
+static char banner[] = "unit test driver for the checkpointed (cm_p7_band_chk.c) and legacy int\n"
+                        "(cm_p7_band.c cp9_ForwardP7B_OLD_WITH_EL/cp9_BackwardP7B) banded CP9 Forward/Backward";
+
+int
+main(int argc, char **argv)
+{
+  ESL_GETOPTS    *go  = cm_CreateDefaultApp("cm_p7_band_chk_utest", options, 1, argc, argv, banner, usage);
+  ESL_RANDOMNESS *rng = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
+  int             N   = esl_opt_GetInteger(go, "-N");
+  int             v   = esl_opt_GetBoolean(go, "-v");
+  ESL_ALPHABET   *abc = NULL;
+  CM_FILE        *cmfp = NULL;
+  CM_t           *cm   = NULL;
+  char            errbuf[eslERRBUFSIZE];
+
+  init_ilogsum();   /* the int unbanded cp9_Forward()/cp9_Backward() need it */
+  if(cm_file_Open(esl_opt_GetArg(go, 1), NULL, FALSE, &cmfp, errbuf) != eslOK) esl_fatal("failed to open CM file: %s", errbuf);
+  if(cm_file_Read(cmfp, TRUE, &abc, &cm) != eslOK) esl_fatal("failed to read CM: %s", cmfp->errbuf);
+  cm_file_Close(cmfp);
+  /* cmalign's default configuration: local, with CP9 local ends, truncated */
+  cm->config_opts |= CM_CONFIG_LOCAL | CM_CONFIG_HMMLOCAL | CM_CONFIG_HMMEL | CM_CONFIG_TRUNC;
+  if(cm_Configure(cm, errbuf, -1) != eslOK) esl_fatal("cm_Configure failed: %s", errbuf);
+  if(v) printf("%s: M %d, EL flag %s\n", cm->name, cm->cp9->M, (cm->cp9->flags & CPLAN9_EL) ? "on" : "off");
+
+  /* cm->cp9 (cmalign --notrunc) and cm->Tcp9 (default) */
+  utest_narrow_band(rng, cm->cp9,  "cp9",  abc->K, N, v);
+  utest_narrow_band(rng, cm->Tcp9, "Tcp9", abc->K, N, v);
+  utest_full_band  (rng, cm->cp9,  "cp9",  abc->K, 5, v);
+  utest_full_band  (rng, cm->Tcp9, "Tcp9", abc->K, 5, v);
+
+  /* (a) cp9_ForwardP7B_OLD_WITH_EL()/cp9_BackwardP7B() (cm_p7_band.c; brief 26_0821-210) */
+  utest_narrow_band_int(rng, cm->cp9,  "cp9",  abc->K, N, v);
+  utest_narrow_band_int(rng, cm->Tcp9, "Tcp9", abc->K, N, v);
+  utest_full_band_int  (rng, cm->cp9,  "cp9",  abc->K, 5, v);
+  utest_full_band_int  (rng, cm->Tcp9, "Tcp9", abc->K, 5, v);
+
+  FreeCM(cm);
+  esl_alphabet_Destroy(abc);
+  esl_randomness_Destroy(rng);
+  esl_getopts_Destroy(go);
+  return 0;
+}
+#undef RX
+#undef T
+#undef REF_MSC
+#undef REF_ISC
+#undef MASK
+#undef TOL_INT
+#endif /*CM_P7_BAND_CHK_TESTDRIVE*/

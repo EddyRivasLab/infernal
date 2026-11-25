@@ -9,6 +9,9 @@
  *   --p7ibv --p7ibv-mem; --p7ibv alone still calls the flat p7_Seq2BandsIBV.
  *
  * SSE/memory conventions (brief 26_0430-121 C2/C3; cells double and SSE 2-lane since brief 26_0821-144):
+ *   The SSE bulk loops are compiled only in SSE builds (eslENABLE_SSE). Other
+ *   builds (ARM Neon, VMX) use scalar loops with the same operations in the
+ *   same order, so the bands are identical (brief 26_0821-216).
  *   k_stride = ((M+4+15) & ~15)  (16-double align + >=3 pad slots above M)
  *   Forward row i: scalar prefix k=0..3, SSE bulk k=4..k_sse_end-1 for M+I,
  *     scalar tail, scalar left-to-right D-fill.
@@ -30,8 +33,10 @@
 #include <math.h>
 #include <assert.h>
 
+#ifdef eslENABLE_SSE
 #include <xmmintrin.h>
 #include <emmintrin.h>
+#endif
 
 #include "easel.h"
 #include "esl_alphabet.h"
@@ -166,11 +171,21 @@ ibv_rowstats_check(const IBV_ROWSTATS *st, char *errbuf)
   return eslOK;
 }
 
+#ifdef eslENABLE_SSE
 static inline __m128d
 p7ibv_mm_max3(__m128d a, __m128d b, __m128d c)
 {
   return _mm_max_pd(_mm_max_pd(a, b), c);
 }
+#else
+/* Scalar max with _mm_max_pd()'s semantics, (a > b) ? a : b, for the
+ * scalar versions of the SSE loops (brief 26_0821-216). */
+static inline double
+p7ibv_max2(double a, double b)
+{
+  return (a > b) ? a : b;
+}
+#endif
 
 
 /* ---------------------------------------------------------------------------
@@ -235,6 +250,7 @@ ibv_forward_one_row(int M, size_t k_stride,
   int k_sse_start = 4;
   int k_sse_end   = k_sse_start;
   while (k_sse_end + 1 <= M) k_sse_end += 2;
+#ifdef eslENABLE_SSE
   for (k = k_sse_start; k < k_sse_end; k += 2) {
     __m128d m_prev = _mm_loadu_pd(&FM_prev[k - 1]);
     __m128d i_prev = _mm_loadu_pd(&FI_prev[k - 1]);
@@ -258,6 +274,17 @@ ibv_forward_one_row(int M, size_t k_stride,
     __m128d b2   = _mm_add_pd(fi_k, t_ii);
     _mm_storeu_pd(&FI_curr[k], _mm_max_pd(a2, b2));
   }
+#else
+  /* Scalar version of the SSE loop: same operations, same order. */
+  for (k = k_sse_start; k < k_sse_end; k++) {
+    double mx = p7ibv_max2(p7ibv_max2(FM_prev[k - 1] + MM_t[k - 1],
+                                      FI_prev[k - 1] + IM_t[k - 1]),
+                           FD_prev[k - 1] + DM_t[k - 1]);
+    if (begin_milli != NULL) mx = p7ibv_max2(mx, begin_milli[k]);
+    FM_curr[k] = mx + emit_row[k];
+    FI_curr[k] = p7ibv_max2(FM_prev[k] + MI_t[k], FI_prev[k] + II_t[k]);
+  }
+#endif
 
   for (k = k_sse_end; k <= M; k++) {
     double cM = P7IBV_NEG_INF, cI = P7IBV_NEG_INF;
@@ -351,6 +378,7 @@ ibv_backward_one_row(int M, size_t k_stride, int i, int global_L, int do_trunc,
 
   int k_sse_end = 0;
   while (k_sse_end + 1 <= M) k_sse_end += 2;
+#ifdef eslENABLE_SSE
   for (k = 0; k < k_sse_end; k += 2) {
     __m128d bm_n   = _mm_loadu_pd(&BM_next[k + 1]);
     __m128d e_n    = _mm_loadu_pd(&emit_row_next[k + 1]);
@@ -372,6 +400,18 @@ ibv_backward_one_row(int M, size_t k_stride, int i, int global_L, int do_trunc,
                                _mm_add_pd(t_ii, bv_I));
     _mm_storeu_pd(&BI_curr[k], cI_out);
   }
+#else
+  /* Scalar version of the SSE loop: same operations, same order. When M is
+   * odd it reads index M+1 of the next row as the SSE loop does (padding,
+   * P7IBV_NEG_INF). */
+  for (k = 0; k < k_sse_end; k++) {
+    double bv_M = BM_next[k + 1] + emit_row_next[k + 1];
+    double bv_I = BI_next[k];
+    double bv_D = BD_curr[k + 1];
+    BM_curr[k] = p7ibv_max2(p7ibv_max2(MM_t[k] + bv_M, MI_t[k] + bv_I), MD_t[k] + bv_D);
+    BI_curr[k] = p7ibv_max2(IM_t[k] + bv_M, II_t[k] + bv_I);
+  }
+#endif
 
   for (k = k_sse_end; k <= M; k++) {
     double cM = P7IBV_NEG_INF, cI = P7IBV_NEG_INF;
@@ -420,12 +460,18 @@ ibv_through_scan(int M, size_t k_stride, double margin,
   while (k_thru_end + 1 <= M) k_thru_end += 2;
   (void) k_stride;
 
+#ifdef eslENABLE_SSE
   for (k = 0; k < k_thru_end; k += 2) {
     __m128d a = _mm_add_pd(_mm_loadu_pd(&FM[k]), _mm_loadu_pd(&BM[k]));
     __m128d b = _mm_add_pd(_mm_loadu_pd(&FI[k]), _mm_loadu_pd(&BI[k]));
     __m128d c = _mm_add_pd(_mm_loadu_pd(&FD[k]), _mm_loadu_pd(&BD[k]));
     _mm_storeu_pd(&through_scratch[k], p7ibv_mm_max3(a, b, c));
   }
+#else
+  /* Scalar version of the SSE loop: same operations, same order. */
+  for (k = 0; k < k_thru_end; k++)
+    through_scratch[k] = p7ibv_max2(p7ibv_max2(FM[k] + BM[k], FI[k] + BI[k]), FD[k] + BD[k]);
+#endif
   for (k = k_thru_end; k <= M; k++) {
     double t_m = FM[k] + BM[k];
     double t_i = FI[k] + BI[k];

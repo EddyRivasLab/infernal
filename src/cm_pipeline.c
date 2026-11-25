@@ -3935,6 +3935,10 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
    * statistics for the truncated passes.
    */
   int              hmmonly_glocal  = pli->do_hmmonly_glocal_cur;
+  /* glocal HMM only mode always uses the glocal Forward score (that's its
+   * whole purpose) and --noF4 is incompatible with --hmmonly, so there is
+   * no hmmonly-specific gate here; see brief 26_0822-031 / GitHub #84. */
+  int              cur_do_gfwd     = hmmonly_glocal ? TRUE                 : pli->do_gfwd;
   double           cur_F4          = hmmonly_glocal ? pli->F4_hmmonly      : pli->F4;
   double           cur_F4b         = hmmonly_glocal ? pli->F4b_hmmonly     : pli->F4b;
   double           cur_F5          = hmmonly_glocal ? pli->F5_hmmonly      : pli->F5;
@@ -4496,12 +4500,20 @@ pli_p7_env_def(CM_PIPELINE *pli, P7_OPROFILE *om, P7_BG *bg, float *p7_evparam, 
       }
 
 #if eslDEBUGLEVEL >= 2
-      if(P > cur_F4) {
+      if(cur_do_gfwd && P > cur_F4) {
 	printf("#DEBUG: KILLED   window %5d [%10" PRId64 "..%10" PRId64 "]          gFwd      %6.2f bits  P %g\n", i, ws[i], we[i], sc_for_pvalue, P);
       }
 #endif
-      /* Does this score exceed our glocal forward filter threshold? If not, move on to next seq */
-      if(P > cur_F4) continue;
+      /* Does this score exceed our glocal forward filter threshold? If not,
+       * move on to next seq. The glocal Forward score itself (fwdsc, above)
+       * is always computed because it feeds the F4b bias test and the
+       * downstream glocal envelope definition regardless of whether the F4
+       * filter decision is applied; only the filtering decision is gated on
+       * cur_do_gfwd (--noF4 previously left this test unconditional, GitHub
+       * #84 / brief 26_0822-031). --noF4 requires --noF4b (option table),
+       * so cur_do_gfwdbias below is already FALSE whenever cur_do_gfwd is
+       * FALSE outside hmmonly_glocal mode. */
+      if(cur_do_gfwd && P > cur_F4) continue;
 
       pli->acct[pli->cur_pass_idx].n_past_gfwd++;
       pli->acct[pli->cur_pass_idx].pos_past_gfwd += wlen;
@@ -6008,6 +6020,47 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
 	p7_gmx_GrowTo(pli->gxf, gm_local->M, envL);
 	pli->gxf->M = gm_local->M;
 	pli->gxf->L = envL;
+
+	/* Ensure pli->phi is sized/filled for *this* model before calling
+	 * p7_Seq2Bands()/prune_i2k(): pli->phi is otherwise only
+	 * (re)sized/filled in pli_p7_env_def()'s own --msvband block, which
+	 * is skipped per-window whenever the window is a merged (multi-hit)
+	 * window (issue #50). A model whose only windows reaching this
+	 * dispatch so far were merged therefore never resizes pli->phi for
+	 * its own M here, leaving it sized/filled for whatever earlier,
+	 * unrelated (and possibly smaller-M) model last grew it. prune_i2k()
+	 * then reads phi[i2k[i]] (i2k[i] in [0,gm_local->M-1]) past the end
+	 * of that stale, undersized array -- a wild-pointer dereference,
+	 * cmscan-specific because only cmscan processes many differently-
+	 * sized models per thread (cmsearch fills pli->phi once per run, for
+	 * its one query model, and never hits this mismatch). Confirmed by
+	 * gdb: prune_i2k() SIGSEGV with i2k[i]=159, phi allocated short of
+	 * that index (cm_p7_band.c:580; brief 26_0822-031). Mirrors the
+	 * grow/fill block already used in pli_p7_env_def()'s non-merged
+	 * --msvband branches, keyed here to gm_local->M so it is always
+	 * current for the model this dispatch call is actually banding. */
+	if (pli->phi == NULL || gm_local->M > pli->phi_M) {
+	  int k;
+	  if (pli->phi) { for (k = 0; k <= pli->phi_M; k++) free(pli->phi[k]); free(pli->phi); }
+	  ESL_ALLOC(pli->phi, sizeof(double *) * (gm_local->M + 1));
+	  for (k = 0; k <= gm_local->M; k++) {
+	    ESL_ALLOC(pli->phi[k], sizeof(double) * 3);
+	    pli->phi_M = k;
+	  }
+	}
+	{
+	  int    k;
+	  float *mocc = NULL, *iocc = NULL;
+	  ESL_ALLOC(mocc, sizeof(float) * (gm_local->M + 1));
+	  ESL_ALLOC(iocc, sizeof(float) * (gm_local->M + 1));
+	  p7_hmm_CalculateOccupancy(cm->fp7, mocc, iocc);
+	  for (k = 0; k <= gm_local->M; k++) {
+	    pli->phi[k][HMMMATCH]  = (double) mocc[k];
+	    pli->phi[k][HMMINSERT] = (double) iocc[k];
+	    pli->phi[k][HMMDELETE] = 0.0;
+	  }
+	  free(mocc); free(iocc);
+	}
 
 	status = p7_Seq2Bands(NULL, pli->errbuf, gm_local, pli->gxf, pli->p7bg, pli->p7tr, dsq + start - 1, envL,
 			      pli->phi, 0.f, 0, 0, 0.f, 0.f, 1.f, 1.f, pli->p7band_pad,

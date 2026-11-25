@@ -234,6 +234,11 @@
    (EL) matrix cells outside their valid range, which changed some
    local alignments (github issue #64).
 
+ * fixes `cmalign` silently aligning a 5'- or 3'-truncated sequence to
+   a single consensus position (or none), hundreds of bits below its
+   real score, when the HMM bands had been tightened to fit
+   `--mxsize` (github issue #87).
+
  * fixes `cmalign --nonbanded` crashing on a NaN score in truncated
    alignment (github issue #52).
 
