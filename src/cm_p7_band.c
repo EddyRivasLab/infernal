@@ -575,7 +575,18 @@ prune_i2k(int *i2k, int *iconflict, float *isc, int L, double **phi, float min_s
     if(i2k[i] != -1) { /* position i is currently pinned */
        if ((phi[i2k[i]][HMMMATCH]      < min_mprob)   || /* match  prob too low */
 	   (phi[i2k[i]][HMMINSERT]     > max_iprob)   || /* insert to the right prob too high */
-	   (phi[(i2k[i]-1)][HMMINSERT] > max_ilprob)) {  /* insert to the left  prob too high */
+	   /* i2k[i] == 0 means the pin is at the model's first consensus
+	    * column (my_p7_GTraceMSV()'s i2k values are the 0..M-1
+	    * 0-offset node index k-1); there's no node to its left in
+	    * <phi>, so phi[i2k[i]-1] would underflow the array by one row.
+	    * Reading that out-of-bounds row as a <double *> and
+	    * dereferencing it is a pre-existing cmscan --msvband/--vitband
+	    * segfault (GitHub issue, brief 26_0822-031): intermittent and
+	    * model-dependent because whether the adjacent heap memory reads
+	    * back as a valid pointer depends on allocation history. Treat
+	    * "no node to the left" as "insert-to-the-left prob not too
+	    * high" (skip the check), matching the natural boundary case. */
+	   (i2k[i] > 0 && phi[(i2k[i]-1)][HMMINSERT] > max_ilprob)) {  /* insert to the left  prob too high */
 	 /* remove pin */
 	 /*printf("removing pin %4d %.4f\n", i, phi[i2k[i]][HMMMATCH]);*/
 	 i2k[i] = -1;

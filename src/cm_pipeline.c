@@ -6009,6 +6009,47 @@ int pli_dispatch_cm_search(CM_PIPELINE *pli, CM_t *cm, ESL_DSQ *dsq, int64_t sta
 	pli->gxf->M = gm_local->M;
 	pli->gxf->L = envL;
 
+	/* Ensure pli->phi is sized/filled for *this* model before calling
+	 * p7_Seq2Bands()/prune_i2k(): pli->phi is otherwise only
+	 * (re)sized/filled in pli_p7_env_def()'s own --msvband block, which
+	 * is skipped per-window whenever the window is a merged (multi-hit)
+	 * window (issue #50). A model whose only windows reaching this
+	 * dispatch so far were merged therefore never resizes pli->phi for
+	 * its own M here, leaving it sized/filled for whatever earlier,
+	 * unrelated (and possibly smaller-M) model last grew it. prune_i2k()
+	 * then reads phi[i2k[i]] (i2k[i] in [0,gm_local->M-1]) past the end
+	 * of that stale, undersized array -- a wild-pointer dereference,
+	 * cmscan-specific because only cmscan processes many differently-
+	 * sized models per thread (cmsearch fills pli->phi once per run, for
+	 * its one query model, and never hits this mismatch). Confirmed by
+	 * gdb: prune_i2k() SIGSEGV with i2k[i]=159, phi allocated short of
+	 * that index (cm_p7_band.c:580; brief 26_0822-031). Mirrors the
+	 * grow/fill block already used in pli_p7_env_def()'s non-merged
+	 * --msvband branches, keyed here to gm_local->M so it is always
+	 * current for the model this dispatch call is actually banding. */
+	if (pli->phi == NULL || gm_local->M > pli->phi_M) {
+	  int k;
+	  if (pli->phi) { for (k = 0; k <= pli->phi_M; k++) free(pli->phi[k]); free(pli->phi); }
+	  ESL_ALLOC(pli->phi, sizeof(double *) * (gm_local->M + 1));
+	  for (k = 0; k <= gm_local->M; k++) {
+	    ESL_ALLOC(pli->phi[k], sizeof(double) * 3);
+	    pli->phi_M = k;
+	  }
+	}
+	{
+	  int    k;
+	  float *mocc = NULL, *iocc = NULL;
+	  ESL_ALLOC(mocc, sizeof(float) * (gm_local->M + 1));
+	  ESL_ALLOC(iocc, sizeof(float) * (gm_local->M + 1));
+	  p7_hmm_CalculateOccupancy(cm->fp7, mocc, iocc);
+	  for (k = 0; k <= gm_local->M; k++) {
+	    pli->phi[k][HMMMATCH]  = (double) mocc[k];
+	    pli->phi[k][HMMINSERT] = (double) iocc[k];
+	    pli->phi[k][HMMDELETE] = 0.0;
+	  }
+	  free(mocc); free(iocc);
+	}
+
 	status = p7_Seq2Bands(NULL, pli->errbuf, gm_local, pli->gxf, pli->p7bg, pli->p7tr, dsq + start - 1, envL,
 			      pli->phi, 0.f, 0, 0, 0.f, 0.f, 1.f, 1.f, pli->p7band_pad,
 			      &p7_i2k, &p7_kmin, &p7_kmax, &p7_ncells);
