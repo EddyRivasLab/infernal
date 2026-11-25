@@ -2434,14 +2434,35 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9_t *cp9, CP9Bands_t *cp9b, CP9Map_t *
   }
 
   if(do_trunc) { 
+    int Lmarg_jmin = cp9b->Lmarg_jmin;
+    int Lmarg_jmax = cp9b->Lmarg_jmax;
+    int Rmarg_imin = cp9b->Rmarg_imin;
+    int Rmarg_imax = cp9b->Rmarg_imax;
+    /* When aligning, the whole target i0..j0 is aligned, so every
+     * R-mode state (5' end missing) has i = i0 and every L-mode state
+     * (3' end missing) has j = j0. The marginal ranges come from the
+     * HMM bands of only two nodes each (sp1/sp2 and ep1/ep2), and when
+     * tau is raised to fit --mxsize those bands can exclude i0 (or j0).
+     * That silently removes every 5'- (or 3'-) truncated parse, and
+     * the alignment can collapse to the node-1 local end escape of the
+     * "brutal hack" below, a one-column or empty alignment far below
+     * the real score (GitHub issue #87). So make the ranges always
+     * contain i0 and j0 when aligning.
+     */
+    if(! doing_search) { 
+      Rmarg_imin = ESL_MIN(Rmarg_imin, i0);
+      Rmarg_imax = ESL_MAX(Rmarg_imax, i0);
+      Lmarg_jmin = ESL_MIN(Lmarg_jmin, j0);
+      Lmarg_jmax = ESL_MAX(Lmarg_jmax, j0);
+    }
     for(v = 0; v < cm->M; v++) { 
       if(cp9b->Lvalid[v] || cp9b->Tvalid[v]) { /* allow for left marginal alignment by expanding j band */
-	jmin[v] = (jmin[v] == -1) ? cp9b->Lmarg_jmin : ESL_MIN(jmin[v], cp9b->Lmarg_jmin);
-	jmax[v] = (jmax[v] == -2) ? cp9b->Lmarg_jmax : ESL_MAX(jmax[v], cp9b->Lmarg_jmax);
+	jmin[v] = (jmin[v] == -1) ? Lmarg_jmin : ESL_MIN(jmin[v], Lmarg_jmin);
+	jmax[v] = (jmax[v] == -2) ? Lmarg_jmax : ESL_MAX(jmax[v], Lmarg_jmax);
       }
       if(cp9b->Rvalid[v] || cp9b->Tvalid[v]) { /* allow for right marginal alignment by expanding i band */
-	imin[v] = (imin[v] == -1) ? cp9b->Rmarg_imin : ESL_MIN(imin[v], cp9b->Rmarg_imin);
-	imax[v] = (imax[v] == -2) ? cp9b->Rmarg_imax : ESL_MAX(imax[v], cp9b->Rmarg_imax);
+	imin[v] = (imin[v] == -1) ? Rmarg_imin : ESL_MIN(imin[v], Rmarg_imin);
+	imax[v] = (imax[v] == -2) ? Rmarg_imax : ESL_MAX(imax[v], Rmarg_imax);
       }
     }
   }
