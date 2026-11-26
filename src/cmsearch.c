@@ -569,7 +569,7 @@ serial_master(ESL_GETOPTS *go, struct cfg_s *cfg)
      * dbsize_and_seq_lengths() and then overwrite it based on <x>
      * from -Z <x>.
      */
-    if ((! esl_sqfile_IsRewindable(dbfp)) && dbfp->do_gzip == FALSE) { 
+    if ((! esl_sqfile_IsRewindable(dbfp)) && dbfp->mode != eslSQFILE_GZIP) { // cmsearch will close/reopen a .gz file to "rewind" it
 	cm_Fail("Target sequence file %s isn't rewindable, cmsearch needs to be able to rewind it", cfg->dbfile);
     }
     if((status = dbsize_and_seq_lengths(go, cfg, &dbfp, errbuf, &srcL, &nseqs_expected)) != eslOK) { 
@@ -2507,7 +2507,7 @@ dbsize_and_seq_lengths(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE **dbfp_ptr
   }
   cfg->Z_setby = CM_ZSETBY_FILEREAD;
 
-  if((*dbfp_ptr)->do_gzip == TRUE) { 
+  if((*dbfp_ptr)->mode == eslSQFILE_GZIP) { 
     /* file is gzipped, close it and reopen it.  
        we know we successfully opened it the first time, so a
        failure to reopen is an exception, not a user-reportable
@@ -2536,7 +2536,7 @@ dbsize_and_seq_lengths(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE **dbfp_ptr
   return eslOK;
 
  ERROR: 
-  if((*dbfp_ptr)->do_gzip == TRUE) { /* same as above, close and reopen */
+  if((*dbfp_ptr)->mode == eslSQFILE_GZIP) { /* same as above, close and reopen */
     strcpy(tmp_filename, (*dbfp_ptr)->filename);
     tmp_fmt = (*dbfp_ptr)->format;
     esl_sqfile_Close((*dbfp_ptr));
@@ -2823,8 +2823,8 @@ mpi_open_dbfile_ssi(ESL_GETOPTS *go, struct cfg_s *cfg, ESL_SQFILE *dbfp, char *
 {
   int status;
 
-  if (dbfp->do_gzip)             ESL_FAIL(eslEFORMAT, errbuf, "Reading gzipped sequence files is not supported with --mpi.");
-  if (dbfp->do_stdin)            ESL_FAIL(eslEFORMAT, errbuf, "Reading sequence files from stdin is not supported with --mpi.");
+  if (dbfp->mode == eslSQFILE_GZIP)   ESL_FAIL(eslEFORMAT, errbuf, "Reading gzipped sequence files is not supported with --mpi.");
+  if (dbfp->mode == eslSQFILE_STREAM) ESL_FAIL(eslEFORMAT, errbuf, "Reading sequence files from stdin or streams is not supported with --mpi.");
   status = esl_sqfile_OpenSSI(dbfp, NULL);
   if      (status == eslEFORMAT) ESL_FAIL(status, errbuf, "SSI index for database file is in incorrect format\n");
   else if (status == eslERANGE)  ESL_FAIL(status, errbuf, "SSI index for database file is in 64-bit format and we can't read it\n");
